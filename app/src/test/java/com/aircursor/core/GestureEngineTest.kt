@@ -190,32 +190,96 @@ class GestureEngineTest {
         assertEquals(0, d.count<GestureEvent.Tap>())
     }
 
+    private fun Driver.lastScroll() = events.filterIsInstance<GestureEvent.ScrollVelocity>().last()
+
     @Test
     fun twoFingersMovedDownScrollsWithSpeedProportionalToDistance() {
-        fun scrollAmount(offset: Float): Float {
+        fun scrollSpeed(offset: Float): Float {
             val d = Driver(GestureEngine(baseConfig))
             d.feed(Shape.TWO_FINGERS, cy = 0.6f, frames = 5)
-            d.feed(Shape.TWO_FINGERS, cy = 0.6f + offset, frames = 10)
-            val scrolls = d.events.filterIsInstance<GestureEvent.Scroll>()
-            assertTrue(scrolls.isNotEmpty())
-            assertTrue(scrolls.all { it.dx == 0f })
-            return scrolls.last().dy
+            d.feed(Shape.TWO_FINGERS, cy = 0.6f + offset, frames = 5)
+            val s = d.lastScroll()
+            assertEquals(0f, s.vx, 0f)
+            return s.vy
         }
-        val small = scrollAmount(0.06f)
-        val big = scrollAmount(0.12f)
-        // Hand down -> page scrolls down -> finger swipes up (negative dy).
+        val small = scrollSpeed(0.06f)
+        val big = scrollSpeed(0.12f)
+        // Hand down -> page scrolls down -> virtual finger moves up (negative vy).
         assertTrue(small < 0f)
         assertTrue(big < small * 2f)
     }
 
     @Test
-    fun twoFingersMovedSidewaysIsHorizontalSwipe() {
+    fun handInsideScrollDeadZoneHoldsStill() {
+        val d = Driver(GestureEngine(baseConfig))
+        d.feed(Shape.TWO_FINGERS, cy = 0.6f, frames = 5).feed(Shape.TWO_FINGERS, cy = 0.61f, frames = 5)
+        assertEquals(0f, d.lastScroll().vy, 0f)
+        assertEquals(CursorMode.SCROLLING, d.last.mode)
+    }
+
+    @Test
+    fun twoFingersMovedSidewaysIsHorizontalScroll() {
         val d = Driver(GestureEngine(baseConfig))
         d.feed(Shape.TWO_FINGERS, cx = 0.5f, frames = 5)
-        d.feed(Shape.TWO_FINGERS, cx = 0.6f, frames = 10)
-        val scrolls = d.events.filterIsInstance<GestureEvent.Scroll>()
-        assertTrue(scrolls.isNotEmpty())
-        assertTrue(scrolls.all { it.dy == 0f && it.dx < 0f })
+        d.feed(Shape.TWO_FINGERS, cx = 0.6f, frames = 5)
+        val s = d.lastScroll()
+        assertEquals(0f, s.vy, 0f)
+        assertTrue(s.vx < 0f)
+    }
+
+    @Test
+    fun cursorDoesNotMoveWhileScrolling() {
+        val d = Driver(GestureEngine(baseConfig))
+        d.feed(Shape.POINT, cy = 0.6f, frames = 10)
+        val before = d.last
+        var y = 0.6f
+        repeat(10) {
+            y += 0.015f
+            d.feed(Shape.TWO_FINGERS, cy = y)
+            assertEquals(before.x, d.last.x, 0.5f)
+            assertEquals(before.y, d.last.y, 0.5f)
+        }
+        assertTrue(d.count<GestureEvent.ScrollVelocity>() > 0)
+    }
+
+    @Test
+    fun shortPoseFlickerDoesNotEndScroll() {
+        val d = Driver(GestureEngine(baseConfig))
+        d.feed(Shape.TWO_FINGERS, cy = 0.6f, frames = 5).feed(Shape.TWO_FINGERS, cy = 0.7f, frames = 5)
+        val frozenAt = d.last
+        d.feed(Shape.POINT, cy = 0.7f, frames = 4)
+        d.feed(Shape.TWO_FINGERS, cy = 0.7f, frames = 5)
+        assertEquals(0, d.count<GestureEvent.ScrollEnd>())
+        assertEquals(frozenAt.y, d.last.y, 0.5f)
+        d.feed(Shape.POINT, cy = 0.7f, frames = 15)
+        assertEquals(1, d.count<GestureEvent.ScrollEnd>())
+    }
+
+    @Test
+    fun cursorGlidesBackAfterScrollInsteadOfJumping() {
+        val d = Driver(GestureEngine(baseConfig))
+        d.feed(Shape.POINT, cy = 0.6f, frames = 10)
+        d.feed(Shape.TWO_FINGERS, cy = 0.6f, frames = 3).feed(Shape.TWO_FINGERS, cy = 0.7f, frames = 10)
+        var prevY = d.last.y
+        repeat(40) {
+            d.feed(Shape.POINT, cy = 0.7f)
+            assertTrue("cursor jumped ${d.last.y - prevY}px", kotlin.math.abs(d.last.y - prevY) < 150f)
+            prevY = d.last.y
+        }
+        // Finally the cursor sits on the finger again (0.1 hand move = ~343 px lower).
+        val target = GestureEngine(baseConfig).let { e ->
+            var o = e.process(HandFrame(0, FakeHand.build(Shape.POINT, cy = 0.7f)))
+            o = e.process(HandFrame(33, FakeHand.build(Shape.POINT, cy = 0.7f)))
+            o.y
+        }
+        assertEquals(target, d.last.y, 6f)
+    }
+
+    @Test
+    fun handLostEndsScroll() {
+        val d = Driver(GestureEngine(baseConfig))
+        d.feed(Shape.TWO_FINGERS, frames = 5).feed(null)
+        assertEquals(1, d.count<GestureEvent.ScrollEnd>())
     }
 
     @Test

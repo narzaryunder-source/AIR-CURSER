@@ -39,6 +39,8 @@ class CursorAccessibilityService : AccessibilityService() {
     private var cursorView: CursorView? = null
     private lateinit var prefs: Prefs
     private lateinit var drag: DragController
+    private lateinit var scroller: ScrollController
+    private lateinit var haptics: Haptics
     private var showFps = false
 
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> applyPrefs() }
@@ -49,6 +51,8 @@ class CursorAccessibilityService : AccessibilityService() {
         prefs = Prefs(this)
         prefs.sp.registerOnSharedPreferenceChangeListener(prefListener)
         drag = DragController(this, main)
+        scroller = ScrollController(this, main) { screenW() to screenH() }
+        haptics = Haptics(this)
         windowManager = getSystemService(WindowManager::class.java)
         TrackingBus.update { it.copy(accessibilityConnected = true) }
         if (HandTrackingService.isRunning) onTrackingStarted()
@@ -72,6 +76,7 @@ class CursorAccessibilityService : AccessibilityService() {
         if (instance !== this) return
         instance = null
         drag.cancel()
+        scroller.cancel()
         removeOverlay()
         if (::prefs.isInitialized) prefs.sp.unregisterOnSharedPreferenceChangeListener(prefListener)
         TrackingBus.update { it.copy(accessibilityConnected = false) }
@@ -138,6 +143,8 @@ class CursorAccessibilityService : AccessibilityService() {
         if (!::prefs.isInitialized) return
         showFps = prefs.get(AppSettings.SHOW_FPS)
         cursorView?.cursorScale = prefs.get(AppSettings.CURSOR_SIZE)
+        cursorView?.prediction = prefs.get(AppSettings.PREDICTION)
+        haptics.enabled = prefs.get(AppSettings.HAPTICS)
         if (!showFps) cursorView?.debugText = null
     }
 
@@ -147,6 +154,7 @@ class CursorAccessibilityService : AccessibilityService() {
 
     fun onTrackingStopped() {
         drag.cancel()
+        scroller.cancel()
         removeOverlay()
     }
 
@@ -156,12 +164,17 @@ class CursorAccessibilityService : AccessibilityService() {
 
     // ---- Engine output ----
 
-    fun onEngineOutput(out: EngineOutput, fps: Float) {
+    fun onEngineOutput(out: EngineOutput, stats: TrackingStats) {
         val view = cursorView ?: return
-        view.update(out.x, out.y, out.mode, out.handPresent, out.holdKind, out.holdProgress)
+        view.update(out.x, out.y, out.timestampMs, out.mode, out.handPresent, out.holdKind, out.holdProgress)
         if (showFps) {
-            view.debugText = "FPS %.1f\nHand: %s\nPose: %s\nPinch: %.2f".format(
-                fps,
+            view.debugText = ("Tracking: %.1f fps\nCamera: %.0f fps (%s)\nInference: %.0f ms (%s)\n" +
+                "Hand: %s  Pose: %s\nPinch: %.2f").format(
+                stats.trackingFps,
+                stats.cameraFps,
+                stats.resolution,
+                stats.inferenceMs,
+                stats.delegate,
                 if (out.handPresent) "yes" else "no",
                 out.pose?.name ?: "-",
                 out.pinchRatio,
@@ -174,31 +187,42 @@ class CursorAccessibilityService : AccessibilityService() {
         when (e) {
             is GestureEvent.Tap -> {
                 view.ripple(e.x, e.y)
+                haptics.click()
                 tap(e.x, e.y)
             }
             is GestureEvent.LongPress -> {
                 view.ripple(e.x, e.y, 0xFFFFC107.toInt())
                 view.showLabel("Long press")
+                haptics.heavy()
                 longPress(e.x, e.y)
             }
             is GestureEvent.DragStart -> {
                 view.showLabel("Drag")
+                haptics.tick()
+                scroller.cancel()
                 drag.start(clampX(e.x), clampY(e.y), e.holdFirst)
             }
             is GestureEvent.DragMove -> drag.moveTo(clampX(e.x), clampY(e.y))
             is GestureEvent.DragEnd -> drag.end(clampX(e.x), clampY(e.y))
-            is GestureEvent.Scroll -> scroll(e)
+            is GestureEvent.ScrollVelocity -> scroller.update(e.x, e.y, e.vx, e.vy)
+            GestureEvent.ScrollEnd -> scroller.stop()
             GestureEvent.Back -> global(GLOBAL_ACTION_BACK, "Back", view)
             GestureEvent.Home -> global(GLOBAL_ACTION_HOME, "Home", view)
             GestureEvent.Notifications -> global(GLOBAL_ACTION_NOTIFICATIONS, "Notifications", view)
             GestureEvent.Recents -> global(GLOBAL_ACTION_RECENTS, "Recents", view)
-            is GestureEvent.PauseChanged -> view.showLabel(if (e.paused) "Paused" else "Resumed")
+            is GestureEvent.PauseChanged -> {
+                haptics.heavy()
+                scroller.cancel()
+                view.showLabel(if (e.paused) "Paused" else "Resumed")
+            }
             GestureEvent.Recalibrated -> view.showLabel("Recalibrated")
         }
     }
 
     private fun global(action: Int, label: String, view: CursorView) {
         drag.cancel()
+        scroller.cancel()
+        haptics.heavy()
         performGlobalAction(action)
         view.showLabel(label)
     }
@@ -220,39 +244,16 @@ class CursorAccessibilityService : AccessibilityService() {
 
     fun tap(x: Float, y: Float) {
         drag.cancel()
+        scroller.cancel()
         val p = Path().apply { moveTo(clampX(x), clampY(y)) }
         dispatch(GestureDescription.StrokeDescription(p, 0, 60))
     }
 
     fun longPress(x: Float, y: Float) {
         drag.cancel()
+        scroller.cancel()
         val p = Path().apply { moveTo(clampX(x), clampY(y)) }
         dispatch(GestureDescription.StrokeDescription(p, 0, ViewConfiguration.getLongPressTimeout() + 300L))
-    }
-
-    private fun scroll(e: GestureEvent.Scroll) {
-        drag.cancel()
-        val w = screenW()
-        val h = screenH()
-        // Keep the swipe away from system gesture edges (back, home, notification shade).
-        val padX = w * 0.08f
-        val padY = h * 0.1f
-        val dx = e.dx.coerceIn(-(w - 2 * padX), w - 2 * padX)
-        val dy = e.dy.coerceIn(-(h - 2 * padY), h - 2 * padY)
-        val sx = fitStart(e.x, dx, padX, w - padX)
-        val sy = fitStart(e.y, dy, padY, h - padY)
-        val p = Path().apply {
-            moveTo(sx, sy)
-            lineTo(sx + dx, sy + dy)
-        }
-        dispatch(GestureDescription.StrokeDescription(p, 0, 250))
-    }
-
-    /** Start position so that start and start+delta both stay within [lo, hi]. */
-    private fun fitStart(pos: Float, delta: Float, lo: Float, hi: Float): Float {
-        val min = lo - minOf(0f, delta)
-        val max = hi - maxOf(0f, delta)
-        return if (min <= max) pos.coerceIn(min, max) else (lo + hi - delta) / 2f
     }
 }
 

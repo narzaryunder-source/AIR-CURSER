@@ -31,9 +31,24 @@ object AppSettings {
     val PINCH = FloatSetting("pinch", "Pinch distance", 0.28f, 0.15f, 0.45f) { "%.2f".format(it) }
     val SCROLL_SPEED = FloatSetting("scroll_speed", "Scroll speed", 1.2f, 0.4f, 3f) { "%.1fx".format(it) }
     val CURSOR_SIZE = FloatSetting("cursor_size", "Cursor size", 1f, 0.6f, 2f) { "%.1fx".format(it) }
-    val TARGET_FPS = FloatSetting("target_fps", "Tracking FPS", 30f, 15f, 30f, steps = 2) { "${it.roundToInt()} fps" }
+    val PREDICTION = FloatSetting("prediction", "Lag compensation (prediction)", 0.6f, 0f, 1f) {
+        "${(it * 100).roundToInt()}%"
+    }
+    val TARGET_FPS = FloatSetting("max_fps", "Max tracking FPS (battery saver)", 60f, 15f, 60f, steps = 8) {
+        if (it >= 59.5f) "Unlimited" else "${it.roundToInt()} fps"
+    }
+    val RESOLUTION = FloatSetting("resolution", "Camera resolution", 1f, 0f, 2f, steps = 1) {
+        when (it.roundToInt()) {
+            0 -> "Low 320p (fastest)"
+            1 -> "Medium 480p"
+            else -> "High 640p (far hand)"
+        }
+    }
 
-    val SLIDERS = listOf(MARGIN, SENSITIVITY, MIN_CUTOFF, BETA, DEAD_ZONE, PINCH, SCROLL_SPEED, CURSOR_SIZE, TARGET_FPS)
+    val SLIDERS = listOf(
+        MARGIN, SENSITIVITY, PREDICTION, MIN_CUTOFF, BETA, DEAD_ZONE, PINCH, SCROLL_SPEED, CURSOR_SIZE,
+    )
+    val PERFORMANCE_SLIDERS = listOf(TARGET_FPS, RESOLUTION)
 
     val G_TAP = BoolSetting("g_tap", "Tap (quick pinch)", true)
     val G_LONG = BoolSetting("g_long", "Long press (pinch hold)", true)
@@ -52,10 +67,19 @@ object AppSettings {
         "auto_pause", "Auto-pause when screen is off", true,
         "Camera stops when the screen turns off and starts again after unlock.",
     )
-    val SHOW_FPS = BoolSetting("show_fps", "Debug overlay (FPS)", false)
-    val USE_GPU = BoolSetting("use_gpu", "Use GPU for hand tracking", false, "Faster on most phones. Turn off if tracking fails.")
+    val SHOW_FPS = BoolSetting("show_fps", "Debug overlay (FPS, latency)", false)
+    val HAPTICS = BoolSetting("haptics", "Vibrate on click / gesture", true)
+    val USE_GPU = BoolSetting(
+        "gpu", "Use GPU for hand tracking", true,
+        "2-3x faster on most phones. Turn off if tracking does not start.",
+    )
+    val HIGH_FPS_CAMERA = BoolSetting(
+        "high_fps_camera", "60 fps camera (if supported)", true,
+        "Smoother tracking. In dim light the image may get darker.",
+    )
 
-    val OPTIONS = listOf(REVERSE_SCROLL, AUTO_PAUSE, SHOW_FPS, USE_GPU)
+    val OPTIONS = listOf(REVERSE_SCROLL, HAPTICS, AUTO_PAUSE, SHOW_FPS)
+    val PERFORMANCE_OPTIONS = listOf(USE_GPU, HIGH_FPS_CAMERA)
 }
 
 class Prefs(context: Context) {

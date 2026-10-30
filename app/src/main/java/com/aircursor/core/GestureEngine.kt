@@ -1,6 +1,7 @@
 package com.aircursor.core
 
 import kotlin.math.abs
+import kotlin.math.exp
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
@@ -25,10 +26,16 @@ data class GestureConfig(
     /** Movement (fraction of the shorter screen side) needed to turn a pinch into a drag. */
     val dragStartFraction: Float = 0.035f,
     val tapCooldownMs: Long = 150,
-    // Scroll (two fingers, works like PC middle-click auto scroll)
-    val scrollDeadZone: Float = 0.035f,
-    val scrollIntervalMs: Long = 260,
+    /** After a frozen phase (scroll, palm, click) the cursor glides back to the finger instead of jumping. */
+    val clutchTauMs: Float = 120f,
+    // Scroll (two fingers, works like PC middle-click auto scroll: offset from start = speed)
+    val scrollDeadZone: Float = 0.03f,
     val scrollSpeed: Float = 1.2f,
+    /** Scroll speed in px/s per pixel of hand offset (after the dead zone). */
+    val scrollGain: Float = 5f,
+    val scrollMaxSpeed: Float = 4500f,
+    /** Scroll mode survives this long after the two-finger pose is lost (kills flicker). */
+    val scrollExitMs: Long = 220,
     val reverseScroll: Boolean = false,
     // Open palm
     val palmSwipeDistance: Float = 0.16f,
@@ -59,8 +66,12 @@ sealed class GestureEvent {
     data class DragStart(val x: Float, val y: Float, val holdFirst: Boolean) : GestureEvent()
     data class DragMove(val x: Float, val y: Float) : GestureEvent()
     data class DragEnd(val x: Float, val y: Float) : GestureEvent()
-    /** A swipe starting near (x, y) with vector (dx, dy) in pixels. */
-    data class Scroll(val x: Float, val y: Float, val dx: Float, val dy: Float) : GestureEvent()
+    /**
+     * Continuous scroll: a virtual finger placed near (x, y) should move with velocity
+     * (vx, vy) in px/s. Sent every frame while scrolling (0, 0 = hold still).
+     */
+    data class ScrollVelocity(val x: Float, val y: Float, val vx: Float, val vy: Float) : GestureEvent()
+    data object ScrollEnd : GestureEvent()
     data object Back : GestureEvent()
     data object Home : GestureEvent()
     data object Notifications : GestureEvent()
@@ -138,10 +149,16 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
     private var freezeUntilMs = Long.MIN_VALUE
     private var pinchBlockedUntilMs = Long.MIN_VALUE
 
+    // Clutch: offset between cursor and finger that decays to zero after a frozen phase
+    private var frozen = false
+    private var clutchX = 0f
+    private var clutchY = 0f
+    private var clutchStartMs = 0L
+
     // Scroll
     private var scrollActive = false
     private var scrollAnchor = Point2(0f, 0f)
-    private var lastScrollMs = 0L
+    private var scrollLeftAtMs = -1L
 
     // Palm
     private val palmHistory = ArrayDeque<TimedPoint>()
@@ -194,6 +211,7 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
     fun setPaused(value: Boolean) {
         if (paused == value) return
         if (phase == PinchPhase.DRAGGING) pendingEvents += GestureEvent.DragEnd(cursorX, cursorY)
+        endScroll(pendingEvents)
         phase = PinchPhase.IDLE
         pinch.reset()
         paused = value
@@ -232,6 +250,7 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
             mapper = buildMapper()
             filterX.reset()
             filterY.reset()
+            resetClutch()
             events += GestureEvent.Recalibrated
         }
 
@@ -240,12 +259,14 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
         filteredX = filterX.filter(target.x.toDouble(), t).toFloat()
         filteredY = filterY.filter(target.y.toDouble(), t).toFloat()
 
-        val pose = poses.update(PoseClassifier.classify(g), t)
+        val rawPose = PoseClassifier.classify(g)
+        val pose = poses.update(rawPose, t)
         if (pose != lastPose) onPoseChanged()
         lastPose = pose
 
         val ratio = g.pinchRatio
         if (paused) {
+            frozen = true
             if (pose == HandPose.FIST) handleFist(t, events)
             return output(t, true, pose, ratio, events)
         }
@@ -254,19 +275,38 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
         // A fist also brings thumb and index together: only allow a new pinch with the index out.
         val pinched = pinch.update(if (wasPinched || g.indexAwayFromPalm) ratio else Float.POSITIVE_INFINITY)
         when {
-            pinched && !wasPinched -> onPinchStart(t)
+            pinched && !wasPinched -> onPinchStart(t, events)
             !pinched && wasPinched -> onPinchEnd(t, events)
             pinched -> onPinchHold(t, events)
         }
 
         if (phase == PinchPhase.IDLE) {
-            when (pose) {
-                HandPose.TWO_FINGERS ->
-                    if (config.enableScroll) handleScroll(lm, t, events) else follow(t)
-                HandPose.OPEN_PALM -> handlePalm(lm, t, events)
-                HandPose.FIST -> handleFist(t, events)
-                else -> follow(t)
+            if (config.enableScroll && pose == HandPose.TWO_FINGERS) {
+                scrollLeftAtMs = -1L
+                handleScroll(lm, t, events)
+            } else if (scrollActive) {
+                // Two-finger pose lost: keep scroll mode (holding still) for a moment so a
+                // flickering middle finger does not end the scroll or move the cursor.
+                if (scrollLeftAtMs < 0) scrollLeftAtMs = t
+                if (t - scrollLeftAtMs >= config.scrollExitMs) {
+                    endScroll(events)
+                } else {
+                    events += GestureEvent.ScrollVelocity(cursorX, cursorY, 0f, 0f)
+                }
             }
+            if (scrollActive) {
+                frozen = true
+            } else {
+                when (pose) {
+                    HandPose.OPEN_PALM -> handlePalm(lm, t, events)
+                    HandPose.FIST -> handleFist(t, events)
+                    // The raw pose freezes the cursor at once, before the debounced pose
+                    // switches, so starting a scroll/palm/fist never drags the cursor along.
+                    else -> if (isPointing(rawPose) && isPointing(pose)) follow(t) else frozen = true
+                }
+            }
+        } else {
+            frozen = true
         }
 
         recordHistory(t)
@@ -275,12 +315,42 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
 
     // ---- Cursor ----
 
+    private fun isPointing(p: HandPose?) =
+        p == null || p == HandPose.POINT || p == HandPose.OTHER ||
+            (p == HandPose.TWO_FINGERS && !config.enableScroll)
+
     private fun follow(t: Long) {
-        if (t < freezeUntilMs) return
-        if (hypot(filteredX - cursorX, filteredY - cursorY) >= config.deadZonePx) {
-            cursorX = filteredX
-            cursorY = filteredY
+        if (t < freezeUntilMs) {
+            frozen = true
+            return
         }
+        if (frozen) {
+            frozen = false
+            clutchX = cursorX - filteredX
+            clutchY = cursorY - filteredY
+            clutchStartMs = t
+        }
+        var tx = filteredX
+        var ty = filteredY
+        if (clutchX != 0f || clutchY != 0f) {
+            val k = exp(-(t - clutchStartMs) / config.clutchTauMs.coerceAtLeast(1f))
+            if (k < 0.01f) {
+                resetClutch()
+            } else {
+                tx += clutchX * k
+                ty += clutchY * k
+            }
+        }
+        if (hypot(tx - cursorX, ty - cursorY) >= config.deadZonePx) {
+            cursorX = tx
+            cursorY = ty
+        }
+    }
+
+    private fun resetClutch() {
+        frozen = false
+        clutchX = 0f
+        clutchY = 0f
     }
 
     private fun recordHistory(t: Long) {
@@ -298,7 +368,8 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
 
     // ---- Pinch: tap / long press / drag ----
 
-    private fun onPinchStart(t: Long) {
+    private fun onPinchStart(t: Long, events: MutableList<GestureEvent>) {
+        endScroll(events)
         if (t < pinchBlockedUntilMs || !(config.enableTap || config.enableLongPress || config.enableDrag)) {
             phase = PinchPhase.IGNORED
             return
@@ -366,29 +437,31 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
         if (!scrollActive) {
             scrollActive = true
             scrollAnchor = p
-            lastScrollMs = t - config.scrollIntervalMs
+            events += GestureEvent.ScrollVelocity(cursorX, cursorY, 0f, 0f)
             return
         }
-        if (t - lastScrollMs < config.scrollIntervalMs) return
         val dx = p.x - scrollAnchor.x
         val dy = p.y - scrollAnchor.y
         val vertical = abs(dy) >= abs(dx)
         val amount = (if (vertical) abs(dy) else abs(dx)) - config.scrollDeadZone
-        if (amount <= 0f) return
-
-        // Hand down = scroll down = finger swipes up (like PC auto scroll). Reverse flips it.
-        val sign = if (config.reverseScroll) 1f else -1f
-        val w = config.screenWidth.toFloat()
-        val h = config.screenHeight.toFloat()
-        val swipe = if (vertical) {
-            val len = min(amount * mapper.pixelsPerUnitY() * config.scrollSpeed, h * 0.6f)
-            Point2(0f, sign * len * (if (dy > 0) 1f else -1f))
-        } else {
-            val len = min(amount * mapper.pixelsPerUnitX() * config.scrollSpeed, w * 0.6f)
-            Point2(sign * len * (if (dx > 0) 1f else -1f), 0f)
+        var vx = 0f
+        var vy = 0f
+        if (amount > 0f) {
+            // Hand down = scroll down = finger moves up (like PC auto scroll). Reverse flips it.
+            val sign = if (config.reverseScroll) 1f else -1f
+            val ppu = if (vertical) mapper.pixelsPerUnitY() else mapper.pixelsPerUnitX()
+            val speed = min(amount * ppu * config.scrollSpeed * config.scrollGain, config.scrollMaxSpeed)
+            if (vertical) vy = sign * speed * (if (dy > 0) 1f else -1f)
+            else vx = sign * speed * (if (dx > 0) 1f else -1f)
         }
-        events += GestureEvent.Scroll(cursorX, cursorY, swipe.x, swipe.y)
-        lastScrollMs = t
+        events += GestureEvent.ScrollVelocity(cursorX, cursorY, vx, vy)
+    }
+
+    private fun endScroll(events: MutableList<GestureEvent>) {
+        if (!scrollActive) return
+        scrollActive = false
+        scrollLeftAtMs = -1L
+        events += GestureEvent.ScrollEnd
     }
 
     // ---- Open palm: back / notifications / recents / home ----
@@ -463,7 +536,6 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
     // ---- State resets ----
 
     private fun onPoseChanged() {
-        scrollActive = false
         palmHistory.clear()
         palmHoldAnchor = null
         palmConsumed = false
@@ -473,6 +545,8 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
 
     private fun onHandLost(events: MutableList<GestureEvent>) {
         if (phase == PinchPhase.DRAGGING) events += GestureEvent.DragEnd(cursorX, cursorY)
+        endScroll(events)
+        resetClutch()
         phase = PinchPhase.IDLE
         pinch.reset()
         poses.reset()

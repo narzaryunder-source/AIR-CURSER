@@ -12,7 +12,12 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Matrix
+import android.graphics.Paint
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CaptureRequest
 import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Handler
@@ -20,7 +25,11 @@ import android.os.Looper
 import android.os.SystemClock
 import android.service.quicksettings.TileService
 import android.util.Log
+import android.util.Range
 import android.util.Size
+import androidx.annotation.OptIn
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -51,6 +60,7 @@ import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarkerResult
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -110,11 +120,27 @@ class HandTrackingService : LifecycleService() {
     @Volatile private var lastTimestamp = 0L
     @Volatile private var fps = 0f
     private var lastResultMs = 0L
+
+    // Performance
+    private val inFlight = AtomicInteger(0)
+    @Volatile private var lastCameraFrameMs = 0L
+    @Volatile private var cameraFps = 0f
+    @Volatile private var inferenceMs = 0f
+    @Volatile private var resolutionLabel = "-"
+    @Volatile private var delegateLabel = "-"
+    private var srcBitmap: Bitmap? = null
+    private val uprightPool = arrayOfNulls<Bitmap>(3)
+    private var poolIndex = 0
+    private val rotateMatrix = Matrix()
+    private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private var receiverRegistered = false
 
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == AppSettings.USE_GPU.key && isRunning) {
             analysisExecutor.execute { setupLandmarker() }
+        }
+        if ((key == AppSettings.RESOLUTION.key || key == AppSettings.HIGH_FPS_CAMERA.key) && isRunning && !screenOff) {
+            bindCamera()
         }
         applyConfig()
     }
@@ -247,7 +273,8 @@ class HandTrackingService : LifecycleService() {
         val size = ScreenUtils.realSize(this)
         val config = prefs.toGestureConfig(size.x, size.y)
         synchronized(engine) { engine.config = config }
-        targetFps = prefs.get(AppSettings.TARGET_FPS).roundToInt().coerceIn(10, 30)
+        val maxFps = prefs.get(AppSettings.TARGET_FPS)
+        targetFps = if (maxFps >= 59.5f) 0 else maxFps.roundToInt().coerceIn(10, 60)
     }
 
     private fun setPaused(paused: Boolean) {
@@ -270,8 +297,14 @@ class HandTrackingService : LifecycleService() {
         landmarker?.close()
         landmarker = null
         val useGpu = prefs.get(AppSettings.USE_GPU)
-        landmarker = createLandmarker(if (useGpu) Delegate.GPU else Delegate.CPU)
-            ?: if (useGpu) createLandmarker(Delegate.CPU) else null
+        var delegate = if (useGpu) Delegate.GPU else Delegate.CPU
+        landmarker = createLandmarker(delegate)
+        if (landmarker == null && useGpu) {
+            delegate = Delegate.CPU
+            landmarker = createLandmarker(delegate)
+        }
+        delegateLabel = delegate.name
+        inFlight.set(0)
         if (landmarker == null) {
             TrackingBus.update { it.copy(error = "Hand tracking model failed to load") }
         }
@@ -290,7 +323,10 @@ class HandTrackingService : LifecycleService() {
             .setMinHandPresenceConfidence(0.5f)
             .setMinTrackingConfidence(0.5f)
             .setResultListener { result: HandLandmarkerResult, input: MPImage -> onResult(result, input) }
-            .setErrorListener { e: RuntimeException -> Log.e(TAG, "MediaPipe error", e) }
+            .setErrorListener { e: RuntimeException ->
+                inFlight.decrementAndGet().let { if (it < 0) inFlight.set(0) }
+                Log.e(TAG, "MediaPipe error", e)
+            }
             .build()
         HandLandmarker.createFromOptions(this, options)
     } catch (e: Exception) {
@@ -300,6 +336,31 @@ class HandTrackingService : LifecycleService() {
 
     // ---- CameraX ----
 
+    private fun analysisSize(): Size = when (prefs.get(AppSettings.RESOLUTION).roundToInt()) {
+        0 -> Size(320, 240)
+        1 -> Size(480, 360)
+        else -> Size(640, 480)
+    }
+
+    /** Best AE frame rate range of the front camera: prefer a fixed 60 fps, else the highest. */
+    private fun bestFpsRange(): Range<Int>? = try {
+        val cm = getSystemService(CameraManager::class.java)
+        val front = cm.cameraIdList.firstOrNull {
+            cm.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING) ==
+                CameraCharacteristics.LENS_FACING_FRONT
+        }
+        val ranges = front?.let {
+            cm.getCameraCharacteristics(it).get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+        }
+        ranges?.filter { it.upper > 30 }
+            ?.sortedWith(compareByDescending<Range<Int>> { it.upper }.thenByDescending { it.lower })
+            ?.firstOrNull()
+    } catch (e: Exception) {
+        Log.w(TAG, "fps ranges unavailable", e)
+        null
+    }
+
+    @OptIn(ExperimentalCamera2Interop::class)
     private fun bindCamera() {
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
@@ -310,18 +371,40 @@ class HandTrackingService : LifecycleService() {
                 val selector = ResolutionSelector.Builder()
                     .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
                     .setResolutionStrategy(
-                        ResolutionStrategy(Size(640, 480), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
+                        ResolutionStrategy(analysisSize(), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
                     )
                     .build()
-                val analysis = ImageAnalysis.Builder()
+                val builder = ImageAnalysis.Builder()
                     .setResolutionSelector(selector)
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                     .setTargetRotation(ScreenUtils.rotation(this))
-                    .build()
+                val range = if (prefs.get(AppSettings.HIGH_FPS_CAMERA)) bestFpsRange() else null
+                if (range != null) {
+                    Camera2Interop.Extender(builder)
+                        .setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, range)
+                }
+                val analysis = builder.build()
                 analysis.setAnalyzer(analysisExecutor, ::analyze)
                 provider.unbindAll()
-                provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, analysis)
+                try {
+                    provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, analysis)
+                } catch (e: Exception) {
+                    if (range == null) throw e
+                    // Some phones list 60 fps but refuse it: retry at the default frame rate.
+                    Log.w(TAG, "High fps refused, retrying at default", e)
+                    val fallback = ImageAnalysis.Builder()
+                        .setResolutionSelector(selector)
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                        .setTargetRotation(ScreenUtils.rotation(this))
+                        .build()
+                    fallback.setAnalyzer(analysisExecutor, ::analyze)
+                    provider.unbindAll()
+                    provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, fallback)
+                    imageAnalysis = fallback
+                    return@addListener
+                }
                 imageAnalysis = analysis
             } catch (e: Exception) {
                 Log.e(TAG, "Camera bind failed", e)
@@ -334,34 +417,83 @@ class HandTrackingService : LifecycleService() {
     private fun analyze(image: ImageProxy) {
         try {
             val now = SystemClock.uptimeMillis()
+            if (lastCameraFrameMs > 0) {
+                val inst = 1000f / (now - lastCameraFrameMs).coerceAtLeast(1)
+                cameraFps = if (cameraFps == 0f) inst else cameraFps * 0.9f + inst * 0.1f
+            }
+            lastCameraFrameMs = now
+            resolutionLabel = "${image.width}x${image.height}"
+
             val lm = landmarker
-            // Throttle: full rate when active, ~5 fps while paused (only the fist matters then).
-            val interval = if (engine.paused) 200L else 1000L / targetFps
-            if (lm == null || screenOff || now - lastSubmitMs < interval - 4) return
+            if (lm == null || screenOff) return
+            // Throttle only when paused (fist detection needs ~5 fps) or a limit is set.
+            val interval = when {
+                engine.paused -> 200L
+                targetFps > 0 -> 1000L / targetFps - 4
+                else -> 0L
+            }
+            if (now - lastSubmitMs < interval) return
+            // Keep latency low: never queue more than 2 frames inside MediaPipe.
+            if (inFlight.get() >= 2) {
+                if (now - lastSubmitMs < 500) return
+                inFlight.set(0) // a result got lost; recover
+            }
             lastSubmitMs = now
 
-            val raw = image.toBitmap()
-            val rotation = image.imageInfo.rotationDegrees
-            val upright = if (rotation != 0) {
-                val m = Matrix().apply { postRotate(rotation.toFloat()) }
-                Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, m, false)
-            } else {
-                raw
-            }
+            val upright = toUprightBitmap(image)
             val ts = max(now, lastTimestamp + 1)
             lastTimestamp = ts
+            inFlight.incrementAndGet()
             lm.detectAsync(BitmapImageBuilder(upright).build(), ts)
         } catch (e: Exception) {
+            inFlight.set(0)
             Log.w(TAG, "analyze failed", e)
         } finally {
             image.close()
         }
     }
 
+    /**
+     * RGBA frame -> upright bitmap, reusing bitmaps instead of allocating 2 per frame.
+     * A small pool is used because MediaPipe may still read the previous frame.
+     */
+    private fun toUprightBitmap(image: ImageProxy): Bitmap {
+        val w = image.width
+        val h = image.height
+        val plane = image.planes[0]
+        val src = if (plane.pixelStride == 4 && plane.rowStride == w * 4) {
+            val b = srcBitmap?.takeIf { it.width == w && it.height == h }
+                ?: Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { srcBitmap = it }
+            plane.buffer.rewind()
+            b.copyPixelsFromBuffer(plane.buffer)
+            b
+        } else {
+            image.toBitmap()
+        }
+        val rotation = image.imageInfo.rotationDegrees
+        val ow = if (rotation == 90 || rotation == 270) h else w
+        val oh = if (rotation == 90 || rotation == 270) w else h
+        poolIndex = (poolIndex + 1) % uprightPool.size
+        val out = uprightPool[poolIndex]?.takeIf { it.width == ow && it.height == oh }
+            ?: Bitmap.createBitmap(ow, oh, Bitmap.Config.ARGB_8888).also { uprightPool[poolIndex] = it }
+        rotateMatrix.reset()
+        rotateMatrix.postRotate(rotation.toFloat())
+        when (rotation) {
+            90 -> rotateMatrix.postTranslate(h.toFloat(), 0f)
+            180 -> rotateMatrix.postTranslate(w.toFloat(), h.toFloat())
+            270 -> rotateMatrix.postTranslate(0f, w.toFloat())
+        }
+        Canvas(out).drawBitmap(src, rotateMatrix, bitmapPaint)
+        return out
+    }
+
     /** MediaPipe result callback (background thread). */
     private fun onResult(result: HandLandmarkerResult, input: MPImage) {
+        if (inFlight.decrementAndGet() < 0) inFlight.set(0)
         if (!isRunning) return
         val t = result.timestampMs()
+        val latency = (SystemClock.uptimeMillis() - t).toFloat()
+        inferenceMs = if (inferenceMs == 0f) latency else inferenceMs * 0.9f + latency * 0.1f
         val hand = result.landmarks().firstOrNull()?.map { Landmark(it.x(), it.y(), it.z()) }
         val aspect = input.width.toFloat() / input.height.coerceAtLeast(1)
 
@@ -397,9 +529,10 @@ class HandTrackingService : LifecycleService() {
         }
 
         val currentFps = fps
+        val stats = TrackingStats(currentFps, cameraFps, inferenceMs, resolutionLabel, delegateLabel)
         main.post {
             if (!isRunning) return@post
-            CursorAccessibilityService.instance?.onEngineOutput(out, currentFps)
+            CursorAccessibilityService.instance?.onEngineOutput(out, stats)
             out.events.filterIsInstance<GestureEvent.PauseChanged>().lastOrNull()?.let { onPauseChanged(it.paused) }
             val s = TrackingBus.status.value
             if (s.handPresent != out.handPresent || kotlin.math.abs(s.fps - currentFps) > 1f) {

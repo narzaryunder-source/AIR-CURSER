@@ -49,3 +49,12 @@ object TrackingBus {
         _preview.value = frame
     }
 }
+
+/** Performance numbers for the debug overlay. */
+data class TrackingStats(
+    val trackingFps: Float = 0f,
+    val cameraFps: Float = 0f,
+    val inferenceMs: Float = 0f,
+    val resolution: String = "-",
+    val delegate: String = "-",
+)

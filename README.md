@@ -61,8 +61,8 @@ APK se install kiye apps ke liye Android yeh extra step maangta hai:
 | 🤏 Jaldi se pinch (anguutha + index milao, chhodo) | **Tap / Click** |
 | 🤏 Pinch karke 0.5s ruko (hilo mat) | **Long press** |
 | 🤏 Pinch pakad ke haath hilao | **Drag** (chhodne par release) |
-| ✌️ Do ungli (index + middle) khadi, haath upar/neeche | **Scroll** (jitna door, utni tez scroll – PC ke auto-scroll jaisa; wapas beech me lao to rukega) |
-| ✌️ Do ungli, haath left/right | **Horizontal swipe** (pages / photos) |
+| ✌️ Do ungli (index + middle) khadi, haath upar/neeche | **Smooth scroll** – cursor apni jagah **ruka rehta hai**, page chalta hai. Jitna door haath, utni tez scroll (PC ke auto-scroll jaisa). Haath wapas beech me lao to rukega |
+| ✌️ Do ungli, haath left/right | **Horizontal scroll** (pages / photos) |
 | ✋ Khula panja tezi se **left** swipe | **Back** |
 | ✋ Khula panja **1 second** bilkul still | **Home** (hari ring bharegi) |
 | ✋ Khula panja **neeche** swipe | **Notifications** kholo |
@@ -70,6 +70,8 @@ APK se install kiye apps ke liye Android yeh extra step maangta hai:
 | ✊ Mutthi 1.5s | **Pause / Resume** |
 
 Har gesture ko Settings me alag se ON/OFF kar sakte ho. Gesture chalne par screen par 1 second ke liye chhota label aata hai ("Back", "Home", "Paused"...).
+
+Click, long press aur gestures par phone halka sa **vibrate** karta hai, taaki bina chhue pata chale ki click hua (Settings me band kar sakte ho).
 
 Cursor ke rang: ⚪ normal · 🟡 pinch daba hua · 🟠 drag · 🔵 scroll. Haath dikhna band ho to cursor wahin ruk jata hai aur 2 second baad halka (50%) ho jata hai.
 
@@ -87,6 +89,15 @@ Cursor ke rang: ⚪ normal · 🟡 pinch daba hua · 🟠 drag · 🔵 scroll. H
 - **Use GPU:** zyada fast; problem ho to off karo.
 - **Recalibrate:** apni finger aaram wali jagah rakho aur Recalibrate dabao – active box wahin center ho jayega.
 - **Test: live camera preview:** camera, haath ka skeleton aur active box (peela) dikhata hai.
+
+### ⚡ Smoothness / FPS (kaise kaam karta hai)
+- **Cursor screen ke refresh rate par chalta hai (60 / 90 / 120 Hz).** Camera frames ke beech me cursor ki position *predict* aur *interpolate* hoti hai, isliye 30 fps camera par bhi cursor smooth dikhta hai.
+- **Lag compensation (prediction)** slider: zyada = cursor finger ke saath aur tez chalega (lag kam), lekin rukte waqt thoda aage nikal sakta hai. Default 60%.
+- **Camera tracking FPS** phone ke front camera par depend karta hai: zyada tar phones **30 fps**, kuch **60 fps** dete hain. "60 fps camera" option ON ho to app 60 fps maangta hai jahan support ho. 100 fps camera tracking phones par possible nahi hai – isliye smoothness prediction se aati hai.
+- **GPU** default ON hai (2–3x fast). Tracking start na ho to Settings → Performance me GPU off karo.
+- **Camera resolution:** Low = sabse fast, High = door se haath better pakadta hai.
+- **Debug overlay** ON karo: screen par Tracking fps, Camera fps, Inference ms aur Render fps dikhega.
+- Scroll ke baad ya click ke baad cursor **jump nahi karta**, dheere se wapas finger par aata hai.
 
 ### Tips
 - Phone ko stand par rakho, chehra/haath camera se 30–60 cm door.

@@ -93,6 +93,9 @@ fun HomeScreen(onOpenSetup: () -> Unit, onOpenPreview: () -> Unit) {
                             fontWeight = FontWeight.Bold,
                         )
                         val line = when {
+                            on && status.handPresent && !status.paused && !status.screenOff &&
+                                status.accessibilityConnected ->
+                                "Hand detected · %.0f fps tracking".format(status.fps)
                             !on -> "Tap the switch to start"
                             status.screenOff -> "Waiting for unlock"
                             status.paused -> "Paused – make a fist 1.5s to resume"
@@ -172,10 +175,20 @@ fun HomeScreen(onOpenSetup: () -> Unit, onOpenPreview: () -> Unit) {
                 Spacer(Modifier.height(16.dp))
                 SectionTitle("Cursor movement")
                 Text(
-                    "Lower smoothing = steadier cursor. Higher responsiveness = less lag on fast moves.",
+                    "Lag compensation predicts where your finger is going, so the cursor keeps up. " +
+                        "Lower smoothing = steadier cursor. Higher responsiveness = less lag on fast moves.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 AppSettings.SLIDERS.forEach { SliderRow(prefs, it) }
+
+                Spacer(Modifier.height(16.dp))
+                SectionTitle("Performance")
+                Text(
+                    "Camera changes restart the camera instantly.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                AppSettings.PERFORMANCE_OPTIONS.forEach { BoolRow(prefs, it) }
+                AppSettings.PERFORMANCE_SLIDERS.forEach { SliderRow(prefs, it) }
 
                 Spacer(Modifier.height(16.dp))
                 SectionTitle("Options")
