@@ -49,6 +49,12 @@ Exec=/usr/local/bin/aircursor-heal
 NoDisplay=true
 AUTO
 
+# Games live in /usr/games, which is not on the PATH inside proot: link them
+for f in /usr/games/*; do [ -f "$f" ] && ln -sf "$f" /usr/local/bin/; done
+grep -q '/usr/games' /etc/profile.d/aircursor-path.sh 2>/dev/null || \
+    echo 'case ":$PATH:" in *:/usr/games:*) ;; *) export PATH="$PATH:/usr/local/games:/usr/games" ;; esac' \
+    > /etc/profile.d/aircursor-path.sh
+
 # Extra apps menu
 [ -f /tmp/aircursor-ubuntu-extras.sh ] && install -m 0755 /tmp/aircursor-ubuntu-extras.sh /usr/local/bin/ubuntu-extras
 

@@ -48,7 +48,8 @@ echo "  Ubuntu desktop is starting – open the Termux:X11 app (first start: 1-2
 echo "  Stop: press CTRL+C here, or run ubuntu-stop in a new session."
 echo "  (Technical messages are saved in ~/ubuntu-desktop.log)"
 proot-distro login ubuntu --user __USER__ --shared-tmp -- \
-    env DISPLAY=:0 PULSE_SERVER=tcp:127.0.0.1 $GPU_ENV dbus-launch --exit-with-session startxfce4 >"$LOG" 2>&1
+    env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/games:/usr/games \
+    DISPLAY=:0 PULSE_SERVER=tcp:127.0.0.1 $GPU_ENV dbus-launch --exit-with-session startxfce4 >"$LOG" 2>&1
 echo "  Desktop stopped."
 LAUNCH_EOF
 

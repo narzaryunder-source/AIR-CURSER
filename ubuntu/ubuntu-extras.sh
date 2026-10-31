@@ -169,5 +169,7 @@ MENU
         0) exit 0 ;;
         *) echo "Unknown choice" ;;
     esac
+    # Games go to /usr/games (not on the PATH here): make them start from terminal and menu
+    for f in /usr/games/*; do [ -f "$f" ] && ln -sf "$f" /usr/local/bin/; done
     chown -R "$REAL_USER:$REAL_USER" "/home/$REAL_USER" 2>/dev/null || true
 done
