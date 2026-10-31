@@ -91,6 +91,15 @@ class HandTrackingService : LifecycleService() {
         var isRunning = false
             private set
 
+        @Volatile
+        private var instance: HandTrackingService? = null
+
+        /** Keyboard cursor moved: the hand cursor continues from there. */
+        fun warpCursor(x: Float, y: Float) {
+            val s = instance ?: return
+            synchronized(s.engine) { s.engine.warpCursor(x, y) }
+        }
+
         /** Must be called while our app is visible (Android 14 rule for camera services). */
         fun start(context: Context) {
             ContextCompat.startForegroundService(
@@ -191,6 +200,7 @@ class HandTrackingService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         prefs = Prefs(this)
         analysisExecutor = Executors.newSingleThreadExecutor()
         createChannel()
@@ -282,6 +292,7 @@ class HandTrackingService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        if (instance === this) instance = null
         if (isRunning) stopTracking()
         analysisExecutor.shutdown()
         super.onDestroy()

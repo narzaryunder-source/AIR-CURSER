@@ -270,6 +270,15 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
         recalibrateRequested = true
     }
 
+    /** Moves the cursor somewhere else (keyboard cursor); the hand continues from there. */
+    fun warpCursor(x: Float, y: Float) {
+        cursorX = x.coerceIn(0f, config.screenWidth - 1f)
+        cursorY = y.coerceIn(0f, config.screenHeight - 1f)
+        pointerX = cursorX
+        pointerY = cursorY
+        frozen = true
+    }
+
     fun resetCalibration() {
         offsetX = 0f
         offsetY = 0f

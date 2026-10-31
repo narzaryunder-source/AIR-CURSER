@@ -1,5 +1,6 @@
 <resources>
     <string name="app_name">AirCursor</string>
     <string name="accessibility_label">AirCursor</string>
+    <string name="pc_mode_label">AirCursor PC</string>
     <string name="accessibility_description">AirCursor shows a mouse pointer that you move with your index finger in front of the front camera. It uses this service only to draw the pointer over other apps and to perform taps, swipes, Back, Home and the notification shade for you. It does not read or collect screen content, and nothing leaves your phone.</string>
 </resources>

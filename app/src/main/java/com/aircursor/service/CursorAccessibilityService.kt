@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
@@ -19,6 +20,10 @@ import com.aircursor.core.EngineOutput
 import com.aircursor.core.GestureEvent
 import com.aircursor.data.AppSettings
 import com.aircursor.data.Prefs
+import com.aircursor.core.CursorMode
+import com.aircursor.core.KeyMouse
+import com.aircursor.pc.PcMode
+import com.aircursor.pc.TaskbarOverlay
 
 /**
  * Draws the cursor overlay and performs taps / swipes / global actions.
@@ -42,6 +47,13 @@ class CursorAccessibilityService : AccessibilityService() {
     private lateinit var scroller: ScrollController
     private lateinit var haptics: Haptics
     private var showFps = false
+    private lateinit var taskbar: TaskbarOverlay
+    private val pcListener: () -> Unit = { updateTaskbar() }
+
+    // Keyboard cursor position (also follows the hand cursor).
+    private var cursorX = -1f
+    private var cursorY = -1f
+    private var metaAlone = false
 
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> applyPrefs() }
 
@@ -53,9 +65,12 @@ class CursorAccessibilityService : AccessibilityService() {
         drag = DragController(this, main)
         scroller = ScrollController(this, main) { screenW() to screenH() }
         haptics = Haptics(this)
+        taskbar = TaskbarOverlay(this)
+        PcMode.addListener(pcListener)
         windowManager = getSystemService(WindowManager::class.java)
         TrackingBus.update { it.copy(accessibilityConnected = true) }
         if (HandTrackingService.isRunning) onTrackingStarted()
+        updateTaskbar()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
@@ -77,6 +92,8 @@ class CursorAccessibilityService : AccessibilityService() {
         instance = null
         drag.cancel()
         scroller.cancel()
+        PcMode.removeListener(pcListener)
+        if (::taskbar.isInitialized) taskbar.hide()
         removeOverlay()
         if (::prefs.isInitialized) prefs.sp.unregisterOnSharedPreferenceChangeListener(prefListener)
         TrackingBus.update { it.copy(accessibilityConnected = false) }
@@ -145,6 +162,7 @@ class CursorAccessibilityService : AccessibilityService() {
         cursorView?.cursorScale = prefs.get(AppSettings.CURSOR_SIZE)
         cursorView?.prediction = prefs.get(AppSettings.PREDICTION)
         haptics.enabled = prefs.get(AppSettings.HAPTICS)
+        updateTaskbar()
         if (!showFps) cursorView?.debugText = null
     }
 
@@ -155,8 +173,108 @@ class CursorAccessibilityService : AccessibilityService() {
     fun onTrackingStopped() {
         drag.cancel()
         scroller.cancel()
-        removeOverlay()
+        // In PC mode the cursor stays for the keyboard; otherwise it goes away with the camera.
+        if (!PcMode.isEnabled(this)) removeOverlay()
     }
+
+    // ---- PC mode: taskbar over all apps ----
+
+    private fun updateTaskbar() {
+        if (!::taskbar.isInitialized) return
+        val want = PcMode.isEnabled(this) && !PcMode.desktopVisible
+        if (want && !taskbar.isShown) {
+            taskbar.show()
+            // Keep the cursor drawn above the taskbar.
+            if (cursorView != null) {
+                removeOverlay()
+                addOverlay()
+            }
+        } else if (!want && taskbar.isShown) {
+            taskbar.hide()
+        }
+    }
+
+    // ---- PC mode: keyboard shortcuts and keyboard cursor ----
+
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        if (!::prefs.isInitialized || !PcMode.isEnabled(this)) return false
+        val code = event.keyCode
+        val down = event.action == KeyEvent.ACTION_DOWN
+        val isMeta = code == KeyEvent.KEYCODE_META_LEFT || code == KeyEvent.KEYCODE_META_RIGHT
+
+        // The PC desktop handles its own Win key / Alt+Tab (for its windows).
+        if (!PcMode.desktopVisible) {
+            if (isMeta) {
+                if (down) {
+                    metaAlone = true
+                } else if (metaAlone) {
+                    PcMode.openDesktop(this, startMenu = true)
+                }
+                return true
+            }
+            if (down && event.isMetaPressed) {
+                metaAlone = false
+                val handled = when (code) {
+                    KeyEvent.KEYCODE_D -> { PcMode.openDesktop(this); true }
+                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT ->
+                        performGlobalAction(GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN)
+                    KeyEvent.KEYCODE_N -> performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+                    KeyEvent.KEYCODE_L -> performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+                    else -> false
+                }
+                if (handled) return true
+            }
+            if (down && event.isAltPressed && code == KeyEvent.KEYCODE_TAB) {
+                performGlobalAction(GLOBAL_ACTION_RECENTS)
+                return true
+            }
+        }
+
+        // Keyboard cursor: Alt + arrows move, Alt + Enter clicks.
+        if (PcMode.keyboardCursor(this) && event.isAltPressed) {
+            val dx = when (code) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> -1f
+                KeyEvent.KEYCODE_DPAD_RIGHT -> 1f
+                else -> 0f
+            }
+            val dy = when (code) {
+                KeyEvent.KEYCODE_DPAD_UP -> -1f
+                KeyEvent.KEYCODE_DPAD_DOWN -> 1f
+                else -> 0f
+            }
+            if (dx != 0f || dy != 0f) {
+                if (down) moveKeyboardCursor(dx, dy, event.repeatCount)
+                return true
+            }
+            if (code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                if (down && event.repeatCount == 0) keyboardClick()
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun moveKeyboardCursor(dx: Float, dy: Float, repeat: Int) {
+        if (cursorView == null) addOverlay()
+        val view = cursorView ?: return
+        if (cursorX < 0f) {
+            cursorX = screenW() / 2f
+            cursorY = screenH() / 2f
+        }
+        val step = KeyMouse.step(repeat, resources.displayMetrics.density)
+        cursorX = (cursorX + dx * step).coerceIn(0f, screenW() - 1f)
+        cursorY = (cursorY + dy * step).coerceIn(0f, screenH() - 1f)
+        view.update(cursorX, cursorY, android.os.SystemClock.uptimeMillis(), CursorMode.NORMAL, true, null, 0f)
+        HandTrackingService.warpCursor(cursorX, cursorY)
+    }
+
+    private fun keyboardClick() {
+        if (cursorX < 0f) return
+        cursorView?.ripple(cursorX, cursorY)
+        haptics.click()
+        tap(cursorX, cursorY)
+    }
+
 
     fun showLabel(text: String) {
         cursorView?.showLabel(text)
@@ -166,6 +284,10 @@ class CursorAccessibilityService : AccessibilityService() {
 
     fun onEngineOutput(out: EngineOutput, stats: TrackingStats) {
         val view = cursorView ?: return
+        if (out.handPresent) {
+            cursorX = out.x
+            cursorY = out.y
+        }
         view.update(out.x, out.y, out.timestampMs, out.mode, out.handPresent, out.holdKind, out.holdProgress)
         if (showFps) {
             view.debugText = ("Tracking: %.1f fps\nCamera: %.0f fps (%s)\nInference: %.0f ms (%s)\n" +

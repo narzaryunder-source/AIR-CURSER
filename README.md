@@ -90,6 +90,23 @@ Cursor ke rang: ⚪ normal · 🟡 pinch daba hua · 🟠 drag · 🔵 scroll. H
 - **Recalibrate:** apni finger aaram wali jagah rakho aur Recalibrate dabao – active box wahin center ho jayega.
 - **Test: live camera preview:** camera, haath ka skeleton aur active box (peela) dikhata hai.
 
+### 🖥️ PC Mode (kaam chalao PC)
+Home screen → **"🖥️ Open PC Mode"** (ya phone ke app drawer me **"AirCursor PC"** icon). Phone ko landscape me rakho.
+- **Desktop:** wallpaper, icons, neeche **taskbar** (Start, khule windows, pinned apps, battery, clock).
+- **Start menu:** apps search, saare apps, Settings, Lock, **Exit PC mode**.
+- **Windows:** Files, Notepad, Calculator, Paint asli khidkiyon me – title bar se khiskao, kone (◢) se chhota-bada, — ☐ ✕ buttons, title par double-tap = maximize.
+- **Right-click / long-press:** desktop par (wallpaper, new note), app par (Open, Pin to taskbar, App info).
+- **Doosre apps:** Start menu se kholo. "Open apps as windows" ON ho aur phone support kare (Developer options → *Enable freeform windows*) to chhoti khidki me khulenge, warna full screen.
+- **Taskbar har app ke upar:** Start, Desktop, Back, Apps (Alt+Tab), Split screen, Notifications. **▾** dabake chhota karo, **▴ PC** se wapas.
+- **Keyboard:** Win = Start menu · Alt+Tab = agla window/app · Alt+F4 = window band · Win+D = desktop · Win+←/→ = split screen · Win+L = lock · **Alt + Arrow keys = cursor chalao, Alt + Enter = click**.
+- Keyboard shortcuts ke liye agar kaam na kare to ek baar Accessibility me AirCursor OFF → ON karo (naya keyboard permission).
+
+**Data safety (phone ka data delete nahi hoga):**
+- Files app sirf wahi folder dekhta hai jo aap chunte ho (koi "All files access" permission nahi).
+- **Delete karne ka option hi nahi hai** – "Move to Recycle Bin" file ko `AirCursor Recycle Bin` folder me rakhta hai, wahan se **Restore**.
+- Copy/Paste, Rename, New folder hamesha **naya naam** banate hain – koi file overwrite nahi hoti.
+- Notepad ke notes sirf app ke andar save hote hain; Paint har baar **nayi** picture banata hai (Pictures/AirCursor).
+
 ### 🔒 Security: Owner hand lock + PIN
 Home screen → **"🔒 Security"**:
 1. **PIN banao** (4–8 digits). Iske baad AirCursor app kholne par PIN maanga jayega.

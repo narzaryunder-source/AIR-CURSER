@@ -155,6 +155,17 @@ fun HomeScreen(onOpenSetup: () -> Unit, onOpenPreview: () -> Unit, onOpenSecurit
                 }
             }
 
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = { com.aircursor.pc.PcMode.openDesktop(context) },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+            ) { Text("🖥️  Open PC Mode", style = MaterialTheme.typography.titleMedium) }
+            Text(
+                "Desktop, taskbar, start menu, windows, Files, Notepad, Calculator, Paint. " +
+                    "Exit from Start → \"Exit PC mode\". Your phone's files are never deleted.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+
             // Setup status
             Spacer(Modifier.height(16.dp))
             SectionTitle("Setup")
