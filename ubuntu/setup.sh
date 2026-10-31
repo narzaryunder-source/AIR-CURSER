@@ -124,7 +124,7 @@ step 5 40 "Installing the XFCE desktop (biggest step, 10-30 min)"
 apt-get install "${APT_OPTS[@]}" --no-install-recommends \
     sudo locales dbus-x11 at-spi2-core ca-certificates curl wget git nano gnupg \
     xfce4 xfce4-terminal xfce4-taskmanager thunar mousepad ristretto \
-    fonts-dejavu-core fonts-noto-color-emoji xdg-utils pulseaudio-utils
+    fonts-dejavu-core fonts-noto-color-emoji xdg-utils pulseaudio-utils librsvg2-common
 # Nice-to-have packages (names differ between Ubuntu releases, so each is optional)
 step 6 70 "Installing small extras"
 for p in xfce4-whiskermenu-plugin adwaita-icon-theme xarchiver htop; do
