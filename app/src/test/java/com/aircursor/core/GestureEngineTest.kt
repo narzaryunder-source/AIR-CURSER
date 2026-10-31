@@ -8,7 +8,13 @@ import org.junit.Test
 
 class GestureEngineTest {
 
-    private val baseConfig = GestureConfig(screenWidth = 1080, screenHeight = 2400, mirrorX = false)
+    private val baseConfig = GestureConfig(
+        screenWidth = 1080,
+        screenHeight = 2400,
+        mirrorX = false,
+        pointerMode = PointerMode.ABSOLUTE,
+    )
+    private val mouseConfig = baseConfig.copy(pointerMode = PointerMode.RELATIVE)
 
     /** Feeds frames at ~30 fps and collects all events. */
     private class Driver(val engine: GestureEngine) {
@@ -16,9 +22,17 @@ class GestureEngineTest {
         val events = mutableListOf<GestureEvent>()
         lateinit var last: EngineOutput
 
-        fun feed(shape: Shape?, cx: Float = 0.5f, cy: Float = 0.7f, frames: Int = 1): Driver {
+        fun feed(
+            shape: Shape?,
+            cx: Float = 0.5f,
+            cy: Float = 0.7f,
+            frames: Int = 1,
+            size: Float = 0.15f,
+            noise: (() -> Float)? = null,
+        ): Driver {
             repeat(frames) {
-                val lms = shape?.let { FakeHand.build(it, cx, cy) }
+                var lms = shape?.let { FakeHand.build(it, cx, cy, size) }
+                if (noise != null) lms = lms?.map { Landmark(it.x + noise(), it.y + noise(), it.z) }
                 last = engine.process(HandFrame(t, lms))
                 events += last.events
                 t += 33
@@ -92,7 +106,7 @@ class GestureEngineTest {
             x += 0.03f
             d.feed(Shape.PINCH, cx = x)
         }
-        d.feed(null)
+        d.feed(null, frames = 8)
         assertEquals(1, d.count<GestureEvent.DragEnd>())
         assertFalse(d.last.handPresent)
     }
@@ -272,14 +286,129 @@ class GestureEngineTest {
             o = e.process(HandFrame(33, FakeHand.build(Shape.POINT, cy = 0.7f)))
             o.y
         }
-        assertEquals(target, d.last.y, 6f)
+        assertEquals(target, d.last.y, 8f)
     }
 
     @Test
     fun handLostEndsScroll() {
         val d = Driver(GestureEngine(baseConfig))
-        d.feed(Shape.TWO_FINGERS, frames = 5).feed(null)
+        d.feed(Shape.TWO_FINGERS, frames = 8).feed(null, frames = 8)
         assertEquals(1, d.count<GestureEvent.ScrollEnd>())
+    }
+
+    @Test
+    fun shortTrackingDropOutIsBridged() {
+        val d = Driver(GestureEngine(baseConfig))
+        d.feed(Shape.POINT, frames = 5).feed(Shape.PINCH, frames = 5)
+        var x = 0.5f
+        repeat(6) {
+            x += 0.03f
+            d.feed(Shape.PINCH, cx = x)
+        }
+        d.feed(null, frames = 3)
+        assertTrue(d.last.handPresent)
+        assertEquals(0, d.count<GestureEvent.DragEnd>())
+        d.feed(Shape.PINCH, cx = x, frames = 2)
+        assertEquals(CursorMode.DRAGGING, d.last.mode)
+    }
+
+    @Test
+    fun relaxedMiddleFingerWhilePointingIsNotScroll() {
+        // Middle finger half bent (tip a bit above its knuckle) must still be "pointing".
+        val hand = FakeHand.build(Shape.POINT).toMutableList()
+        val mcp = hand[HandIdx.MIDDLE_MCP]
+        val size = 0.15f
+        hand[HandIdx.MIDDLE_PIP] = Landmark(mcp.x, mcp.y - 0.3f * size)
+        hand[HandIdx.MIDDLE_DIP] = Landmark(mcp.x, mcp.y - 0.4f * size)
+        hand[HandIdx.MIDDLE_TIP] = Landmark(mcp.x, mcp.y - 0.4f * size)
+        assertEquals(HandPose.POINT, PoseClassifier.classify(HandGeometry(hand)))
+    }
+
+    // ---- Mouse (relative) mode ----
+
+    private fun mouseMove(size: Float, handSizes: Float, steps: Int): Float {
+        val d = Driver(GestureEngine(mouseConfig))
+        d.feed(Shape.POINT, cx = 0.3f, size = size, frames = 10)
+        val start = d.last.x
+        var x = 0.3f
+        repeat(steps) {
+            x += handSizes * size / steps
+            d.feed(Shape.POINT, cx = x, size = size)
+        }
+        d.feed(Shape.POINT, cx = x, size = size, frames = 20)
+        return d.last.x - start
+    }
+
+    @Test
+    fun mouseModeFeelsTheSameNearAndFar() {
+        val near = mouseMove(size = 0.25f, handSizes = 0.1f, steps = 8)
+        val far = mouseMove(size = 0.08f, handSizes = 0.1f, steps = 8)
+        assertTrue(near > 100f)
+        assertEquals(near, far, near * 0.15f)
+    }
+
+    @Test
+    fun mouseModeAcceleratesFastMoves() {
+        val slow = mouseMove(size = 0.15f, handSizes = 0.1f, steps = 60)
+        val fast = mouseMove(size = 0.15f, handSizes = 0.1f, steps = 3)
+        assertTrue("fast $fast vs slow $slow", fast > slow * 1.3f)
+    }
+
+    @Test
+    fun mouseModeIgnoresTremor() {
+        val rnd = java.util.Random(7)
+        val d = Driver(GestureEngine(mouseConfig))
+        val noise = { (rnd.nextFloat() - 0.5f) * 0.0016f }
+        d.feed(Shape.POINT, frames = 20, noise = noise)
+        val start = d.last
+        var maxDrift = 0f
+        repeat(60) {
+            d.feed(Shape.POINT, noise = noise)
+            maxDrift = maxOf(maxDrift, kotlin.math.hypot(d.last.x - start.x, d.last.y - start.y))
+        }
+        assertTrue("cursor shook by $maxDrift px", maxDrift < 20f)
+    }
+
+    @Test
+    fun mouseModeDoesNotJumpWhenHandComesBack() {
+        val d = Driver(GestureEngine(mouseConfig))
+        d.feed(Shape.POINT, cx = 0.5f, frames = 10)
+        val before = d.last
+        d.feed(null, frames = 20).feed(Shape.POINT, cx = 0.2f, cy = 0.5f, frames = 5)
+        assertEquals(before.x, d.last.x, 1f)
+        assertEquals(before.y, d.last.y, 1f)
+    }
+
+    @Test
+    fun mouseModeClickLandsWhereCursorWas() {
+        val d = Driver(GestureEngine(mouseConfig))
+        d.feed(Shape.POINT, frames = 10)
+        var x = 0.5f
+        repeat(5) {
+            x += 0.02f
+            d.feed(Shape.POINT, cx = x)
+        }
+        d.feed(Shape.POINT, cx = x, frames = 10)
+        val before = d.last
+        d.feed(Shape.PINCH, cx = x, frames = 3).feed(Shape.POINT, cx = x, frames = 3)
+        val tap = d.events.filterIsInstance<GestureEvent.Tap>().single()
+        assertEquals(before.x, tap.x, 1f)
+        assertEquals(before.y, tap.y, 1f)
+    }
+
+    @Test
+    fun mouseModeCursorStaysStillWhileScrolling() {
+        val d = Driver(GestureEngine(mouseConfig))
+        d.feed(Shape.POINT, frames = 10)
+        val before = d.last
+        var y = 0.7f
+        repeat(15) {
+            y += 0.01f
+            d.feed(Shape.TWO_FINGERS, cy = y)
+        }
+        assertEquals(before.x, d.last.x, 0.5f)
+        assertEquals(before.y, d.last.y, 0.5f)
+        assertTrue(d.events.filterIsInstance<GestureEvent.ScrollVelocity>().any { it.vy != 0f })
     }
 
     @Test

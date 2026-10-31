@@ -174,6 +174,7 @@ fun HomeScreen(onOpenSetup: () -> Unit, onOpenPreview: () -> Unit) {
 
                 Spacer(Modifier.height(16.dp))
                 SectionTitle("Cursor movement")
+                BoolRow(prefs, AppSettings.MOUSE_MODE)
                 Text(
                     "Lag compensation predicts where your finger is going, so the cursor keeps up. " +
                         "Lower smoothing = steadier cursor. Higher responsiveness = less lag on fast moves.",

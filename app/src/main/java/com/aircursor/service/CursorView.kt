@@ -12,6 +12,7 @@ import android.view.Choreographer
 import android.view.View
 import kotlin.math.abs
 import kotlin.math.exp
+import kotlin.math.hypot
 import kotlin.math.min
 import com.aircursor.core.CursorMode
 import com.aircursor.core.HoldKind
@@ -53,6 +54,7 @@ class CursorView(context: Context) : View(context) {
     private var tgtT = 0L
     private var velX = 0f
     private var velY = 0f
+    private var sampleInterval = 33f
 
     /** 0 = no prediction, 1 = extrapolate over the full tracking latency. */
     var prediction = 0.6f
@@ -140,11 +142,18 @@ class CursorView(context: Context) : View(context) {
         val moving = handPresent && this.handPresent &&
             (mode == CursorMode.NORMAL || mode == CursorMode.DRAGGING)
         val dt = (sampleMs - tgtT).toFloat()
+        if (dt in 1f..250f) sampleInterval = sampleInterval * 0.8f + dt * 0.2f
         if (moving && tgtX >= 0f && dt in 1f..250f) {
             val ivx = ((x - tgtX) / dt).coerceIn(-8f, 8f)
             val ivy = ((y - tgtY) / dt).coerceIn(-8f, 8f)
-            velX = velX * 0.4f + ivx * 0.6f
-            velY = velY * 0.4f + ivy * 0.6f
+            // A still hand gives identical samples (anti-shake), so stop at once.
+            if (ivx == 0f && ivy == 0f) {
+                velX = 0f
+                velY = 0f
+            } else {
+                velX = velX * 0.5f + ivx * 0.5f
+                velY = velY * 0.5f + ivy * 0.5f
+            }
         } else {
             velX = 0f
             velY = 0f
@@ -184,16 +193,22 @@ class CursorView(context: Context) : View(context) {
         renderFps = if (renderFps == 0f) 1000f / dt else renderFps * 0.9f + (1000f / dt) * 0.1f
 
         if (tgtX >= 0f) {
-            val age = (now - tgtT).coerceIn(0L, 200L).toFloat()
-            // Stop extrapolating when samples get old (hand stopped being tracked).
-            val fresh = if (age <= 90f) 1f else (1f - (age - 90f) / 60f).coerceAtLeast(0f)
-            val lead = min(age * prediction, 80f) * fresh
+            val age = (now - tgtT).coerceIn(0L, 300L).toFloat()
+            val interval = sampleInterval.coerceIn(10f, 120f)
+            // Keep gliding between camera samples (no stop-and-go at low tracking fps) and,
+            // when moving fast, look ahead to hide the camera + inference delay.
+            val speed = hypot(velX, velY) // px per ms
+            val fastness = ((speed - 0.25f) / 0.75f).coerceIn(0f, 1f)
+            val glide = min(age, interval * 1.2f)
+            val lookAhead = prediction * fastness * min(interval * 1.5f, 70f)
+            val fresh = if (age <= interval * 2.5f) 1f else 0f
+            val lead = (glide + lookAhead) * fresh
             val maxX = (width + screenOffset[0] - 1).toFloat().coerceAtLeast(0f)
             val maxY = (height + screenOffset[1] - 1).toFloat().coerceAtLeast(0f)
             val px = (tgtX + velX * lead).coerceIn(0f, maxX)
             val py = (tgtY + velY * lead).coerceIn(0f, maxY)
-            // Ease towards the predicted point; more easing when prediction is low.
-            val tau = 8f + (1f - prediction) * 22f
+            // Light easing absorbs the small corrections when a new sample arrives.
+            val tau = 14f
             val a = 1f - exp(-dt / tau)
             cx += (px - cx) * a
             cy += (py - cy) * a

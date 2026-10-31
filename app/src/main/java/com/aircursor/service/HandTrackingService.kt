@@ -79,6 +79,9 @@ class HandTrackingService : LifecycleService() {
         const val ACTION_STOP = "com.aircursor.action.STOP"
         const val ACTION_TOGGLE_PAUSE = "com.aircursor.action.TOGGLE_PAUSE"
         const val ACTION_RECALIBRATE = "com.aircursor.action.RECALIBRATE"
+        private const val KEY_AUTO_DELEGATE = "auto_delegate"
+        private const val BENCH_WARMUP = 10
+        private const val BENCH_SAMPLES = 30
 
         @Volatile
         var isRunning = false
@@ -133,13 +136,21 @@ class HandTrackingService : LifecycleService() {
     private var poolIndex = 0
     private val rotateMatrix = Matrix()
     private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+
+    // Auto processor choice: measure GPU, then CPU, keep the faster one (done once per install).
+    @Volatile private var benchDelegate: Delegate? = null
+    private val benchSamples = ArrayList<Float>()
+    private var benchGpuMs = Float.MAX_VALUE
     private var receiverRegistered = false
 
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == AppSettings.USE_GPU.key && isRunning) {
+        if (key == AppSettings.PROCESSOR.key && isRunning) {
+            // Picking "Auto" again re-measures which processor is faster.
+            if (prefs.get(AppSettings.PROCESSOR).roundToInt() == 0) prefs.sp.edit().remove(KEY_AUTO_DELEGATE).apply()
             analysisExecutor.execute { setupLandmarker() }
         }
-        if ((key == AppSettings.RESOLUTION.key || key == AppSettings.HIGH_FPS_CAMERA.key) && isRunning && !screenOff) {
+        val cameraKeys = setOf(AppSettings.RESOLUTION.key, AppSettings.HIGH_FPS_CAMERA.key, AppSettings.STABLE_30.key)
+        if (key in cameraKeys && isRunning && !screenOff) {
             bindCamera()
         }
         applyConfig()
@@ -294,19 +305,75 @@ class HandTrackingService : LifecycleService() {
 
     /** Runs on [analysisExecutor]. */
     private fun setupLandmarker() {
+        val choice = prefs.get(AppSettings.PROCESSOR).roundToInt()
+        benchDelegate = null
+        val delegate = when (choice) {
+            1 -> Delegate.GPU
+            2 -> Delegate.CPU
+            else -> when (prefs.sp.getString(KEY_AUTO_DELEGATE, null)) {
+                "GPU" -> Delegate.GPU
+                "CPU" -> Delegate.CPU
+                else -> {
+                    benchGpuMs = Float.MAX_VALUE
+                    benchDelegate = Delegate.GPU
+                    Delegate.GPU
+                }
+            }
+        }
+        loadLandmarker(delegate, auto = choice == 0)
+    }
+
+    /** Runs on [analysisExecutor]. */
+    private fun loadLandmarker(wanted: Delegate, auto: Boolean) {
         landmarker?.close()
         landmarker = null
-        val useGpu = prefs.get(AppSettings.USE_GPU)
-        var delegate = if (useGpu) Delegate.GPU else Delegate.CPU
+        var delegate = wanted
         landmarker = createLandmarker(delegate)
-        if (landmarker == null && useGpu) {
+        if (landmarker == null && delegate == Delegate.GPU) {
             delegate = Delegate.CPU
             landmarker = createLandmarker(delegate)
+            if (benchDelegate != null) {
+                // No usable GPU: nothing to compare.
+                benchDelegate = null
+                prefs.sp.edit().putString(KEY_AUTO_DELEGATE, "CPU").apply()
+            }
         }
-        delegateLabel = delegate.name
+        synchronized(benchSamples) { benchSamples.clear() }
+        delegateLabel = when {
+            benchDelegate != null -> "${delegate.name}, testing speed…"
+            auto -> "${delegate.name}, auto"
+            else -> delegate.name
+        }
         inFlight.set(0)
         if (landmarker == null) {
             TrackingBus.update { it.copy(error = "Hand tracking model failed to load") }
+        }
+    }
+
+    /** Called from the result thread with one latency sample while benchmarking. */
+    private fun recordBenchmark(latencyMs: Float) {
+        val current = benchDelegate ?: return
+        val median = synchronized(benchSamples) {
+            benchSamples += latencyMs
+            if (benchSamples.size < BENCH_WARMUP + BENCH_SAMPLES) return
+            val m = benchSamples.drop(BENCH_WARMUP).sorted()[BENCH_SAMPLES / 2]
+            benchSamples.clear()
+            m
+        }
+        if (current == Delegate.GPU) {
+            benchGpuMs = median
+            benchDelegate = Delegate.CPU
+            analysisExecutor.execute { loadLandmarker(Delegate.CPU, auto = true) }
+        } else {
+            val best = if (benchGpuMs <= median) Delegate.GPU else Delegate.CPU
+            Log.i(TAG, "Benchmark: GPU ${benchGpuMs}ms, CPU ${median}ms -> $best")
+            prefs.sp.edit().putString(KEY_AUTO_DELEGATE, best.name).apply()
+            benchDelegate = null
+            if (best == Delegate.GPU) {
+                analysisExecutor.execute { loadLandmarker(Delegate.GPU, auto = true) }
+            } else {
+                delegateLabel = "CPU, auto"
+            }
         }
     }
 
@@ -319,9 +386,10 @@ class HandTrackingService : LifecycleService() {
             .setBaseOptions(base)
             .setRunningMode(RunningMode.LIVE_STREAM)
             .setNumHands(1)
-            .setMinHandDetectionConfidence(0.5f)
-            .setMinHandPresenceConfidence(0.5f)
-            .setMinTrackingConfidence(0.5f)
+            // Lower thresholds keep the hand tracked during fast moves and from further away.
+            .setMinHandDetectionConfidence(0.4f)
+            .setMinHandPresenceConfidence(0.4f)
+            .setMinTrackingConfidence(0.3f)
             .setResultListener { result: HandLandmarkerResult, input: MPImage -> onResult(result, input) }
             .setErrorListener { e: RuntimeException ->
                 inFlight.decrementAndGet().let { if (it < 0) inFlight.set(0) }
@@ -342,8 +410,11 @@ class HandTrackingService : LifecycleService() {
         else -> Size(640, 480)
     }
 
-    /** Best AE frame rate range of the front camera: prefer a fixed 60 fps, else the highest. */
-    private fun bestFpsRange(): Range<Int>? = try {
+    /**
+     * Frame rate range to request. Default: a fixed 30 fps so the camera does not drop to 15 fps
+     * indoors. 60 fps only when the user enables it (some phones give broken frames at 60).
+     */
+    private fun chooseFpsRange(): Range<Int>? = try {
         val cm = getSystemService(CameraManager::class.java)
         val front = cm.cameraIdList.firstOrNull {
             cm.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING) ==
@@ -351,10 +422,15 @@ class HandTrackingService : LifecycleService() {
         }
         val ranges = front?.let {
             cm.getCameraCharacteristics(it).get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+        }?.toList().orEmpty()
+        val high = if (prefs.get(AppSettings.HIGH_FPS_CAMERA)) {
+            ranges.filter { it.upper >= 60 }
+                .sortedWith(compareByDescending<Range<Int>> { it.lower == it.upper }.thenByDescending { it.lower })
+                .firstOrNull()
+        } else {
+            null
         }
-        ranges?.filter { it.upper > 30 }
-            ?.sortedWith(compareByDescending<Range<Int>> { it.upper }.thenByDescending { it.lower })
-            ?.firstOrNull()
+        high ?: if (prefs.get(AppSettings.STABLE_30)) ranges.firstOrNull { it.lower == 30 && it.upper == 30 } else null
     } catch (e: Exception) {
         Log.w(TAG, "fps ranges unavailable", e)
         null
@@ -379,7 +455,7 @@ class HandTrackingService : LifecycleService() {
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                     .setTargetRotation(ScreenUtils.rotation(this))
-                val range = if (prefs.get(AppSettings.HIGH_FPS_CAMERA)) bestFpsRange() else null
+                val range = chooseFpsRange()
                 if (range != null) {
                     Camera2Interop.Extender(builder)
                         .setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, range)
@@ -433,8 +509,9 @@ class HandTrackingService : LifecycleService() {
                 else -> 0L
             }
             if (now - lastSubmitMs < interval) return
-            // Keep latency low: never queue more than 2 frames inside MediaPipe.
-            if (inFlight.get() >= 2) {
+            // Keep latency low: never queue more than 2 frames inside MediaPipe (1 while measuring).
+            val maxInFlight = if (benchDelegate != null) 1 else 2
+            if (inFlight.get() >= maxInFlight) {
                 if (now - lastSubmitMs < 500) return
                 inFlight.set(0) // a result got lost; recover
             }
@@ -494,6 +571,7 @@ class HandTrackingService : LifecycleService() {
         val t = result.timestampMs()
         val latency = (SystemClock.uptimeMillis() - t).toFloat()
         inferenceMs = if (inferenceMs == 0f) latency else inferenceMs * 0.9f + latency * 0.1f
+        if (benchDelegate != null && result.landmarks().isNotEmpty()) recordBenchmark(latency)
         val hand = result.landmarks().firstOrNull()?.map { Landmark(it.x(), it.y(), it.z()) }
         val aspect = input.width.toFloat() / input.height.coerceAtLeast(1)
 

@@ -44,27 +44,42 @@ object HandIdx {
     )
 }
 
+enum class FingerState { EXTENDED, HALF, FOLDED }
+
 /**
  * Distance helpers on a hand. [aspect] = imageWidth / imageHeight, so distances are
  * measured in "image height" units and are not skewed by a non-square frame.
+ * MediaPipe's z uses about the same scale as x, so 3D distances are used: this keeps
+ * finger detection right even when the hand is tilted towards the camera.
  */
-class HandGeometry(val lm: List<Landmark>, private val aspect: Float = 1f) {
+class HandGeometry(val lm: List<Landmark>, val aspect: Float = 1f) {
     fun d(a: Int, b: Int): Float {
         val dx = (lm[a].x - lm[b].x) * aspect
         val dy = lm[a].y - lm[b].y
-        return sqrt(dx * dx + dy * dy)
+        val dz = (lm[a].z - lm[b].z) * aspect
+        return sqrt(dx * dx + dy * dy + dz * dz)
     }
 
     /** Wrist -> middle finger MCP: a stable measure of hand size, independent of finger pose. */
     val handSize: Float get() = max(d(HandIdx.WRIST, HandIdx.MIDDLE_MCP), 1e-4f)
 
-    fun fingerExtended(tip: Int, pip: Int): Boolean =
-        d(HandIdx.WRIST, tip) > d(HandIdx.WRIST, pip) * EXTENDED_RATIO
+    /**
+     * How far the fingertip reaches compared to its knuckle (seen from the wrist).
+     * Straight finger ~1.8, curled into the palm ~0.8.
+     */
+    fun finger(tip: Int, mcp: Int): FingerState {
+        val e = d(HandIdx.WRIST, tip) / max(d(HandIdx.WRIST, mcp), 1e-4f)
+        return when {
+            e > EXTENDED_RATIO -> FingerState.EXTENDED
+            e < FOLDED_RATIO -> FingerState.FOLDED
+            else -> FingerState.HALF
+        }
+    }
 
-    val indexExtended get() = fingerExtended(HandIdx.INDEX_TIP, HandIdx.INDEX_PIP)
-    val middleExtended get() = fingerExtended(HandIdx.MIDDLE_TIP, HandIdx.MIDDLE_PIP)
-    val ringExtended get() = fingerExtended(HandIdx.RING_TIP, HandIdx.RING_PIP)
-    val pinkyExtended get() = fingerExtended(HandIdx.PINKY_TIP, HandIdx.PINKY_PIP)
+    val index get() = finger(HandIdx.INDEX_TIP, HandIdx.INDEX_MCP)
+    val middle get() = finger(HandIdx.MIDDLE_TIP, HandIdx.MIDDLE_MCP)
+    val ring get() = finger(HandIdx.RING_TIP, HandIdx.RING_MCP)
+    val pinky get() = finger(HandIdx.PINKY_TIP, HandIdx.PINKY_MCP)
 
     /** Index tip clearly away from the palm (true for a pinch, false for a fist). */
     val indexAwayFromPalm get() =
@@ -74,23 +89,30 @@ class HandGeometry(val lm: List<Landmark>, private val aspect: Float = 1f) {
     val pinchRatio: Float get() = d(HandIdx.THUMB_TIP, HandIdx.INDEX_TIP) / handSize
 
     companion object {
-        const val EXTENDED_RATIO = 1.1f
+        const val EXTENDED_RATIO = 1.5f
+        const val FOLDED_RATIO = 1.3f
     }
 }
 
 enum class HandPose { POINT, TWO_FINGERS, OPEN_PALM, FIST, OTHER }
 
+/**
+ * Strict on purpose: a finger only counts as "up" when it is clearly straight, so a relaxed
+ * middle finger while pointing never turns into a scroll.
+ */
 object PoseClassifier {
     fun classify(g: HandGeometry): HandPose {
-        val i = g.indexExtended
-        val m = g.middleExtended
-        val r = g.ringExtended
-        val p = g.pinkyExtended
+        val i = g.index
+        val m = g.middle
+        val r = g.ring
+        val p = g.pinky
+        val ext = FingerState.EXTENDED
+        val fold = FingerState.FOLDED
         return when {
-            i && m && r && p -> HandPose.OPEN_PALM
-            !i && !m && !r && !p -> HandPose.FIST
-            i && m && !r && !p -> HandPose.TWO_FINGERS
-            i && !m && !r && !p -> HandPose.POINT
+            i == ext && m == ext && r == ext && p == ext -> HandPose.OPEN_PALM
+            i == fold && m == fold && r != ext && p != ext -> HandPose.FIST
+            i == ext && m == ext && r != ext && p != ext -> HandPose.TWO_FINGERS
+            i == ext && m != ext -> HandPose.POINT
             else -> HandPose.OTHER
         }
     }

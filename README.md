@@ -57,7 +57,7 @@ APK se install kiye apps ke liye Android yeh extra step maangta hai:
 
 | Gesture (hawa me) | Kya hoga |
 |---|---|
-| ☝️ Index finger hilao | Cursor move |
+| ☝️ Haath / index finger hilao | Cursor move (**Mouse mode**: PC mouse jaisa – dheere hilao to precise, tez hilao to door tak; paas ho ya door, same feel) |
 | 🤏 Jaldi se pinch (anguutha + index milao, chhodo) | **Tap / Click** |
 | 🤏 Pinch karke 0.5s ruko (hilo mat) | **Long press** |
 | 🤏 Pinch pakad ke haath hilao | **Drag** (chhodne par release) |
@@ -90,11 +90,19 @@ Cursor ke rang: ⚪ normal · 🟡 pinch daba hua · 🟠 drag · 🔵 scroll. H
 - **Recalibrate:** apni finger aaram wali jagah rakho aur Recalibrate dabao – active box wahin center ho jayega.
 - **Test: live camera preview:** camera, haath ka skeleton aur active box (peela) dikhata hai.
 
+### 🖱️ Mouse mode (default ON)
+- Cursor PC mouse ki tarah chalta hai: jitna haath hilaoge utna cursor (haath ke size ke hisaab se), isliye **camera se paas ho ya door – same feel**.
+- **Acceleration:** dheere = precise (chhote buttons ke liye), tez = poori screen jaldi paar.
+- Cursor ungli ki jagah **knuckles** (ungli ki jad) se chalta hai – pinch karte waqt cursor nahi khisakta, click ekdum sahi jagah.
+- **Anti-shake:** haath ki halki kaanp ignore hoti hai, cursor bilkul still rehta hai.
+- Cursor screen ke kinare tak pahunch jaye aur haath aur aage jaye to cursor kinare par ruk jata hai (mouse jaisa). Wapas aane par turant chalta hai.
+- Off karoge to purana "yellow box" mode (camera box = screen).
+
 ### ⚡ Smoothness / FPS (kaise kaam karta hai)
 - **Cursor screen ke refresh rate par chalta hai (60 / 90 / 120 Hz).** Camera frames ke beech me cursor ki position *predict* aur *interpolate* hoti hai, isliye 30 fps camera par bhi cursor smooth dikhta hai.
 - **Lag compensation (prediction)** slider: zyada = cursor finger ke saath aur tez chalega (lag kam), lekin rukte waqt thoda aage nikal sakta hai. Default 60%.
-- **Camera tracking FPS** phone ke front camera par depend karta hai: zyada tar phones **30 fps**, kuch **60 fps** dete hain. "60 fps camera" option ON ho to app 60 fps maangta hai jahan support ho. 100 fps camera tracking phones par possible nahi hai – isliye smoothness prediction se aati hai.
-- **GPU** default ON hai (2–3x fast). Tracking start na ho to Settings → Performance me GPU off karo.
+- **Camera tracking FPS** phone ke front camera par depend karta hai: zyada tar phones **30 fps** dete hain. "Stable 30 fps camera" (default ON) camera ko andar ki roshni me 15 fps tak girne se rokta hai. "60 fps camera" experimental hai – kuch phones par preview me **rang-birangi lakeerein** aati hain, aisa ho to use OFF rakho. 100 fps camera tracking phones par possible nahi hai – isliye smoothness prediction se aati hai.
+- **Processor: Auto** – pehli baar haath dikhane par app GPU aur CPU dono test karta hai (kuch second) aur jo tez ho wahi use karta hai. Chaaho to GPU/CPU khud chuno.
 - **Camera resolution:** Low = sabse fast, High = door se haath better pakadta hai.
 - **Debug overlay** ON karo: screen par Tracking fps, Camera fps, Inference ms aur Render fps dikhega.
 - Scroll ke baad ya click ke baad cursor **jump nahi karta**, dheere se wapas finger par aata hai.
