@@ -62,23 +62,33 @@ SHELL_EOF
     cat > "$PREFIX/bin/ubuntu-wallpaper" <<'WALL_EOF'
 #!/data/data/com.termux/files/usr/bin/bash
 # Sets a photo from the phone as the Ubuntu wallpaper (the photo itself is only copied).
-#   ubuntu-wallpaper                         -> newest photo in Download / Pictures / Camera
-#   ubuntu-wallpaper /sdcard/Download/x.jpg  -> this photo
+#   ubuntu-wallpaper                 -> newest photo in a folder named "ubuntu-wallpaper",
+#                                       else newest in Download / Pictures / Camera
+#   ubuntu-wallpaper /sdcard/x.jpg   -> this photo      ubuntu-wallpaper /sdcard/Folder -> newest in it
+newest_in() {
+    find "$@" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
+        -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n 1 | cut -d' ' -f2-
+}
 IMG="${1:-}"
-if [ -z "$IMG" ]; then
-    IMG=$(ls -t /sdcard/Download/*.jpg /sdcard/Download/*.jpeg /sdcard/Download/*.png \
-        /sdcard/Pictures/*.jpg /sdcard/Pictures/*.jpeg /sdcard/Pictures/*.png \
-        /sdcard/DCIM/Camera/*.jpg 2>/dev/null | head -n 1)
+if [ -n "$IMG" ] && [ -d "$IMG" ]; then
+    IMG=$(newest_in "$IMG")
+elif [ -z "$IMG" ]; then
+    DIR=$(find /sdcard -maxdepth 3 -type d -iname 'ubuntu-wallpaper' -not -path '*/Android/*' 2>/dev/null | head -n 1)
+    [ -n "$DIR" ] && IMG=$(newest_in "$DIR")
+    [ -z "$IMG" ] && IMG=$(newest_in /sdcard/Download /sdcard/Pictures /sdcard/DCIM/Camera)
 fi
 if [ -z "$IMG" ] || [ ! -r "$IMG" ]; then
     echo "Photo nahi mili. Yeh karo:"
     echo "  1) termux-setup-storage   (Allow dabao)"
-    echo "  2) photo ko phone ke Download folder me save karo (.jpg ya .png)"
+    echo "  2) photo ko phone me 'ubuntu-wallpaper' folder ya Download me rakho (.jpg .png .webp)"
     echo "  3) phir: ubuntu-wallpaper"
     exit 1
 fi
 EXT=$(printf '%s' "${IMG##*.}" | tr 'A-Z' 'a-z')
 cp "$IMG" "$TMPDIR/aircursor-wallpaper.$EXT" || exit 1
+# .webp needs an extra image loader inside Ubuntu
+[ "$EXT" = "webp" ] && proot-distro login ubuntu -- sh -c \
+    "dpkg -s webp-pixbuf-loader >/dev/null 2>&1 || apt-get install -y webp-pixbuf-loader >/dev/null 2>&1"
 proot-distro login ubuntu --shared-tmp -- sh -c "mkdir -p /usr/share/xfce4/backdrops && \
     cp /tmp/aircursor-wallpaper.$EXT /usr/share/xfce4/backdrops/aircursor-wallpaper.$EXT && \
     ln -sf /usr/share/xfce4/backdrops/aircursor-wallpaper.$EXT /usr/share/xfce4/backdrops/xubuntu-wallpaper.png"
