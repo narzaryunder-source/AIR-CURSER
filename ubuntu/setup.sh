@@ -7,6 +7,29 @@ set -euo pipefail
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m[!] %s\033[0m\n' "$*"; }
 
+# ---------------------------------------------------------------- progress display
+# Shows "[#####.....]  40%  Step 4/10: ...  (time: 3m 12s)" and, during long steps,
+# prints a line every minute so you can see the script is still working.
+AC_TOTAL=10
+AC_START=${AC_START:-$(date +%s)}
+AC_HB=""
+ac_hb_stop() { if [ -n "$AC_HB" ]; then kill "$AC_HB" 2>/dev/null || true; AC_HB=""; fi; }
+trap ac_hb_stop EXIT
+step() {
+    ac_hb_stop
+    local n="$1" p="$2" text="$3" bar="" i
+    local fill=$(( p * 25 / 100 ))
+    for ((i = 0; i < 25; i++)); do if [ "$i" -lt "$fill" ]; then bar+="#"; else bar+="."; fi; done
+    local el=$(( $(date +%s) - AC_START ))
+    printf '\n\033[1;36m[%s] %3d%%   Step %s/%s: %s   (time: %dm %02ds)\033[0m\n' \
+        "$bar" "$p" "$n" "$AC_TOTAL" "$text" $((el / 60)) $((el % 60))
+    ( m=0; while sleep 60; do m=$((m + 1))
+        printf '\033[1;33m   ... still working on step %s/%s (%s min) – please wait, do not close Termux\033[0m\n' \
+            "$n" "$AC_TOTAL" "$m"
+      done ) &
+    AC_HB=$!
+}
+
 if [ -z "${PREFIX:-}" ] || [ ! -d "/data/data/com.termux" ]; then
     echo "Run this script inside the Termux app on Android."
     exit 1
@@ -35,30 +58,57 @@ if ! printf '%s' "$UBU_USER" | grep -Eq '^[a-z][a-z0-9_-]{0,30}$'; then
 fi
 
 # ---------------------------------------------------------------- Termux packages
-say "Updating Termux packages (this can take a few minutes)"
+step 1 0 "Updating Termux packages"
 yes | pkg update -y -o Dpkg::Options::="--force-confnew" || true
 yes | pkg upgrade -y -o Dpkg::Options::="--force-confnew" || true
+step 2 10 "Installing Termux tools (proot-distro, Termux:X11 support, sound)"
 pkg install -y x11-repo
 pkg install -y proot-distro termux-x11-nightly pulseaudio wget
 pkg install -y virglrenderer-android || warn "virglrenderer-android not available: GPU mode will be off"
 
 # ---------------------------------------------------------------- Ubuntu rootfs
+step 3 18 "Downloading and installing Ubuntu"
 if ubuntu_installed; then
     say "Ubuntu is already installed – keeping it (nothing is deleted)"
 else
-    say "Downloading and installing Ubuntu"
     proot-distro install "$DISTRO"
 fi
 
 # ---------------------------------------------------------------- setup inside Ubuntu
-say "Installing the XFCE4 desktop inside Ubuntu (largest step, 10-30 min)"
 cat > "$SHARED_TMP/aircursor-inner-setup.sh" <<'INNER_EOF'
 #!/bin/bash
 set -e
 U="$1"
+AC_START="$2"
+
+# ---------------------------------------------------------------- progress display
+# Shows "[#####.....]  40%  Step 4/10: ...  (time: 3m 12s)" and, during long steps,
+# prints a line every minute so you can see the script is still working.
+AC_TOTAL=10
+AC_START=${AC_START:-$(date +%s)}
+AC_HB=""
+ac_hb_stop() { if [ -n "$AC_HB" ]; then kill "$AC_HB" 2>/dev/null || true; AC_HB=""; fi; }
+trap ac_hb_stop EXIT
+step() {
+    ac_hb_stop
+    local n="$1" p="$2" text="$3" bar="" i
+    local fill=$(( p * 25 / 100 ))
+    for ((i = 0; i < 25; i++)); do if [ "$i" -lt "$fill" ]; then bar+="#"; else bar+="."; fi; done
+    local el=$(( $(date +%s) - AC_START ))
+    printf '\n\033[1;36m[%s] %3d%%   Step %s/%s: %s   (time: %dm %02ds)\033[0m\n' \
+        "$bar" "$p" "$n" "$AC_TOTAL" "$text" $((el / 60)) $((el % 60))
+    ( m=0; while sleep 60; do m=$((m + 1))
+        printf '\033[1;33m   ... still working on step %s/%s (%s min) – please wait, do not close Termux\033[0m\n' \
+            "$n" "$AC_TOTAL" "$m"
+      done ) &
+    AC_HB=$!
+}
+
+APT_OPTS=(-y -o Dpkg::Progress-Fancy=1 -o APT::Color=1)
 export DEBIAN_FRONTEND=noninteractive
 ln -sf /usr/share/zoneinfo/Asia/Kolkata /etc/localtime || true
 
+step 4 30 "Checking earlier installs and updating Ubuntu"
 # Finish an install that was interrupted earlier (safe to run every time)
 dpkg --configure -a || true
 # The big optional icon pack is no longer used: if an earlier run was stopped while it was
@@ -68,26 +118,25 @@ if dpkg -s papirus-icon-theme >/dev/null 2>&1 && ! dpkg -s papirus-icon-theme | 
     dpkg --remove --force-remove-reinstreq papirus-icon-theme || true
 fi
 apt-get -f install -y || true
-echo "[1/6] Updating Ubuntu packages"
 apt-get update
-apt-get -y -o Dpkg::Options::="--force-confnew" upgrade || true
-echo "[2/6] Installing the XFCE desktop" 
-apt-get install -y --no-install-recommends \
+apt-get "${APT_OPTS[@]}" -o Dpkg::Options::="--force-confnew" upgrade || true
+step 5 40 "Installing the XFCE desktop (biggest step, 10-30 min)"
+apt-get install "${APT_OPTS[@]}" --no-install-recommends \
     sudo locales dbus-x11 at-spi2-core ca-certificates curl wget git nano gnupg \
     xfce4 xfce4-terminal xfce4-taskmanager thunar mousepad ristretto \
     fonts-dejavu-core fonts-noto-color-emoji xdg-utils pulseaudio-utils
 # Nice-to-have packages (names differ between Ubuntu releases, so each is optional)
-echo "[3/6] Installing small extras"
+step 6 70 "Installing small extras"
 for p in xfce4-whiskermenu-plugin adwaita-icon-theme xarchiver htop; do
     echo "      - $p"
     apt-get install -y --no-install-recommends "$p" >/dev/null 2>&1 || echo "        (skipped)"
 done
-echo "[4/6] Language settings"
+step 7 76 "Language settings"
 
 sed -i 's/^# *en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen 2>/dev/null || true
 locale-gen en_US.UTF-8 >/dev/null 2>&1 || true
 
-echo "[5/6] Firefox"
+step 8 80 "Installing Firefox"
 # Firefox as a normal package (Ubuntu's own "firefox" is a snap, which cannot run here)
 if ! command -v firefox >/dev/null 2>&1; then
     install -d -m 0755 /etc/apt/keyrings
@@ -97,11 +146,11 @@ if ! command -v firefox >/dev/null 2>&1; then
         printf 'Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n' > /etc/apt/preferences.d/mozilla
         # Never install Ubuntu's snap-only firefox stub (it breaks apt inside proot)
         printf 'Package: firefox*\nPin: release o=Ubuntu\nPin-Priority: -1\n' > /etc/apt/preferences.d/no-snap-firefox
-        apt-get update && apt-get install -y firefox || echo "[!] Firefox could not be installed"
+        apt-get update && apt-get install "${APT_OPTS[@]}" firefox || echo "[!] Firefox could not be installed"
     fi
 fi
 
-echo "[6/6] Creating your user"
+step 9 90 "Creating your user and desktop shortcuts"
 # Normal user with sudo
 if ! id "$U" >/dev/null 2>&1; then
     useradd -m -s /bin/bash "$U"
@@ -126,7 +175,7 @@ Terminal=false
 DESK
 chmod +x "/home/$U/Desktop/Install-Apps.desktop"
 chown -R "$U:$U" "/home/$U"
-echo "Inner setup done."
+ac_hb_stop
 INNER_EOF
 
 # Extra apps menu (copied into Ubuntu)
@@ -138,11 +187,12 @@ else
         https://raw.githubusercontent.com/narzaryunder-source/AIR-CURSER/main/ubuntu/ubuntu-extras.sh
 fi
 
-proot-distro login "$DISTRO" --shared-tmp -- bash /tmp/aircursor-inner-setup.sh "$UBU_USER"
+ac_hb_stop
+proot-distro login "$DISTRO" --shared-tmp -- bash /tmp/aircursor-inner-setup.sh "$UBU_USER" "$AC_START"
 rm -f "$SHARED_TMP/aircursor-inner-setup.sh" "$SHARED_TMP/aircursor-ubuntu-extras.sh"
 
 # ---------------------------------------------------------------- launchers in Termux
-say "Creating commands: ubuntu-desktop, ubuntu-stop, ubuntu-shell"
+step 10 96 "Creating commands: ubuntu-desktop, ubuntu-stop, ubuntu-shell"
 cat > "$PREFIX/bin/ubuntu-desktop" <<LAUNCH_EOF
 #!/data/data/com.termux/files/usr/bin/bash
 # Starts the Ubuntu XFCE desktop in Termux:X11.  Use --gpu for OpenGL acceleration (VirGL).
@@ -181,6 +231,9 @@ proot-distro login $DISTRO --user $UBU_USER --shared-tmp
 SHELL_EOF
 chmod +x "$PREFIX/bin/ubuntu-desktop" "$PREFIX/bin/ubuntu-stop" "$PREFIX/bin/ubuntu-shell"
 
+ac_hb_stop
+EL=$(( $(date +%s) - AC_START ))
+printf '\n\033[1;32m[#########################] 100%%   All %s steps finished in %dm %02ds\033[0m\n' "$AC_TOTAL" $((EL / 60)) $((EL % 60))
 say "Done!"
 cat <<DONE
 
