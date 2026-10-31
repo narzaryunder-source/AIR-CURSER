@@ -5,20 +5,23 @@
 if [ "$(id -u)" = "0" ]; then echo "Pehle 'exit' likho (aap Ubuntu ke andar ho)."; exit 1; fi
 G='\033[1;32m'; R='\033[1;31m'; Y='\033[1;33m'; N='\033[0m'
 
-if [ ! -r /sdcard/Download ]; then
-    echo "Phone storage ki permission chahiye – 'Allow' dabao..."
-    termux-setup-storage
-    sleep 4
-fi
-
+# Look for the exported files: first in Termux's own folder (no permission needed), then phone storage.
 SRC=""
-for d in /sdcard/Download /sdcard/Documents /sdcard /sdcard/Shizuku /sdcard/Download/Shizuku; do
+for d in "$HOME" "$HOME/downloads" "$HOME/storage/downloads" /sdcard/Download /sdcard/Documents /sdcard \
+         /sdcard/Shizuku /sdcard/Download/Shizuku; do
     if [ -f "$d/rish" ] && [ -f "$d/rish_shizuku.dex" ]; then SRC="$d"; break; fi
 done
+if [ -z "$SRC" ] && ls /sdcard >/dev/null 2>&1; then
+    F=$(find /sdcard -maxdepth 4 -name rish_shizuku.dex -not -path "*/Android/*" 2>/dev/null | head -n 1)
+    [ -n "$F" ] && [ -f "$(dirname "$F")/rish" ] && SRC=$(dirname "$F")
+fi
 if [ -z "$SRC" ]; then
-    printf "${R}rish files nahi mile.${N}\n"
-    echo "Shizuku app → 'Use Shizuku in terminal apps' → 'Export files' → Download folder chuno → 'Use this folder' → Allow."
-    echo "Phir yeh script dobara chalao."
+    printf "${R}rish files nahi mile.${N}\n\n"
+    echo "Sabse aasaan: files seedhe Termux me daalo (koi permission nahi lagti):"
+    echo "  1) Shizuku app → 'Use Shizuku in terminal apps' → 'Export files'"
+    echo "  2) Folder chunne wali screen me upar-baaye ☰ (3 line) dabao → list me 'Termux' chuno"
+    echo "  3) Neeche 'USE THIS FOLDER' → 'ALLOW'"
+    echo "  4) Phir yeh script dobara chalao:  bash no-kill-shizuku.sh"
     exit 1
 fi
 echo "rish files mile: $SRC"
