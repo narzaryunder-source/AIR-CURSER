@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="app_name" translatable="false">BrightMax</string>
+    <string name="tagline">Maximum safe screen brightness</string>
+
+    <!-- Tile -->
+    <string name="tile_label">BrightMax</string>
+    <string name="tile_on">Boost %1$d%%</string>
+    <string name="tile_off">Off</string>
+
+    <!-- Notifications -->
+    <string name="channel_status">Boost status</string>
+    <string name="channel_status_desc">Shows while BrightMax is running, with an OFF button.</string>
+    <string name="channel_alerts">Safety alerts</string>
+    <string name="channel_alerts_desc">Heat, battery and timer warnings.</string>
+    <string name="notif_title_on">Boost ON · %1$d%%</string>
+    <string name="notif_title_on_hdr">Boost ON · %1$d%% + HDR</string>
+    <string name="notif_text_on">Auto-off countdown. Tap OFF to restore your brightness.</string>
+    <string name="notif_text_reduced" formatted="false">Phone is warm: boost reduced 20%.</string>
+    <string name="notif_title_standby">BrightMax ready · Boost OFF</string>
+    <string name="notif_text_standby">Tap the floating button or ON to boost.</string>
+    <string name="action_off">OFF</string>
+    <string name="action_on">ON</string>
+    <string name="action_close">Close</string>
+
+    <!-- Stop reasons -->
+    <string name="reason_user">Turned off.</string>
+    <string name="reason_timer">Auto-off timer finished.</string>
+    <string name="reason_overheat">Battery too hot (%1$.1f °C). Boost turned off to protect your phone.</string>
+    <string name="reason_thermal">Android reports the phone is overheating. Boost turned off.</string>
+    <string name="reason_low_battery" formatted="false">Battery below 15%. Boost turned off.</string>
+    <string name="reason_screen_off">Screen turned off, so the boost was turned off.</string>
+    <string name="reason_permission">Permission to change system brightness is missing. Open BrightMax to grant it.</string>
+    <string name="reason_service_stopped">BrightMax was stopped. Original brightness restored.</string>
+
+    <!-- Alerts -->
+    <string name="alert_boost_off_title">Boost turned off</string>
+    <string name="alert_reduced_title">Phone is warm: boost reduced</string>
+    <string name="alert_reduced_text">Battery %1$.1f °C. Brightness lowered 20%% and HDR paused until it cools down.</string>
+    <string name="alert_timer_title">Boost ends in 1 minute</string>
+    <string name="alert_timer_text">The auto-off timer is almost done. Your normal brightness will come back.</string>
+    <string name="alert_cannot_start_title">Boost can\'t start</string>
+
+    <!-- Floating button -->
+    <string name="overlay_on">☀\n%1$d%%</string>
+    <string name="overlay_off">☀\nOFF</string>
+    <string name="overlay_cd_on">Boost on. Tap to turn off, long-press to open BrightMax.</string>
+    <string name="overlay_cd_off">Boost off. Tap to turn on, long-press to open BrightMax.</string>
+
+    <!-- Permissions -->
+    <string name="perm_write_title">Allow changing system brightness</string>
+    <string name="perm_write_card">Required. Lets BrightMax set brightness to maximum and restore it later.</string>
+    <string name="perm_write_explain">BrightMax needs the \"Modify system settings\" permission to set the screen brightness to maximum and put your original brightness back afterwards.\n\nOn the next screen, turn on \"Allow modifying system settings\", then come back.</string>
+    <string name="perm_overlay_title">Allow the floating button</string>
+    <string name="perm_overlay_explain">To show the ON/OFF button over other apps, Android needs the \"Display over other apps\" permission.\n\nOn the next screen, find BrightMax and turn it on, then come back.</string>
+    <string name="perm_notif_title">Notifications are off</string>
+    <string name="perm_notif_card">Recommended: safety alerts (heat, timer) and the OFF button use notifications.</string>
+    <string name="perm_notif_explain">BrightMax uses notifications for the always-visible OFF button and for safety alerts (phone too hot, low battery, timer ending). Without them you will only see short pop-up messages.</string>
+    <string name="perm_grant">Grant</string>
+    <string name="perm_allow">Allow</string>
+    <string name="open_settings">Open settings</string>
+
+    <!-- Main screen -->
+    <string name="boost_on">ON</string>
+    <string name="boost_off">OFF</string>
+    <string name="tap_to_start">Tap to boost</string>
+    <string name="toggle_cd_on">Boost is on. Double-tap to turn off.</string>
+    <string name="toggle_cd_off">Boost is off. Double-tap to turn on.</string>
+    <string name="last_stop_prefix">Last boost ended:</string>
+    <string name="reduced_banner" formatted="false">Phone is warm (40 °C+): boost reduced 20% and HDR paused.</string>
+
+    <string name="level_title">Brightness level</string>
+    <string name="level_hint" formatted="false">50% to 100% of the maximum normal brightness.</string>
+    <string name="max">MAX</string>
+
+    <string name="hdr_title">HDR Boost (extra brightness)</string>
+    <string name="hdr_switch">Use HDR headroom</string>
+    <string name="hdr_need_android14">Needs Android 14 or newer. Using max brightness only.</string>
+    <string name="hdr_not_supported">This display does not support HDR. Using max brightness only.</string>
+    <string name="hdr_paused_heat">Paused while the phone is warm.</string>
+    <string name="hdr_active">Active: the display may use its extra HDR nits.</string>
+    <string name="hdr_ready">Supported. Turns on together with the boost.</string>
+    <string name="hdr_test_hint">HDR test: the left square should look brighter than the plain white one.</string>
+
+    <string name="timer_title">Auto-off timer</string>
+    <string name="minutes_short">%1$d min</string>
+    <string name="timer_hint">You get a warning 1 minute before it ends.</string>
+
+    <string name="overlay_title">Floating button</string>
+    <string name="overlay_text">Show a draggable ON/OFF button over other apps. Long-press it to open BrightMax.</string>
+    <string name="overlay_close">Close BrightMax</string>
+
+    <string name="status_title">Live status</string>
+    <string name="status_level">Current level</string>
+    <string name="status_reduced_suffix">(reduced)</string>
+    <string name="status_off">Off</string>
+    <string name="status_hdr_supported">HDR supported</string>
+    <string name="status_peak_nits">Display peak (reported)</string>
+    <string name="nits" tools:ignore="PluralsCandidate">%1$d nits</string>
+    <string name="status_headroom">HDR headroom now</string>
+    <string name="status_battery_temp">Battery temperature</string>
+    <string name="status_battery">Battery</string>
+    <string name="status_remaining">Time left</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+    <string name="not_reported">Not reported</string>
+
+    <string name="footer_safety" formatted="false">Safety: −20% at 40 °C · OFF at 43 °C · OFF below 15% battery · OFF when the screen turns off. Only official Android APIs are used; no root, no kernel or hardware changes.</string>
+
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+
+    <string name="disclaimer_title">Before you start</string>
+    <string name="disclaimer_text" formatted="false">Using maximum brightness (and HDR Boost) for a long time makes the phone warmer and drains the battery much faster.\n\nBrightMax protects your phone: it lowers the boost at 40 °C, turns it off at 43 °C, below 15% battery, when the screen turns off and when the timer ends, and always restores your original brightness.\n\nUse it only when you need it (sunlight, presentations).</string>
+    <string name="disclaimer_accept">I understand</string>
+</resources>

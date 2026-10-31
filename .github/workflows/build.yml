@@ -6,6 +6,9 @@ on:
     # The Ubuntu scripts are not part of the APK: no new release for them.
     paths-ignore:
       - 'ubuntu/**'
+      # BrightMax has its own workflow (brightmax.yml).
+      - 'brightmax/**'
+      - '.github/workflows/brightmax.yml'
   workflow_dispatch:
 
 permissions:

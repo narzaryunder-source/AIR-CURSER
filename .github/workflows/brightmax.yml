@@ -1,0 +1,85 @@
+name: Build BrightMax APK
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'brightmax/**'
+      - '.github/workflows/brightmax.yml'
+  pull_request:
+    paths:
+      - 'brightmax/**'
+      - '.github/workflows/brightmax.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: brightmax-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: brightmax
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Unit tests
+        run: ./gradlew --no-daemon --stacktrace testDebugUnitTest
+
+      - name: Lint
+        run: ./gradlew --no-daemon --stacktrace lintDebug
+
+      - name: Build debug APK
+        run: ./gradlew --no-daemon --stacktrace assembleDebug
+
+      - name: Prepare APK
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/debug/app-debug.apk out/BrightMax.apk
+          cp app/build/outputs/apk/debug/app-debug.apk "out/BrightMax-v${{ github.run_number }}.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BrightMax-v${{ github.run_number }}
+          path: brightmax/out/BrightMax-v${{ github.run_number }}.apk
+
+      - name: Upload reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: brightmax-reports
+          path: brightmax/app/build/reports/
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: brightmax-v${{ github.run_number }}
+          name: BrightMax v${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          # Keep AirCursor as the "latest" release so its download link keeps working.
+          make_latest: false
+          body: |
+            BrightMax debug APK built from ${{ github.sha }}.
+            Phone par neeche **Assets** me `BrightMax.apk` par tap karo, download hoga, phir install karo.
+          files: brightmax/out/BrightMax.apk

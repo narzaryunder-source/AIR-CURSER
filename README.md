@@ -8,6 +8,8 @@ Pinch karke (anguutha + ungli milake) click hota hai.
 
 ---
 
+> ☀️ **Naya app:** BrightMax – screen ko safe maximum brightness + HDR boost – guide: [brightmax/README.md](brightmax/README.md)
+
 > 🐧 **Naya:** phone par asli Ubuntu Linux desktop (VS Code, Claude Code, Ollama…) – guide: [ubuntu/README.md](ubuntu/README.md)
 
 ## 📥 Install kaise kare (sirf phone se)
