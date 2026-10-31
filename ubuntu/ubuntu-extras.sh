@@ -117,6 +117,8 @@ while true; do
    8) Python 3 + pip + venv
    9) VLC (video/music player)
   10) Google Drive (15 GB free cloud storage)
+  11) Shotcut (video editor, simple – 720p/1080p)
+  12) Kdenlive (video editor, more features, heavier)
    0) Exit
 MENU
     read -r -p "  Choose a number: " c
@@ -132,6 +134,10 @@ MENU
         8) install_apt python3 python3-pip python3-venv ;;
         9) install_apt vlc ;;
         10) install_gdrive ;;
+        11) install_apt shotcut
+            ok "Shotcut: Applications -> Multimedia. Tip: Settings -> Preview scaling -> 360p for smooth editing" ;;
+        12) install_apt kdenlive
+            ok "Kdenlive: Applications -> Multimedia. Tip: use proxy clips (Project settings) for smooth editing" ;;
         0) exit 0 ;;
         *) echo "Unknown choice" ;;
     esac
