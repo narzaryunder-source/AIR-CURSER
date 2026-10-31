@@ -61,6 +61,13 @@ ln -sf /usr/share/zoneinfo/Asia/Kolkata /etc/localtime || true
 
 # Finish an install that was interrupted earlier (safe to run every time)
 dpkg --configure -a || true
+# The big optional icon pack is no longer used: if an earlier run was stopped while it was
+# unpacking, remove that half-installed package (only inside Ubuntu; phone files are not touched).
+if dpkg -s papirus-icon-theme >/dev/null 2>&1 && ! dpkg -s papirus-icon-theme | grep -q 'Status: install ok installed'; then
+    echo "Removing the half-installed optional icon pack..."
+    dpkg --remove --force-remove-reinstreq papirus-icon-theme || true
+fi
+apt-get -f install -y || true
 echo "[1/6] Updating Ubuntu packages"
 apt-get update
 apt-get -y -o Dpkg::Options::="--force-confnew" upgrade || true
