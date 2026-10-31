@@ -44,6 +44,8 @@ data class UiState(
     val battery: BatteryInfo = BatteryInfo(null, null, false),
     val hdr: HdrInfo = HdrInfo.NONE,
     val hdrRatio: Float? = null,
+    /** PowerManager thermal status (0 = none … 6 = shutdown), null below Android 10. */
+    val thermalStatus: Int? = null,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -60,8 +62,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _message = MutableStateFlow<StopReason?>(null)
     val message: StateFlow<StopReason?> = _message.asStateFlow()
 
-    private val battery = BatteryMonitor.updates(app)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BatteryMonitor.read(app))
+    private val batteryAndThermal = combine(BatteryMonitor.updates(app), BatteryMonitor.thermalStatus(app)) { b, t -> b to t }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            BatteryMonitor.read(app) to BatteryMonitor.currentThermalStatus(app),
+        )
 
     private val hdrRatio = HdrController.headroomRatio(app)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -70,10 +76,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         BoostRepository.state,
         prefs.settings,
         permissions,
-        battery,
+        batteryAndThermal,
         hdrRatio,
-    ) { boost, settings, perms, batt, ratio ->
-        UiState(boost, settings, perms, batt, hdrInfo, ratio)
+    ) { boost, settings, perms, (batt, thermal), ratio ->
+        UiState(boost, settings, perms, batt, hdrInfo, ratio, thermal)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState(hdr = hdrInfo))
 
     private fun readPermissions(): Permissions {
@@ -124,7 +130,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setLevel(level: Float) = prefs.setLevel(level)
     fun setMax() = prefs.setLevel(SafetyPolicy.MAX_LEVEL)
     fun setTimer(minutes: Int) = prefs.setTimerMinutes(minutes)
-    fun setHdrEnabled(enabled: Boolean) = prefs.setHdrEnabled(enabled)
+    /** The HDR switch: on a display that reports HDR it is the normal on/off, otherwise "try anyway". */
+    fun setHdrSwitch(on: Boolean) {
+        if (hdrInfo.isHdr) {
+            prefs.setHdrEnabled(on)
+        } else {
+            prefs.setHdrTryAnyway(on)
+            if (on) prefs.setHdrEnabled(true)
+        }
+    }
 
     fun setOverlayEnabled(enabled: Boolean) {
         refreshPermissions()

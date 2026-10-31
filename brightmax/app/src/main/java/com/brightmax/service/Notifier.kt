@@ -95,7 +95,7 @@ class Notifier(context: Context) {
         StopReason.USER -> ctx.getString(R.string.reason_user)
         StopReason.TIMER -> ctx.getString(R.string.reason_timer)
         StopReason.OVERHEAT -> ctx.getString(R.string.reason_overheat, tempC ?: 0f)
-        StopReason.THERMAL_SEVERE -> ctx.getString(R.string.reason_thermal)
+        StopReason.THERMAL_CRITICAL -> ctx.getString(R.string.reason_thermal)
         StopReason.LOW_BATTERY -> ctx.getString(R.string.reason_low_battery)
         StopReason.SCREEN_OFF -> ctx.getString(R.string.reason_screen_off)
         StopReason.PERMISSION_MISSING -> ctx.getString(R.string.reason_permission)

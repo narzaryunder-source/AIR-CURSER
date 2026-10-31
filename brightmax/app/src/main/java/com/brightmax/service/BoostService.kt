@@ -98,7 +98,11 @@ class BoostService : Service() {
         scope.launch {
             var previous = settings
             prefs.settings.collect { now ->
-                if (state.active && (now.level != previous.level || now.hdrEnabled != previous.hdrEnabled)) applyBoost()
+                if (state.active &&
+                    (now.level != previous.level || now.hdrEnabled != previous.hdrEnabled || now.hdrTryAnyway != previous.hdrTryAnyway)
+                ) {
+                    applyBoost()
+                }
                 if (now.overlayEnabled != previous.overlayEnabled) {
                     if (now.overlayEnabled) {
                         if (overlay.show()) overlay.render(state)
@@ -207,7 +211,7 @@ class BoostService : Service() {
             return
         }
         // HDR is the heaviest part, so it is paused while the boost is thermally reduced.
-        val hdr = settings.hdrEnabled && hdrInfo.boostAvailable && !reduced
+        val hdr = settings.hdrEnabled && hdrInfo.usable(settings.hdrTryAnyway) && !reduced
         BoostRepository.update { it.copy(effectiveLevel = level, hdrActive = hdr) }
         refreshUi()
     }

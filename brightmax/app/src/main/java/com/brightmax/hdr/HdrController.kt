@@ -33,6 +33,12 @@ data class HdrInfo(
     /** HDR Boost can be used: Android 14+ and an HDR-capable display. */
     val boostAvailable: Boolean get() = osSupported && isHdr
 
+    /**
+     * HDR Boost will be applied. On Android 14+ the user may "try anyway" when the display reports no HDR:
+     * the HDR window mode is harmless there and is simply ignored if the panel can't use it.
+     */
+    fun usable(tryAnyway: Boolean): Boolean = osSupported && (isHdr || tryAnyway)
+
     companion object {
         val NONE = HdrInfo(false, emptyList(), null, false, Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     }
@@ -58,18 +64,25 @@ object HdrController {
         val display = display(context) ?: return HdrInfo.NONE
         val osSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
         val caps = runCatching { display.hdrCapabilities }.getOrNull()
-        val types = if (osSupported) {
-            display.mode.supportedHdrTypes
+        // Phone makers report HDR in different places; collect every signal instead of trusting one.
+        @Suppress("DEPRECATION")
+        val capTypes = caps?.supportedHdrTypes ?: IntArray(0)
+        val modeTypes = if (osSupported) {
+            runCatching {
+                display.mode.supportedHdrTypes.toList() + display.supportedModes.flatMap { it.supportedHdrTypes.toList() }
+            }.getOrDefault(emptyList())
         } else {
-            @Suppress("DEPRECATION")
-            caps?.supportedHdrTypes ?: IntArray(0)
+            emptyList()
         }
+        val types = (capTypes.toList() + modeTypes).distinct()
+        val headroom = osSupported && runCatching { display.isHdrSdrRatioAvailable }.getOrDefault(false)
+        val screenHdr = context.resources.configuration.isScreenHdr
         val maxNits = caps?.desiredMaxLuminance?.takeIf { it > 0f && it.isFinite() }
         return HdrInfo(
-            isHdr = display.isHdr,
-            hdrTypes = types.distinct().map(::hdrTypeName),
+            isHdr = display.isHdr || types.isNotEmpty() || headroom || screenHdr,
+            hdrTypes = types.map(::hdrTypeName),
             maxLuminanceNits = maxNits,
-            headroomReported = osSupported && display.isHdrSdrRatioAvailable,
+            headroomReported = headroom,
             osSupported = osSupported,
         )
     }
