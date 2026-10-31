@@ -65,6 +65,39 @@ AI
     fi
 }
 
+install_gdrive() {
+    echo "Installing Google Drive support (rclone)..."
+    if ! apt-get install -y rclone; then bad "rclone install failed"; return; fi
+    cat > /usr/local/bin/google-drive <<'GD'
+#!/bin/bash
+# Your Google Drive (15 GB free) in a browser file manager. First time: log in to Google.
+# Your password is typed only on Google's own page – nobody else sees it.
+export DISPLAY="${DISPLAY:-:0}"
+if ! rclone listremotes 2>/dev/null | grep -q '^gdrive:'; then
+    echo "Pehli baar: browser khulega -> Google me login karo -> 'Allow' dabao."
+    echo "(Browser na khule to neeche dikh rahe http://127.0.0.1:53682/... link ko Firefox me kholo)"
+    rclone config create gdrive drive scope=drive || { echo "Login nahi hua. Dobara chalao: google-drive"; exit 1; }
+fi
+echo ""
+echo "Google Drive file manager browser me khul raha hai (http://127.0.0.1:5572)."
+echo "Is window ko khula rakho. Band karne par Drive bhi band."
+exec rclone rcd --rc-web-gui --rc-no-auth --rc-addr 127.0.0.1:5572
+GD
+    chmod +x /usr/local/bin/google-drive
+    mkdir -p "/home/$REAL_USER/Desktop"
+    cat > "/home/$REAL_USER/Desktop/Google-Drive.desktop" <<'GDD'
+[Desktop Entry]
+Type=Application
+Name=Google Drive
+Exec=xfce4-terminal --hold -e google-drive
+Icon=folder-remote
+Terminal=false
+GDD
+    chmod +x "/home/$REAL_USER/Desktop/Google-Drive.desktop"
+    ok "Google Drive ready. Desktop par 'Google Drive' icon, ya terminal me:  google-drive"
+    ok "Commands bhi: rclone ls gdrive:   |   rclone copy ~/Documents gdrive:Backup"
+}
+
 install_apt() {
     echo "Installing: $*"
     if apt-get install -y "$@"; then ok "Installed: $*"; else bad "Failed: $*"; fi
@@ -83,6 +116,7 @@ while true; do
    7) Inkscape (vector design)
    8) Python 3 + pip + venv
    9) VLC (video/music player)
+  10) Google Drive (15 GB free cloud storage)
    0) Exit
 MENU
     read -r -p "  Choose a number: " c
@@ -97,6 +131,7 @@ MENU
         7) install_apt inkscape ;;
         8) install_apt python3 python3-pip python3-venv ;;
         9) install_apt vlc ;;
+        10) install_gdrive ;;
         0) exit 0 ;;
         *) echo "Unknown choice" ;;
     esac

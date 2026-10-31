@@ -59,13 +59,14 @@ Termux:X11 apne aap khulega aur Ubuntu desktop dikhega.
 ## 📦 Step 5: Apps install karo
 Ubuntu desktop par **"Install Apps"** icon par double-tap (pehli baar "Launch Anyway" dabao). Menu aayega:
 
-1 VS Code · 2 Claude Code · 3 Ollama · 4 Blender · 5 LibreOffice · 6 GIMP · 7 Inkscape · 8 Python · 9 VLC
+1 VS Code · 2 Claude Code · 3 Ollama · 4 Blender · 5 LibreOffice · 6 GIMP · 7 Inkscape · 8 Python · 9 VLC · 10 Google Drive
 
 Ya terminal me: `sudo ubuntu-extras`
 
 - **Claude Code:** terminal me `claude` likho, phir login.
 - **Ollama:** `ai-chat` (model `qwen2.5:1.5b`) ya tez wala `ai-chat qwen2.5:0.5b`.
 - **VS Code:** menu → Development, ya `vscode`.
+- **Google Drive (15 GB):** desktop par "Google Drive" icon ya `google-drive` – browser me file manager khulta hai (pehli baar Google login). Commands: `rclone ls gdrive:`, `rclone copy ~/Documents gdrive:Backup`. Note: Drive ek normal folder ki tarah mount nahi hota (bina root ke possible nahi).
 
 ## 🖱️ AirCursor ke saath
 - AirCursor ka **Simple mode** ON rakho (cursor + pinch click).
