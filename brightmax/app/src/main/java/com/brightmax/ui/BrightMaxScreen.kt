@@ -168,7 +168,7 @@ fun BrightMaxScreen(viewModel: MainViewModel) {
 
                 HdrCard(
                     state = state,
-                    onToggle = viewModel::setHdrEnabled,
+                    onToggle = viewModel::setHdrSwitch,
                 )
 
                 TimerCard(
@@ -362,29 +362,32 @@ private fun LevelCard(level: Float, onLevel: (Float) -> Unit, onMax: () -> Unit)
 @Composable
 private fun HdrCard(state: UiState, onToggle: (Boolean) -> Unit) {
     val hdr = state.hdr
+    val tryAnyway = state.settings.hdrTryAnyway
+    val switchOn = state.settings.hdrEnabled && hdr.usable(tryAnyway)
     SectionCard(stringResource(R.string.hdr_title)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    stringResource(R.string.hdr_switch),
+                    stringResource(if (hdr.osSupported && !hdr.isHdr) R.string.hdr_switch_try else R.string.hdr_switch),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
                     when {
                         !hdr.osSupported -> stringResource(R.string.hdr_need_android14)
-                        !hdr.isHdr -> stringResource(R.string.hdr_not_supported)
-                        state.boost.thermalReduced && state.settings.hdrEnabled -> stringResource(R.string.hdr_paused_heat)
+                        state.boost.thermalReduced && switchOn -> stringResource(R.string.hdr_paused_heat)
                         state.boost.hdrActive -> stringResource(R.string.hdr_active)
+                        !hdr.isHdr && tryAnyway -> stringResource(R.string.hdr_trying)
+                        !hdr.isHdr -> stringResource(R.string.hdr_not_supported)
                         else -> stringResource(R.string.hdr_ready)
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (hdr.boostAvailable) MaterialTheme.colorScheme.onSurfaceVariant else HotRed,
+                    color = if (hdr.boostAvailable || switchOn) MaterialTheme.colorScheme.onSurfaceVariant else HotRed,
                 )
             }
             Switch(
-                checked = state.settings.hdrEnabled && hdr.boostAvailable,
-                enabled = hdr.boostAvailable,
+                checked = switchOn,
+                enabled = hdr.osSupported,
                 onCheckedChange = onToggle,
             )
         }
@@ -493,6 +496,16 @@ private fun StatusCard(state: UiState) {
                 temp == null -> MaterialTheme.colorScheme.onSurface
                 temp >= SafetyPolicy.REDUCE_TEMP_C -> HotRed
                 temp >= SafetyPolicy.RECOVER_TEMP_C -> AmberDeep
+                else -> CoolGreen
+            },
+        )
+        StatusRow(
+            stringResource(R.string.status_thermal),
+            thermalStatusText(state.thermalStatus),
+            valueColor = when {
+                state.thermalStatus == null -> MaterialTheme.colorScheme.onSurface
+                state.thermalStatus >= SafetyPolicy.THERMAL_STATUS_CRITICAL -> HotRed
+                state.thermalStatus >= SafetyPolicy.THERMAL_STATUS_SEVERE -> AmberDeep
                 else -> CoolGreen
             },
         )
@@ -623,11 +636,22 @@ private fun ExplainDialog(
 }
 
 @Composable
+private fun thermalStatusText(status: Int?): String = when (status) {
+    null -> stringResource(R.string.not_reported)
+    0 -> stringResource(R.string.thermal_none)
+    1 -> stringResource(R.string.thermal_light)
+    2 -> stringResource(R.string.thermal_moderate)
+    3 -> stringResource(R.string.thermal_severe)
+    4 -> stringResource(R.string.thermal_critical)
+    else -> stringResource(R.string.thermal_emergency)
+} + " ($status)".takeIf { status != null }.orEmpty()
+
+@Composable
 private fun stopReasonText(reason: StopReason, tempC: Float?): String = when (reason) {
     StopReason.USER -> stringResource(R.string.reason_user)
     StopReason.TIMER -> stringResource(R.string.reason_timer)
     StopReason.OVERHEAT -> stringResource(R.string.reason_overheat, tempC ?: 0f)
-    StopReason.THERMAL_SEVERE -> stringResource(R.string.reason_thermal)
+    StopReason.THERMAL_CRITICAL -> stringResource(R.string.reason_thermal)
     StopReason.LOW_BATTERY -> stringResource(R.string.reason_low_battery)
     StopReason.SCREEN_OFF -> stringResource(R.string.reason_screen_off)
     StopReason.PERMISSION_MISSING -> stringResource(R.string.reason_permission)

@@ -27,7 +27,7 @@
     <string name="reason_user">Turned off.</string>
     <string name="reason_timer">Auto-off timer finished.</string>
     <string name="reason_overheat">Battery too hot (%1$.1f °C). Boost turned off to protect your phone.</string>
-    <string name="reason_thermal">Android reports the phone is overheating. Boost turned off.</string>
+    <string name="reason_thermal">Android reports the phone is critically hot. Boost turned off.</string>
     <string name="reason_low_battery" formatted="false">Battery below 15%. Boost turned off.</string>
     <string name="reason_screen_off">Screen turned off, so the boost was turned off.</string>
     <string name="reason_permission">Permission to change system brightness is missing. Open BrightMax to grant it.</string>
@@ -76,7 +76,7 @@
     <string name="hdr_title">HDR Boost (extra brightness)</string>
     <string name="hdr_switch">Use HDR headroom</string>
     <string name="hdr_need_android14">Needs Android 14 or newer. Using max brightness only.</string>
-    <string name="hdr_not_supported">This display does not support HDR. Using max brightness only.</string>
+    <string name="hdr_not_supported">This display does not report HDR support, so max brightness only is used. You can still turn on \"Try HDR anyway\".</string>
     <string name="hdr_paused_heat">Paused while the phone is warm.</string>
     <string name="hdr_active">Active: the display may use its extra HDR nits.</string>
     <string name="hdr_ready">Supported. Turns on together with the boost.</string>
@@ -113,4 +113,13 @@
     <string name="disclaimer_title">Before you start</string>
     <string name="disclaimer_text" formatted="false">Using maximum brightness (and HDR Boost) for a long time makes the phone warmer and drains the battery much faster.\n\nBrightMax protects your phone: it lowers the boost at 40 °C, turns it off at 43 °C, below 15% battery, when the screen turns off and when the timer ends, and always restores your original brightness.\n\nUse it only when you need it (sunlight, presentations).</string>
     <string name="disclaimer_accept">I understand</string>
+    <string name="hdr_switch_try">Try HDR anyway (experimental)</string>
+    <string name="hdr_trying">Your display does not report HDR, so this may do nothing. If \"HDR headroom now\" stays at 1.00× or \"Not reported\" while boosting, this phone does not allow extra HDR brightness.</string>
+    <string name="status_thermal">Android thermal status</string>
+    <string name="thermal_none">Normal</string>
+    <string name="thermal_light">Light</string>
+    <string name="thermal_moderate">Moderate</string>
+    <string name="thermal_severe">Severe</string>
+    <string name="thermal_critical">Critical</string>
+    <string name="thermal_emergency">Emergency</string>
 </resources>

@@ -13,6 +13,8 @@ data class UserSettings(
     val level: Float = SafetyPolicy.MAX_LEVEL,
     val timerMinutes: Int = SafetyPolicy.DEFAULT_TIMER_MIN,
     val hdrEnabled: Boolean = true,
+    /** Use HDR mode even though the display reports no HDR (Android 14+). */
+    val hdrTryAnyway: Boolean = false,
     val overlayEnabled: Boolean = true,
     val disclaimerAccepted: Boolean = false,
 )
@@ -31,6 +33,7 @@ class AppPrefs private constructor(context: Context) {
         level = SafetyPolicy.clampLevel(sp.getFloat(K_LEVEL, SafetyPolicy.MAX_LEVEL)),
         timerMinutes = sp.getInt(K_TIMER, SafetyPolicy.DEFAULT_TIMER_MIN),
         hdrEnabled = sp.getBoolean(K_HDR, true),
+        hdrTryAnyway = sp.getBoolean(K_HDR_TRY, false),
         overlayEnabled = sp.getBoolean(K_OVERLAY, true),
         disclaimerAccepted = sp.getBoolean(K_DISCLAIMER, false),
     )
@@ -43,6 +46,7 @@ class AppPrefs private constructor(context: Context) {
     fun setLevel(level: Float) = update { putFloat(K_LEVEL, SafetyPolicy.clampLevel(level)) }
     fun setTimerMinutes(minutes: Int) = update { putInt(K_TIMER, minutes) }
     fun setHdrEnabled(enabled: Boolean) = update { putBoolean(K_HDR, enabled) }
+    fun setHdrTryAnyway(enabled: Boolean) = update { putBoolean(K_HDR_TRY, enabled) }
     fun setOverlayEnabled(enabled: Boolean) = update { putBoolean(K_OVERLAY, enabled) }
     fun acceptDisclaimer() = update { putBoolean(K_DISCLAIMER, true) }
 
@@ -67,6 +71,7 @@ class AppPrefs private constructor(context: Context) {
         private const val K_LEVEL = "level"
         private const val K_TIMER = "timer_minutes"
         private const val K_HDR = "hdr_enabled"
+        private const val K_HDR_TRY = "hdr_try_anyway"
         private const val K_OVERLAY = "overlay_enabled"
         private const val K_DISCLAIMER = "disclaimer_accepted"
         private const val K_HAS_BACKUP = "has_backup"

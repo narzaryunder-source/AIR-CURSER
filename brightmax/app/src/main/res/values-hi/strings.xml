@@ -23,7 +23,7 @@
     <string name="reason_user">बंद किया गया।</string>
     <string name="reason_timer">ऑटो-ऑफ़ टाइमर पूरा हुआ।</string>
     <string name="reason_overheat">बैटरी बहुत गर्म है (%1$.1f °C)। फ़ोन की सुरक्षा के लिए बूस्ट बंद किया गया।</string>
-    <string name="reason_thermal">Android के अनुसार फ़ोन ज़्यादा गर्म हो रहा है। बूस्ट बंद किया गया।</string>
+    <string name="reason_thermal">Android के अनुसार फ़ोन बहुत ज़्यादा (critical) गर्म है। बूस्ट बंद किया गया।</string>
     <string name="reason_low_battery" formatted="false">बैटरी 15% से कम है। बूस्ट बंद किया गया।</string>
     <string name="reason_screen_off">स्क्रीन बंद हुई, इसलिए बूस्ट बंद किया गया।</string>
     <string name="reason_permission">सिस्टम ब्राइटनेस बदलने की अनुमति नहीं है। अनुमति देने के लिए BrightMax खोलें।</string>
@@ -68,7 +68,7 @@
     <string name="hdr_title">HDR बूस्ट (अतिरिक्त ब्राइटनेस)</string>
     <string name="hdr_switch">HDR हेडरूम उपयोग करें</string>
     <string name="hdr_need_android14">Android 14 या नया चाहिए। सिर्फ़ अधिकतम ब्राइटनेस उपयोग होगी।</string>
-    <string name="hdr_not_supported">यह डिस्प्ले HDR सपोर्ट नहीं करता। सिर्फ़ अधिकतम ब्राइटनेस उपयोग होगी।</string>
+    <string name="hdr_not_supported">यह डिस्प्ले HDR सपोर्ट रिपोर्ट नहीं करता, इसलिए सिर्फ़ अधिकतम ब्राइटनेस उपयोग होगी। आप फिर भी \"HDR आज़माएँ\" चालू कर सकते हैं।</string>
     <string name="hdr_paused_heat">फ़ोन गर्म होने तक रोका गया।</string>
     <string name="hdr_active">चालू: डिस्प्ले अपने अतिरिक्त HDR निट्स उपयोग कर सकता है।</string>
     <string name="hdr_ready">सपोर्टेड। बूस्ट के साथ चालू होगा।</string>
@@ -105,4 +105,13 @@
     <string name="disclaimer_title">शुरू करने से पहले</string>
     <string name="disclaimer_text" formatted="false">लंबे समय तक अधिकतम ब्राइटनेस (और HDR बूस्ट) से फ़ोन ज़्यादा गर्म होता है और बैटरी बहुत जल्दी खत्म होती है।\n\nBrightMax आपके फ़ोन की सुरक्षा करता है: 40 °C पर बूस्ट कम करता है, 43 °C पर, 15% बैटरी से कम पर, स्क्रीन बंद होने पर और टाइमर खत्म होने पर बंद करता है, और हमेशा आपकी मूल ब्राइटनेस वापस लाता है।\n\nज़रूरत होने पर ही उपयोग करें (धूप, प्रेज़ेंटेशन)।</string>
     <string name="disclaimer_accept">मैं समझ गया/गई</string>
+    <string name="hdr_switch_try">फिर भी HDR आज़माएँ (प्रयोगात्मक)</string>
+    <string name="hdr_trying">आपका डिस्प्ले HDR रिपोर्ट नहीं करता, इसलिए शायद असर न हो। बूस्ट के दौरान \"अभी HDR हेडरूम\" 1.00× या \"उपलब्ध नहीं\" ही रहे, तो यह फ़ोन अतिरिक्त HDR ब्राइटनेस की अनुमति नहीं देता।</string>
+    <string name="status_thermal">Android थर्मल स्थिति</string>
+    <string name="thermal_none">सामान्य</string>
+    <string name="thermal_light">हल्की</string>
+    <string name="thermal_moderate">मध्यम</string>
+    <string name="thermal_severe">गंभीर</string>
+    <string name="thermal_critical">अत्यधिक (critical)</string>
+    <string name="thermal_emergency">आपातकाल</string>
 </resources>

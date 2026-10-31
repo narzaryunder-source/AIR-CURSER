@@ -7,7 +7,7 @@ enum class StopReason {
     USER,
     TIMER,
     OVERHEAT,
-    THERMAL_SEVERE,
+    THERMAL_CRITICAL,
     LOW_BATTERY,
     SCREEN_OFF,
     PERMISSION_MISSING,
@@ -48,14 +48,19 @@ object SafetyPolicy {
     /** How long before auto-off the user is warned. */
     const val WARNING_BEFORE_END_MS = 60_000L
 
-    private const val THERMAL_STATUS_MODERATE = 2
-    private const val THERMAL_STATUS_SEVERE = 3
+    /**
+     * Android thermal status levels used as an extra guard on top of the battery-temperature rules.
+     * Many phones report MODERATE/SEVERE just from charging or a warm room, so those only *reduce*
+     * the boost; the boost is blocked/stopped only at CRITICAL or worse.
+     */
+    const val THERMAL_STATUS_SEVERE = 3
+    const val THERMAL_STATUS_CRITICAL = 4
 
     /** Can a boost start right now? Returns the blocking reason, or null if it may start. */
     fun startBlocker(tempC: Float?, batteryPct: Int?, thermalStatus: Int? = null): StopReason? = when {
         batteryPct != null && batteryPct < MIN_BATTERY_PCT -> StopReason.LOW_BATTERY
         tempC != null && tempC >= CUTOFF_TEMP_C -> StopReason.OVERHEAT
-        thermalStatus != null && thermalStatus >= THERMAL_STATUS_SEVERE -> StopReason.THERMAL_SEVERE
+        thermalStatus != null && thermalStatus >= THERMAL_STATUS_CRITICAL -> StopReason.THERMAL_CRITICAL
         else -> null
     }
 
@@ -69,7 +74,7 @@ object SafetyPolicy {
         startBlocker(tempC, batteryPct, thermalStatus)?.let { return SafetyVerdict(reduced = currentlyReduced, stop = it) }
 
         val hot = (tempC != null && tempC >= REDUCE_TEMP_C) ||
-            (thermalStatus != null && thermalStatus >= THERMAL_STATUS_MODERATE)
+            (thermalStatus != null && thermalStatus >= THERMAL_STATUS_SEVERE)
         val stillWarm = currentlyReduced && tempC != null && tempC > RECOVER_TEMP_C
         return SafetyVerdict(reduced = hot || stillWarm, stop = null)
     }

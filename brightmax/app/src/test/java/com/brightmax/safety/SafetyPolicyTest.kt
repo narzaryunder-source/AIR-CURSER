@@ -40,10 +40,19 @@ class SafetyPolicyTest {
     }
 
     @Test fun androidThermalStatus() {
-        // MODERATE (2) reduces, SEVERE (3) stops.
-        assertTrue(SafetyPolicy.evaluate(30f, 80, false, thermalStatus = 2).reduced)
-        assertEquals(StopReason.THERMAL_SEVERE, SafetyPolicy.evaluate(30f, 80, false, thermalStatus = 3).stop)
+        // LIGHT/MODERATE (1, 2) do nothing, SEVERE (3) only reduces, CRITICAL (4)+ stops.
         assertFalse(SafetyPolicy.evaluate(30f, 80, false, thermalStatus = 1).reduced)
+        assertFalse(SafetyPolicy.evaluate(30f, 80, false, thermalStatus = 2).reduced)
+        val severe = SafetyPolicy.evaluate(30f, 80, false, thermalStatus = 3)
+        assertNull(severe.stop)
+        assertTrue(severe.reduced)
+        assertEquals(StopReason.THERMAL_CRITICAL, SafetyPolicy.evaluate(30f, 80, false, thermalStatus = 4).stop)
+    }
+
+    @Test fun severeThermalStatusDoesNotBlockStart() {
+        // Regression: phones that report SEVERE while charging must still be able to boost (reduced).
+        assertNull(SafetyPolicy.startBlocker(tempC = 36f, batteryPct = 34, thermalStatus = 3))
+        assertEquals(StopReason.THERMAL_CRITICAL, SafetyPolicy.startBlocker(36f, 34, thermalStatus = 4))
     }
 
     @Test fun unknownReadingsDoNotBlock() {

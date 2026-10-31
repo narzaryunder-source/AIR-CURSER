@@ -41,7 +41,7 @@ Phone ki language Hindi ho to app Hindi me dikhega. Android 13+ par sirf app ki 
 |---|---|
 | Battery ≥ 40 °C | Boost reduced by 20 % (level × 0.8) **and HDR paused**. Back to full only after cooling below 38 °C (hysteresis, so it doesn't flicker). Notification + toast. |
 | Battery ≥ 43 °C | Boost turned **off**, user notified. Can't be restarted until it cools. |
-| Android thermal status | Extra guard via `PowerManager` thermal API (Android 10+): *moderate* → reduce, *severe* → off. |
+| Android thermal status | Extra guard via `PowerManager` thermal API (Android 10+): *severe* → reduce (same as 40 °C), *critical* or worse → off. Many phones report *moderate/severe* just from charging or a warm room, so those never block the boost; the live value is shown in the status card. |
 | Battery < 15 % | Boost off (and can't start). |
 | Screen turns off | Boost off. |
 | Auto-off timer | 5 / 10 / 15 / 30 / 60 min, **default 10**. Warning notification + red ring on the button 1 minute before the end. |
@@ -58,8 +58,11 @@ pixels. In practice:
   than the plain white square next to it. The **HDR headroom now** row shows the live ratio (e.g. 1.00× → 2.5×).
 * How much of the rest of the screen benefits depends on the phone maker's display driver; some phones raise the
   whole panel, most only the HDR parts.
-* Below Android 14 or on a non-HDR display, HDR Boost is disabled with a clear message and BrightMax uses
-  max brightness only.
+* Below Android 14, HDR Boost is disabled with a clear message and BrightMax uses max brightness only.
+* If the display reports no HDR (BrightMax checks `isHdr()`, HDR capabilities, every display mode's HDR types,
+  `isHdrSdrRatioAvailable()` and `Configuration.isScreenHdr()`), it says so and uses max brightness only, but
+  offers **"Try HDR anyway"**. HDR mode is harmless on such a panel; if *HDR headroom now* stays at 1.00× or
+  *Not reported* while boosting, that phone simply does not give apps extra HDR brightness.
 
 ---
 
@@ -158,7 +161,7 @@ adb shell cmd thermalservice reset
 
 **HDR (Android 14+, HDR display)**
 - [ ] HDR card says "Supported"; during boost it says "Active", the *HDR headroom now* value rises above 1.00×, and the HDR test square looks brighter than the white square.
-- [ ] HDR switch off → boost continues without HDR. On a non-HDR phone the card explains "does not support HDR" and the switch is disabled.
+- [ ] HDR switch off → boost continues without HDR. On a phone that reports no HDR the card says so and the switch becomes **Try HDR anyway**.
 
 **Over other apps**
 - [ ] Boost on → open another app: brightness stays max; the floating button shows the level and countdown; drag it around.
@@ -171,7 +174,7 @@ adb shell cmd thermalservice reset
 - [ ] `dumpsys battery set temp 405` while boosting → level drops 20 % (255 → 204), HDR pauses, "Phone is warm" alert. `set temp 370` → back to full.
 - [ ] `set temp 432` → boost off, alert "Battery too hot"; tapping ON is refused with the same message.
 - [ ] `set level 14` → boost off ("Battery below 15 %"); can't start again until above 15 %.
-- [ ] `cmd thermalservice override-status 3` → boost off.
+- [ ] `cmd thermalservice override-status 3` (severe) → boost reduced 20 %, still on. `override-status 4` (critical) → boost off.
 - [ ] Press the power button while boosted → boost off; after unlocking, the original brightness is back.
 - [ ] Set the timer to 5 min → warning notification + red ring at 1:00 left → boost off at 0:00.
 
