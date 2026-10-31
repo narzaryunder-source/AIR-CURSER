@@ -7,6 +7,10 @@ no() { printf "${R}[X]${N} %s\n   ${Y}-> %s${N}\n" "$1" "$2"; PROBLEMS=$((PROBLE
 PROBLEMS=0
 FIX="setup.sh dobara chalao (kuch delete nahi hoga, jo ho chuka woh skip hoga)"
 
+if [ "$(id -u)" = "0" ]; then
+    echo "Aap abhi Ubuntu ke andar ho (prompt: root@localhost). Pehle 'exit' likho jab tak prompt '~ \$' na ho, phir yeh command chalao."
+    exit 1
+fi
 echo "=== AirCursor Ubuntu doctor ==="
 if ! command -v proot-distro >/dev/null; then
     no "proot-distro missing" "$FIX"
@@ -14,7 +18,7 @@ elif ! proot-distro login ubuntu -- true >/dev/null 2>&1; then
     no "Ubuntu not installed" "$FIX"
 else
     ok "Ubuntu installed"
-    U=$(grep -o -- '--user [a-z0-9_-]*' "$PREFIX/bin/ubuntu-desktop" 2>/dev/null | awk '{print $2}')
+    U=$(grep -o -- '--user [a-z0-9_-]*' "$PREFIX/bin/ubuntu-desktop" 2>/dev/null | head -n 1 | awk '{print $2}')
     # One login that reports what is inside Ubuntu.
     INFO=$(proot-distro login ubuntu -- sh -c "
         [ -x /usr/bin/startxfce4 ] && echo XFCE

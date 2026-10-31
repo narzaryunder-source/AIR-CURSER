@@ -30,6 +30,10 @@ step() {
     AC_HB=$!
 }
 
+if [ "$(id -u)" = "0" ]; then
+    echo "Aap abhi Ubuntu ke andar ho (prompt: root@localhost). Pehle 'exit' likho jab tak prompt '~ \$' na ho, phir yeh command chalao."
+    exit 1
+fi
 if [ -z "${PREFIX:-}" ] || [ ! -d "/data/data/com.termux" ]; then
     echo "Run this script inside the Termux app on Android."
     exit 1
@@ -196,6 +200,10 @@ step 10 96 "Creating commands: ubuntu-desktop, ubuntu-stop, ubuntu-shell"
 cat > "$PREFIX/bin/ubuntu-desktop" <<LAUNCH_EOF
 #!/data/data/com.termux/files/usr/bin/bash
 # Starts the Ubuntu XFCE desktop in Termux:X11.  Use --gpu for OpenGL acceleration (VirGL).
+if [ "\$(id -u)" = "0" ]; then
+    echo "Aap Ubuntu ke andar ho. Pehle 'exit' likho jab tak prompt '~ \\\$' na ho, phir ubuntu-desktop chalao."
+    exit 1
+fi
 ubuntu-stop >/dev/null 2>&1
 # Old session state from a killed run can stop the panel / window manager from starting.
 proot-distro login $DISTRO --user $UBU_USER -- sh -c 'rm -rf "\$HOME/.cache/sessions"' >/dev/null 2>&1
