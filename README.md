@@ -8,6 +8,8 @@ Pinch karke (anguutha + ungli milake) click hota hai.
 
 ---
 
+> 🐧 **Naya:** phone par asli Ubuntu Linux desktop (VS Code, Claude Code, Ollama…) – guide: [ubuntu/README.md](ubuntu/README.md)
+
 ## 📥 Install kaise kare (sirf phone se)
 
 1. Is page ke **Releases** section me jao (right side me ya neeche "Releases" link), ya seedha yeh link kholo:

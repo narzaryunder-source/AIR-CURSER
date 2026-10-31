@@ -3,6 +3,9 @@ name: Build APK
 on:
   push:
     branches: [ main ]
+    # The Ubuntu scripts are not part of the APK: no new release for them.
+    paths-ignore:
+      - 'ubuntu/**'
   workflow_dispatch:
 
 permissions:
