@@ -20,6 +20,8 @@ data class GestureConfig(
     val screenWidth: Int = 1080,
     val screenHeight: Int = 2400,
     val pointerMode: PointerMode = PointerMode.RELATIVE,
+    /** Simple mode: the cursor always follows the hand and pinch = click. No other gestures. */
+    val clickOnly: Boolean = false,
     // Cursor mapping and smoothing
     val margin: Float = 0.15f,
     val sensitivity: Float = 1f,
@@ -175,6 +177,7 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
     private var prevSrc: Point2? = null
     private var prevFrameMs = 0L
     private var handSize = 0f
+    private var speedEma = 0f
     private var lastSeenMs = Long.MIN_VALUE
     private var handPresent = false
 
@@ -323,7 +326,7 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
         if (paused) {
             frozen = true
             syncPointer()
-            if (pose == HandPose.FIST) handleFist(t, events)
+            if (pose == HandPose.FIST && !config.clickOnly) handleFist(t, events)
             return output(t, true, pose, ratio, events)
         }
 
@@ -336,7 +339,9 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
             pinched -> onPinchHold(t, events)
         }
 
-        if (phase == PinchPhase.IDLE) {
+        if (phase == PinchPhase.IDLE && config.clickOnly) {
+            follow(t)
+        } else if (phase == PinchPhase.IDLE) {
             val twoFingers = config.enableScroll && pose == HandPose.TWO_FINGERS
             if (twoFingers && (scrollActive || t - twoFingersSinceMs >= config.scrollEnterMs)) {
                 scrollLeftAtMs = -1L
@@ -464,7 +469,10 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
 
         if (relative) {
             // Mouse-like acceleration: slow = precise, fast = covers the screen quickly.
-            val speed = hypot(stickyDx, stickyDy) / (dtMs / 1000f)
+            val instSpeed = hypot(stickyDx, stickyDy) / (dtMs / 1000f)
+            // Smoothed speed: the gain must not jump from frame to frame (that looks like shaking).
+            speedEma = if (newHand) instSpeed else speedEma * 0.6f + instSpeed * 0.4f
+            val speed = speedEma
             val s = ((speed - config.accelSlowPxPerSec) /
                 (config.accelFastPxPerSec - config.accelSlowPxPerSec)).coerceIn(0f, 1f)
             val smooth = s * s * (3f - 2f * s)
@@ -561,7 +569,8 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
 
     private fun onPinchStart(t: Long, events: MutableList<GestureEvent>) {
         endScroll(events)
-        if (t < pinchBlockedUntilMs || !(config.enableTap || config.enableLongPress || config.enableDrag)) {
+        val anyPinchGesture = config.clickOnly || config.enableTap || config.enableLongPress || config.enableDrag
+        if (t < pinchBlockedUntilMs || !anyPinchGesture) {
             phase = PinchPhase.IGNORED
             return
         }
@@ -583,6 +592,7 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
         val dragThreshold = config.dragStartFraction * min(config.screenWidth, config.screenHeight)
         when (phase) {
             PinchPhase.PRESSED -> when {
+                config.clickOnly -> Unit
                 config.enableDrag && t >= freezeUntilMs && moved > dragThreshold -> startDrag(false, events)
                 config.enableLongPress && t - pinchStartMs >= config.longPressMs -> {
                     events += GestureEvent.LongPress(pinchX, pinchY)
@@ -615,7 +625,7 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
 
     private fun onPinchEnd(t: Long, events: MutableList<GestureEvent>) {
         when (phase) {
-            PinchPhase.PRESSED -> if (config.enableTap) events += GestureEvent.Tap(pinchX, pinchY)
+            PinchPhase.PRESSED -> if (config.enableTap || config.clickOnly) events += GestureEvent.Tap(pinchX, pinchY)
             PinchPhase.DRAGGING -> events += GestureEvent.DragEnd(cursorX, cursorY)
             else -> Unit
         }

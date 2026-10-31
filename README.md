@@ -90,6 +90,15 @@ Cursor ke rang: ⚪ normal · 🟡 pinch daba hua · 🟠 drag · 🔵 scroll. H
 - **Recalibrate:** apni finger aaram wali jagah rakho aur Recalibrate dabao – active box wahin center ho jayega.
 - **Test: live camera preview:** camera, haath ka skeleton aur active box (peela) dikhata hai.
 
+### 🎯 Simple mode (default ON)
+- Sirf **cursor + pinch se click**. Scroll, palm, fist wale gestures band – isliye koi pose cursor ko rokta nahi, cursor hamesha haath ke saath chalta hai.
+- Baaki gestures chahiye to Home screen par "Simple mode" OFF karo.
+- Pause/Turn off: notification buttons ya Quick Settings tile se.
+
+### 🎨 Camera image (stripes fix)
+- Kuch phones camera ka colour galat bhejte hain → preview me hari/gulabi lakeerein. **Auto** mode shuru ke frames check karta hai aur lakeerein mile to **black & white** image use karta hai (hand tracking ke liye kaafi, aur tez bhi).
+- Settings → Performance → Camera image: Auto / Colour / Black & white.
+
 ### 🖱️ Mouse mode (default ON)
 - Cursor PC mouse ki tarah chalta hai: jitna haath hilaoge utna cursor (haath ke size ke hisaab se), isliye **camera se paas ho ya door – same feel**.
 - **Acceleration:** dheere = precise (chhote buttons ke liye), tez = poori screen jaldi paar.

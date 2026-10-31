@@ -57,7 +57,15 @@ object AppSettings {
         }
     }
 
-    val PERFORMANCE_SLIDERS = listOf(PROCESSOR, RESOLUTION, TARGET_FPS)
+    val CAMERA_COLOURS = FloatSetting("camera_colours", "Camera image", 0f, 0f, 2f, steps = 1) {
+        when (it.roundToInt()) {
+            0 -> "Auto (fixes stripes)"
+            1 -> "Colour"
+            else -> "Black & white (fastest)"
+        }
+    }
+
+    val PERFORMANCE_SLIDERS = listOf(PROCESSOR, CAMERA_COLOURS, RESOLUTION, TARGET_FPS)
 
     val G_TAP = BoolSetting("g_tap", "Tap (quick pinch)", true)
     val G_LONG = BoolSetting("g_long", "Long press (pinch hold)", true)
@@ -78,6 +86,10 @@ object AppSettings {
     )
     val SHOW_FPS = BoolSetting("show_fps", "Debug overlay (FPS, latency)", false)
     val HAPTICS = BoolSetting("haptics", "Vibrate on click / gesture", true)
+    val CLICK_ONLY = BoolSetting(
+        "click_only", "Simple mode: cursor + click only", true,
+        "Only move and pinch-to-click. Scroll, palm and fist gestures are off, so nothing stops the cursor.",
+    )
     val MOUSE_MODE = BoolSetting(
         "mouse_mode", "Mouse mode (recommended)", true,
         "Cursor moves like a PC mouse and feels the same near or far from the camera. " +
@@ -110,6 +122,7 @@ class Prefs(context: Context) {
         screenWidth = screenWidth,
         screenHeight = screenHeight,
         pointerMode = if (get(AppSettings.MOUSE_MODE)) PointerMode.RELATIVE else PointerMode.ABSOLUTE,
+        clickOnly = get(AppSettings.CLICK_ONLY),
         margin = get(AppSettings.MARGIN),
         sensitivity = get(AppSettings.SENSITIVITY),
         minCutoff = get(AppSettings.MIN_CUTOFF).toDouble(),

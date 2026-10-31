@@ -324,6 +324,31 @@ class GestureEngineTest {
         assertEquals(HandPose.POINT, PoseClassifier.classify(HandGeometry(hand)))
     }
 
+    // ---- Simple (click-only) mode ----
+
+    @Test
+    fun simpleModeCursorFollowsEveryPoseAndOnlyClicks() {
+        val d = Driver(GestureEngine(mouseConfig.copy(clickOnly = true)))
+        d.feed(Shape.POINT, frames = 10)
+        val start = d.last.x
+        var x = 0.5f
+        // Open palm / two fingers / fist must not stop the cursor or fire anything.
+        for (shape in listOf(Shape.OPEN_PALM, Shape.TWO_FINGERS, Shape.FIST)) {
+            repeat(15) {
+                x += 0.004f
+                d.feed(shape, cx = x)
+            }
+        }
+        assertTrue("cursor should keep moving", d.last.x > start + 50f)
+        d.feed(Shape.OPEN_PALM, cx = x, frames = 60)
+        d.feed(Shape.POINT, cx = x, frames = 5).feed(Shape.PINCH, cx = x, frames = 25).feed(Shape.POINT, cx = x, frames = 3)
+        assertEquals(1, d.count<GestureEvent.Tap>())
+        assertEquals(0, d.count<GestureEvent.LongPress>())
+        assertEquals(0, d.count<GestureEvent.Home>())
+        assertEquals(0, d.count<GestureEvent.PauseChanged>())
+        assertEquals(0, d.count<GestureEvent.ScrollVelocity>())
+    }
+
     // ---- Mouse (relative) mode ----
 
     private fun mouseMove(size: Float, handSizes: Float, steps: Int): Float {

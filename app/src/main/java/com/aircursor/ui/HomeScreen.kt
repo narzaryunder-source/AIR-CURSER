@@ -144,6 +144,13 @@ fun HomeScreen(onOpenSetup: () -> Unit, onOpenPreview: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             Button(onClick = onOpenPreview, modifier = Modifier.fillMaxWidth()) { Text("Test: live camera preview") }
 
+            Spacer(Modifier.height(12.dp))
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    BoolRow(prefs, AppSettings.CLICK_ONLY)
+                }
+            }
+
             // Setup status
             Spacer(Modifier.height(16.dp))
             SectionTitle("Setup")

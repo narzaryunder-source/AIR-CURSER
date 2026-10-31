@@ -12,9 +12,6 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Matrix
-import android.graphics.Paint
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
@@ -131,11 +128,8 @@ class HandTrackingService : LifecycleService() {
     @Volatile private var inferenceMs = 0f
     @Volatile private var resolutionLabel = "-"
     @Volatile private var delegateLabel = "-"
-    private var srcBitmap: Bitmap? = null
-    private val uprightPool = arrayOfNulls<Bitmap>(3)
-    private var poolIndex = 0
-    private val rotateMatrix = Matrix()
-    private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val converter = YuvConverter()
+    private var previewCounter = 0
 
     // Auto processor choice: measure GPU, then CPU, keep the faster one (done once per install).
     @Volatile private var benchDelegate: Delegate? = null
@@ -284,6 +278,12 @@ class HandTrackingService : LifecycleService() {
         val size = ScreenUtils.realSize(this)
         val config = prefs.toGestureConfig(size.x, size.y)
         synchronized(engine) { engine.config = config }
+        val colourMode = when (prefs.get(AppSettings.CAMERA_COLOURS).roundToInt()) {
+            1 -> YuvConverter.Mode.COLOUR
+            2 -> YuvConverter.Mode.GRAY
+            else -> YuvConverter.Mode.AUTO
+        }
+        if (converter.mode != colourMode) converter.mode = colourMode
         val maxFps = prefs.get(AppSettings.TARGET_FPS)
         targetFps = if (maxFps >= 59.5f) 0 else maxFps.roundToInt().coerceIn(10, 60)
     }
@@ -453,7 +453,6 @@ class HandTrackingService : LifecycleService() {
                 val builder = ImageAnalysis.Builder()
                     .setResolutionSelector(selector)
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                     .setTargetRotation(ScreenUtils.rotation(this))
                 val range = chooseFpsRange()
                 if (range != null) {
@@ -472,8 +471,7 @@ class HandTrackingService : LifecycleService() {
                     val fallback = ImageAnalysis.Builder()
                         .setResolutionSelector(selector)
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-                        .setTargetRotation(ScreenUtils.rotation(this))
+                            .setTargetRotation(ScreenUtils.rotation(this))
                         .build()
                     fallback.setAnalyzer(analysisExecutor, ::analyze)
                     provider.unbindAll()
@@ -509,15 +507,14 @@ class HandTrackingService : LifecycleService() {
                 else -> 0L
             }
             if (now - lastSubmitMs < interval) return
-            // Keep latency low: never queue more than 2 frames inside MediaPipe (1 while measuring).
-            val maxInFlight = if (benchDelegate != null) 1 else 2
-            if (inFlight.get() >= maxInFlight) {
+            // One frame at a time: a second queued frame would only wait and double the delay.
+            if (inFlight.get() >= 1) {
                 if (now - lastSubmitMs < 500) return
                 inFlight.set(0) // a result got lost; recover
             }
             lastSubmitMs = now
 
-            val upright = toUprightBitmap(image)
+            val upright = converter.convert(image)
             val ts = max(now, lastTimestamp + 1)
             lastTimestamp = ts
             inFlight.incrementAndGet()
@@ -528,40 +525,6 @@ class HandTrackingService : LifecycleService() {
         } finally {
             image.close()
         }
-    }
-
-    /**
-     * RGBA frame -> upright bitmap, reusing bitmaps instead of allocating 2 per frame.
-     * A small pool is used because MediaPipe may still read the previous frame.
-     */
-    private fun toUprightBitmap(image: ImageProxy): Bitmap {
-        val w = image.width
-        val h = image.height
-        val plane = image.planes[0]
-        val src = if (plane.pixelStride == 4 && plane.rowStride == w * 4) {
-            val b = srcBitmap?.takeIf { it.width == w && it.height == h }
-                ?: Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { srcBitmap = it }
-            plane.buffer.rewind()
-            b.copyPixelsFromBuffer(plane.buffer)
-            b
-        } else {
-            image.toBitmap()
-        }
-        val rotation = image.imageInfo.rotationDegrees
-        val ow = if (rotation == 90 || rotation == 270) h else w
-        val oh = if (rotation == 90 || rotation == 270) w else h
-        poolIndex = (poolIndex + 1) % uprightPool.size
-        val out = uprightPool[poolIndex]?.takeIf { it.width == ow && it.height == oh }
-            ?: Bitmap.createBitmap(ow, oh, Bitmap.Config.ARGB_8888).also { uprightPool[poolIndex] = it }
-        rotateMatrix.reset()
-        rotateMatrix.postRotate(rotation.toFloat())
-        when (rotation) {
-            90 -> rotateMatrix.postTranslate(h.toFloat(), 0f)
-            180 -> rotateMatrix.postTranslate(w.toFloat(), h.toFloat())
-            270 -> rotateMatrix.postTranslate(0f, w.toFloat())
-        }
-        Canvas(out).drawBitmap(src, rotateMatrix, bitmapPaint)
-        return out
     }
 
     /** MediaPipe result callback (background thread). */
@@ -591,7 +554,8 @@ class HandTrackingService : LifecycleService() {
         }
         lastResultMs = t
 
-        if (TrackingBus.previewRequested) {
+        // The preview is only for testing: every 3rd frame is enough and costs less.
+        if (TrackingBus.previewRequested && previewCounter++ % 3 == 0) {
             try {
                 val bmp = BitmapExtractor.extract(input)
                 val scale = 360f / max(bmp.width, bmp.height)
@@ -607,7 +571,7 @@ class HandTrackingService : LifecycleService() {
         }
 
         val currentFps = fps
-        val stats = TrackingStats(currentFps, cameraFps, inferenceMs, resolutionLabel, delegateLabel)
+        val stats = TrackingStats(currentFps, cameraFps, inferenceMs, "$resolutionLabel ${converter.label}", delegateLabel)
         main.post {
             if (!isRunning) return@post
             CursorAccessibilityService.instance?.onEngineOutput(out, stats)
