@@ -50,8 +50,9 @@ class HandProfile(
     val std: FloatArray,
 ) {
     /**
-     * How different [f] is from this hand: average of per-feature z-scores, ignoring the
-     * 3 worst features (one badly estimated joint must not fail the owner). ~1 = same hand.
+     * How different [f] is from this hand: root-mean-square of per-feature z-scores, ignoring
+     * the 2 worst features (one badly estimated joint must not fail the owner). ~1 = same hand.
+     * RMS (not a plain average) so a few clearly different bones count strongly.
      */
     fun distance(f: FloatArray): Float {
         val z = FloatArray(mean.size) { i ->
@@ -59,10 +60,10 @@ class HandProfile(
             kotlin.math.abs(f[i] - mean[i]) / spread
         }
         z.sort()
-        val keep = (z.size - 3).coerceAtLeast(1)
+        val keep = (z.size - 2).coerceAtLeast(1)
         var sum = 0f
-        for (i in 0 until keep) sum += z[i]
-        return sum / keep
+        for (i in 0 until keep) sum += z[i] * z[i]
+        return sqrt(sum / keep)
     }
 
     fun serialize(): String =
@@ -163,7 +164,7 @@ class OwnerGate(
             State.OWNER, State.STRANGER -> {
                 score = score * 0.85f + d * 0.15f
                 // Hysteresis so the state does not flip on single noisy frames.
-                if (state == State.OWNER && score > threshold * 1.5f) state = State.STRANGER
+                if (state == State.OWNER && score > threshold * 1.3f) state = State.STRANGER
                 if (state == State.STRANGER && score < threshold * 0.8f) state = State.OWNER
             }
         }
