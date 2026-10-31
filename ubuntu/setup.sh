@@ -59,21 +59,28 @@ U="$1"
 export DEBIAN_FRONTEND=noninteractive
 ln -sf /usr/share/zoneinfo/Asia/Kolkata /etc/localtime || true
 
+# Finish an install that was interrupted earlier (safe to run every time)
+dpkg --configure -a || true
+echo "[1/6] Updating Ubuntu packages"
 apt-get update
 apt-get -y -o Dpkg::Options::="--force-confnew" upgrade || true
+echo "[2/6] Installing the XFCE desktop" 
 apt-get install -y --no-install-recommends \
     sudo locales dbus-x11 at-spi2-core ca-certificates curl wget git nano gnupg \
     xfce4 xfce4-terminal xfce4-taskmanager thunar mousepad ristretto \
     fonts-dejavu-core fonts-noto-color-emoji xdg-utils pulseaudio-utils
 # Nice-to-have packages (names differ between Ubuntu releases, so each is optional)
-for p in xfce4-whiskermenu-plugin papirus-icon-theme adwaita-icon-theme-full adwaita-icon-theme \
-         file-roller xarchiver htop; do
-    apt-get install -y --no-install-recommends "$p" >/dev/null 2>&1 || true
+echo "[3/6] Installing small extras"
+for p in xfce4-whiskermenu-plugin adwaita-icon-theme xarchiver htop; do
+    echo "      - $p"
+    apt-get install -y --no-install-recommends "$p" >/dev/null 2>&1 || echo "        (skipped)"
 done
+echo "[4/6] Language settings"
 
 sed -i 's/^# *en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen 2>/dev/null || true
 locale-gen en_US.UTF-8 >/dev/null 2>&1 || true
 
+echo "[5/6] Firefox"
 # Firefox as a normal package (Ubuntu's own "firefox" is a snap, which cannot run here)
 if ! command -v firefox >/dev/null 2>&1; then
     install -d -m 0755 /etc/apt/keyrings
@@ -87,6 +94,7 @@ if ! command -v firefox >/dev/null 2>&1; then
     fi
 fi
 
+echo "[6/6] Creating your user"
 # Normal user with sudo
 if ! id "$U" >/dev/null 2>&1; then
     useradd -m -s /bin/bash "$U"
