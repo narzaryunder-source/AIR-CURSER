@@ -19,12 +19,13 @@ else
     INFO=$(proot-distro login ubuntu -- sh -c "
         [ -x /usr/bin/startxfce4 ] && echo XFCE
         [ -x /usr/bin/dbus-launch ] && echo DBUS
-        [ -n '$U' ] && id '$U' >/dev/null 2>&1 && echo USER
         [ -x /usr/local/bin/ubuntu-extras ] && echo EXTRAS
     " 2>/dev/null)
     echo "$INFO" | grep -q XFCE && ok "XFCE desktop installed" || no "XFCE desktop missing" "$FIX"
     echo "$INFO" | grep -q DBUS && ok "dbus-x11 installed" || no "dbus-x11 missing" "$FIX"
-    echo "$INFO" | grep -q USER && ok "Linux user '$U' exists" || no "Linux user missing" "$FIX"
+    # Check the user with its own login (more reliable than inside the combined check above).
+    if [ -n "$U" ] && proot-distro login ubuntu -- id "$U" >/dev/null 2>&1; then ok "Linux user '$U' exists"
+    else no "Linux user missing" "$FIX"; fi
     echo "$INFO" | grep -q EXTRAS && ok "Install Apps menu present" || printf "${Y}[?]${N} Install Apps menu missing (optional)\n"
 fi
 [ -x "$PREFIX/bin/ubuntu-desktop" ] && ok "ubuntu-desktop command exists" || no "ubuntu-desktop command missing" "$FIX"
