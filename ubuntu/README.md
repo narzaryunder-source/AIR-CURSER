@@ -79,6 +79,7 @@ Ya terminal me: `sudo ubuntu-extras`
 | Desktop achanak band | Step 2 wali setting + battery unrestricted |
 | Kaali screen / panel-dock gayab / X cursor | `curl -fsSL https://raw.githubusercontent.com/narzaryunder-source/AIR-CURSER/main/ubuntu/fix.sh -o fix.sh && bash fix.sh` (purani settings backup me rehti hain) |
 | Termux achanak band | Recent apps me Termux ko 🔒 Lock karo, Battery → background activity ON |
+| `[Process completed (signal 9)]` / sessions laal | Ek baar: `curl -fsSL https://raw.githubusercontent.com/narzaryunder-source/AIR-CURSER/main/ubuntu/no-kill.sh -o no-kill.sh && bash no-kill.sh` (Wireless debugging se Android ka process-killer band) |
 | `--gpu` se gadbad | Bina `--gpu` chalao |
 | Setup beech me ruk gaya | Wahi command dobara chalao – jo ho chuka woh dobara nahi hoga, kuch delete nahi hoga |
 | Storage full | Termux me `pkg clean`, Ubuntu me `sudo apt clean` |

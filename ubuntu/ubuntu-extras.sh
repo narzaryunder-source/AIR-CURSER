@@ -7,6 +7,9 @@ if [ "$(id -u)" != "0" ]; then
     exec sudo "$0" "$@"
 fi
 REAL_USER="${SUDO_USER:-user}"
+# An install that was interrupted (e.g. Android killed Termux) is finished first.
+dpkg --configure -a >/dev/null 2>&1
+apt-get -f install -y >/dev/null 2>&1
 
 ok() { printf '\033[1;32m%s\033[0m\n' "$*"; }
 bad() { printf '\033[1;31m%s\033[0m\n' "$*"; }
