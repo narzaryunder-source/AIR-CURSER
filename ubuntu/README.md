@@ -51,6 +51,10 @@ Termux:X11 apne aap khulega aur Ubuntu desktop dikhega.
 | `ubuntu-desktop --gpu` | GPU ke saath (3D thoda tez; agar gadbad ho to bina `--gpu` chalao) |
 | `ubuntu-stop` | Desktop band (files safe rehti hain) |
 | `ubuntu-shell` | Sirf Ubuntu terminal (Claude Code / Ollama ke liye halka) |
+| `ubuntu-wallpaper` | Download folder ki sabse nayi photo ko wallpaper banao (pehle `termux-setup-storage`) |
+| `bash fix.sh` | Desktop me panel/dock gayab, X cursor, kaali screen – sab theek karta hai |
+
+> ⚠️ Yeh sab commands **Termux** me chalti hain (prompt `~ $`). Agar prompt `root@localhost` ya `user@localhost` hai to aap Ubuntu ke andar ho – pehle `exit` likho.
 
 ## 📦 Step 5: Apps install karo
 Ubuntu desktop par **"Install Apps"** icon par double-tap (pehli baar "Launch Anyway" dabao). Menu aayega:
@@ -73,7 +77,8 @@ Ya terminal me: `sudo ubuntu-extras`
 | Problem | Hal |
 |---|---|
 | Desktop achanak band | Step 2 wali setting + battery unrestricted |
-| Kaali screen | `ubuntu-stop` phir `ubuntu-desktop` |
+| Kaali screen / panel-dock gayab / X cursor | `curl -fsSL https://raw.githubusercontent.com/narzaryunder-source/AIR-CURSER/main/ubuntu/fix.sh -o fix.sh && bash fix.sh` (purani settings backup me rehti hain) |
+| Termux achanak band | Recent apps me Termux ko 🔒 Lock karo, Battery → background activity ON |
 | `--gpu` se gadbad | Bina `--gpu` chalao |
 | Setup beech me ruk gaya | Wahi command dobara chalao – jo ho chuka woh dobara nahi hoga, kuch delete nahi hoga |
 | Storage full | Termux me `pkg clean`, Ubuntu me `sudo apt clean` |
