@@ -59,7 +59,7 @@ Termux:X11 apne aap khulega aur Ubuntu desktop dikhega.
 ## 📦 Step 5: Apps install karo
 Ubuntu desktop par **"Install Apps"** icon par double-tap (pehli baar "Launch Anyway" dabao). Menu aayega:
 
-1 VS Code · 2 Claude Code · 3 Ollama · 4 Blender · 5 LibreOffice · 6 GIMP · 7 Inkscape · 8 Python · 9 VLC · 10 Google Drive · 11 Shotcut · 12 Kdenlive
+1 VS Code · 2 Claude Code · 3 Ollama · 4 Blender · 5 LibreOffice · 6 GIMP · 7 Inkscape · 8 Python · 9 VLC · 10 Google Drive · 11 Shotcut · 12 Kdenlive · 13 Games (light) · 14 Games (3D)
 
 Ya terminal me: `sudo ubuntu-extras`
 

@@ -98,6 +98,30 @@ GDD
     ok "Commands bhi: rclone ls gdrive:   |   rclone copy ~/Documents gdrive:Backup"
 }
 
+install_each() {
+    # Installs packages one by one, so one missing name does not stop the rest.
+    for p in "$@"; do
+        if apt-get install -y --no-install-recommends "$p" >/dev/null 2>&1; then ok "  + $p"
+        else bad "  - $p (not available, skipped)"; fi
+    done
+}
+
+install_games_light() {
+    echo "Installing light offline games (2D, smooth on phones)..."
+    install_each supertux frozen-bubble pingus openttd openttd-opengfx \
+        aisleriot gnome-mines gnome-sudoku gnome-chess stockfish quadrapassel
+    ok "Games: Applications -> Games. (SuperTux = Mario jaisa, OpenTTD = train/transport tycoon,"
+    ok "Frozen Bubble, Pingus, Solitaire, Mines, Sudoku, Chess, Quadrapassel = Tetris)"
+}
+
+install_games_3d() {
+    echo "Installing 3D games (heavier – start the desktop with: ubuntu-desktop --gpu)..."
+    install_each supertuxkart
+    apt-get install -y --no-install-recommends luanti >/dev/null 2>&1 && ok "  + luanti (Minecraft jaisa)" \
+        || install_each minetest
+    ok "3D games: Applications -> Games. Settings me graphics LOW rakho. SuperTuxKart data bada hai (~600 MB)."
+}
+
 install_apt() {
     echo "Installing: $*"
     if apt-get install -y "$@"; then ok "Installed: $*"; else bad "Failed: $*"; fi
@@ -119,6 +143,8 @@ while true; do
   10) Google Drive (15 GB free cloud storage)
   11) Shotcut (video editor, simple – 720p/1080p)
   12) Kdenlive (video editor, more features, heavier)
+  13) Games – light & offline (SuperTux, OpenTTD, Chess, Solitaire...)
+  14) Games – 3D (SuperTuxKart racing, Luanti/Minecraft-like) – heavier
    0) Exit
 MENU
     read -r -p "  Choose a number: " c
@@ -136,6 +162,8 @@ MENU
         10) install_gdrive ;;
         11) install_apt shotcut
             ok "Shotcut: Applications -> Multimedia. Tip: Settings -> Preview scaling -> 360p for smooth editing" ;;
+        13) install_games_light ;;
+        14) install_games_3d ;;
         12) install_apt kdenlive
             ok "Kdenlive: Applications -> Multimedia. Tip: use proxy clips (Project settings) for smooth editing" ;;
         0) exit 0 ;;
