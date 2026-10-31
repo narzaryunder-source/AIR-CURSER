@@ -197,6 +197,8 @@ cat > "$PREFIX/bin/ubuntu-desktop" <<LAUNCH_EOF
 #!/data/data/com.termux/files/usr/bin/bash
 # Starts the Ubuntu XFCE desktop in Termux:X11.  Use --gpu for OpenGL acceleration (VirGL).
 ubuntu-stop >/dev/null 2>&1
+# Old session state from a killed run can stop the panel / window manager from starting.
+proot-distro login $DISTRO --user $UBU_USER -- sh -c 'rm -rf "\$HOME/.cache/sessions"' >/dev/null 2>&1
 export XDG_RUNTIME_DIR="\$TMPDIR"
 pulseaudio --start --load="module-native-protocol-tcp auth-ip-acl=127.0.0.1 auth-anonymous=1" --exit-idle-time=-1 >/dev/null 2>&1
 termux-x11 :0 >/dev/null 2>&1 &
@@ -214,13 +216,14 @@ LAUNCH_EOF
 
 cat > "$PREFIX/bin/ubuntu-stop" <<'STOP_EOF'
 #!/data/data/com.termux/files/usr/bin/bash
-# Stops the desktop (only programs; no files are touched).
-pkill -f "startxfce4" 2>/dev/null
-pkill -f "xfce4-session" 2>/dev/null
+# Stops the desktop and removes its temporary files (your files are not touched).
+pkill -f "startxfce4|xfce4-session|xfwm4|xfce4-panel|xfdesktop|xfconfd|xfsettingsd|Thunar|dbus-launch" 2>/dev/null
 pkill -f "virgl_test_server" 2>/dev/null
 pkill -f "termux-x11" 2>/dev/null
 pkill -f "com.termux.x11" 2>/dev/null
 pulseaudio --kill 2>/dev/null
+sleep 1
+rm -rf "$TMPDIR/.X11-unix" "$TMPDIR/.X0-lock" "$TMPDIR/.ICE-unix" 2>/dev/null
 exit 0
 STOP_EOF
 
