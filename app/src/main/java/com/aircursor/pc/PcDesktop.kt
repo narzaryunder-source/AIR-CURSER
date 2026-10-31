@@ -374,9 +374,9 @@ private fun WindowFrame(
         ) {
             Text("  ${w.app.emoji}  ${w.app.title}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
             Spacer(Modifier.weight(1f))
-            TitleButton("—", onMinimize)
+            TitleButton("—", onClick = onMinimize)
             TitleButton(if (w.maximized) "❐" else "☐") { w.maximized = !w.maximized }
-            TitleButton("✕", onClose, danger = true)
+            TitleButton("✕", danger = true, onClick = onClose)
         }
         Box(
             Modifier
@@ -405,7 +405,7 @@ private fun WindowFrame(
 }
 
 @Composable
-private fun TitleButton(text: String, onClick: () -> Unit, danger: Boolean = false) {
+private fun TitleButton(text: String, danger: Boolean = false, onClick: () -> Unit) {
     Box(
         Modifier
             .width(42.dp)

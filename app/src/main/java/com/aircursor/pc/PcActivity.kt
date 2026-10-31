@@ -89,11 +89,11 @@ class PcActivity : ComponentActivity() {
                     state.minimizeAll()
                     return true
                 }
-                event.isMetaPressed && code == KeyEvent.KEYCODE_UP -> {
+                event.isMetaPressed && code == KeyEvent.KEYCODE_DPAD_UP -> {
                     state.focused()?.maximized = true
                     return true
                 }
-                event.isMetaPressed && code == KeyEvent.KEYCODE_DOWN -> {
+                event.isMetaPressed && code == KeyEvent.KEYCODE_DPAD_DOWN -> {
                     state.focused()?.let { if (it.maximized) it.maximized = false else state.minimize(it) }
                     return true
                 }
