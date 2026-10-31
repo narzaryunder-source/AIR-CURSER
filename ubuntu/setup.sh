@@ -13,7 +13,11 @@ if [ -z "${PREFIX:-}" ] || [ ! -d "/data/data/com.termux" ]; then
 fi
 
 DISTRO="ubuntu"
-ROOTFS="$PREFIX/var/lib/proot-distro/installed-rootfs/$DISTRO"
+# Works with old and new proot-distro (the rootfs folder moved between versions):
+# everything inside Ubuntu is done through "proot-distro login", files go through /tmp.
+SHARED_TMP="${TMPDIR:-$PREFIX/tmp}"
+mkdir -p "$SHARED_TMP"
+ubuntu_installed() { proot-distro login "$DISTRO" -- true >/dev/null 2>&1; }
 
 # ---------------------------------------------------------------- checks
 FREE_KB=$(df -k "$HOME" | awk 'NR==2 {print $4}')
@@ -39,7 +43,7 @@ pkg install -y proot-distro termux-x11-nightly pulseaudio wget
 pkg install -y virglrenderer-android || warn "virglrenderer-android not available: GPU mode will be off"
 
 # ---------------------------------------------------------------- Ubuntu rootfs
-if [ -d "$ROOTFS" ]; then
+if ubuntu_installed; then
     say "Ubuntu is already installed – keeping it (nothing is deleted)"
 else
     say "Downloading and installing Ubuntu"
@@ -48,7 +52,7 @@ fi
 
 # ---------------------------------------------------------------- setup inside Ubuntu
 say "Installing the XFCE4 desktop inside Ubuntu (largest step, 10-30 min)"
-cat > "$ROOTFS/root/aircursor-inner-setup.sh" <<'INNER_EOF'
+cat > "$SHARED_TMP/aircursor-inner-setup.sh" <<'INNER_EOF'
 #!/bin/bash
 set -e
 U="$1"
@@ -90,6 +94,11 @@ fi
 echo "$U ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/$U"
 chmod 0440 "/etc/sudoers.d/$U"
 
+# Extra apps menu
+if [ -f /tmp/aircursor-ubuntu-extras.sh ]; then
+    install -m 0755 /tmp/aircursor-ubuntu-extras.sh /usr/local/bin/ubuntu-extras
+fi
+
 # Desktop shortcut for the extra apps installer
 mkdir -p "/home/$U/Desktop"
 cat > "/home/$U/Desktop/Install-Apps.desktop" <<'DESK'
@@ -108,15 +117,14 @@ INNER_EOF
 # Extra apps menu (copied into Ubuntu)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/ubuntu-extras.sh" ]; then
-    cp "$SCRIPT_DIR/ubuntu-extras.sh" "$ROOTFS/usr/local/bin/ubuntu-extras"
+    cp "$SCRIPT_DIR/ubuntu-extras.sh" "$SHARED_TMP/aircursor-ubuntu-extras.sh"
 else
-    wget -qO "$ROOTFS/usr/local/bin/ubuntu-extras" \
+    wget -qO "$SHARED_TMP/aircursor-ubuntu-extras.sh" \
         https://raw.githubusercontent.com/narzaryunder-source/AIR-CURSER/main/ubuntu/ubuntu-extras.sh
 fi
-chmod +x "$ROOTFS/usr/local/bin/ubuntu-extras"
 
-proot-distro login "$DISTRO" -- bash /root/aircursor-inner-setup.sh "$UBU_USER"
-rm -f "$ROOTFS/root/aircursor-inner-setup.sh"
+proot-distro login "$DISTRO" --shared-tmp -- bash /tmp/aircursor-inner-setup.sh "$UBU_USER"
+rm -f "$SHARED_TMP/aircursor-inner-setup.sh" "$SHARED_TMP/aircursor-ubuntu-extras.sh"
 
 # ---------------------------------------------------------------- launchers in Termux
 say "Creating commands: ubuntu-desktop, ubuntu-stop, ubuntu-shell"

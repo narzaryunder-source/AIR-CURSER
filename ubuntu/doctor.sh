@@ -5,26 +5,33 @@ G='\033[1;32m'; R='\033[1;31m'; Y='\033[1;33m'; N='\033[0m'
 ok() { printf "${G}[OK]${N} %s\n" "$*"; }
 no() { printf "${R}[X]${N} %s\n   ${Y}-> %s${N}\n" "$1" "$2"; PROBLEMS=$((PROBLEMS + 1)); }
 PROBLEMS=0
-ROOTFS="$PREFIX/var/lib/proot-distro/installed-rootfs/ubuntu"
+FIX="setup.sh dobara chalao (kuch delete nahi hoga, jo ho chuka woh skip hoga)"
 
 echo "=== AirCursor Ubuntu doctor ==="
-command -v proot-distro >/dev/null && ok "proot-distro installed" \
-    || no "proot-distro missing" "Setup command dobara chalao (setup.sh)"
-[ -d "$ROOTFS" ] && ok "Ubuntu installed" \
-    || no "Ubuntu not installed" "Setup pura nahi hua. setup.sh dobara chalao aur 'Done!' aane tak ruko"
-[ -x "$ROOTFS/usr/bin/startxfce4" ] && ok "XFCE desktop installed" \
-    || no "XFCE desktop missing" "Setup beech me ruka tha. setup.sh dobara chalao (kuch delete nahi hoga)"
-[ -x "$ROOTFS/usr/bin/dbus-launch" ] && ok "dbus-x11 installed" \
-    || no "dbus-x11 missing" "setup.sh dobara chalao"
-[ -x "$PREFIX/bin/ubuntu-desktop" ] && ok "ubuntu-desktop command exists" \
-    || no "ubuntu-desktop command missing" "setup.sh dobara chalao"
-U=$(grep -o -- '--user [a-z0-9_-]*' "$PREFIX/bin/ubuntu-desktop" 2>/dev/null | awk '{print $2}')
-if [ -n "$U" ] && grep -q "^$U:" "$ROOTFS/etc/passwd" 2>/dev/null; then ok "Linux user '$U' exists"
-else no "Linux user missing" "setup.sh dobara chalao"; fi
+if ! command -v proot-distro >/dev/null; then
+    no "proot-distro missing" "$FIX"
+elif ! proot-distro login ubuntu -- true >/dev/null 2>&1; then
+    no "Ubuntu not installed" "$FIX"
+else
+    ok "Ubuntu installed"
+    U=$(grep -o -- '--user [a-z0-9_-]*' "$PREFIX/bin/ubuntu-desktop" 2>/dev/null | awk '{print $2}')
+    # One login that reports what is inside Ubuntu.
+    INFO=$(proot-distro login ubuntu -- sh -c "
+        [ -x /usr/bin/startxfce4 ] && echo XFCE
+        [ -x /usr/bin/dbus-launch ] && echo DBUS
+        [ -n '$U' ] && id '$U' >/dev/null 2>&1 && echo USER
+        [ -x /usr/local/bin/ubuntu-extras ] && echo EXTRAS
+    " 2>/dev/null)
+    echo "$INFO" | grep -q XFCE && ok "XFCE desktop installed" || no "XFCE desktop missing" "$FIX"
+    echo "$INFO" | grep -q DBUS && ok "dbus-x11 installed" || no "dbus-x11 missing" "$FIX"
+    echo "$INFO" | grep -q USER && ok "Linux user '$U' exists" || no "Linux user missing" "$FIX"
+    echo "$INFO" | grep -q EXTRAS && ok "Install Apps menu present" || printf "${Y}[?]${N} Install Apps menu missing (optional)\n"
+fi
+[ -x "$PREFIX/bin/ubuntu-desktop" ] && ok "ubuntu-desktop command exists" || no "ubuntu-desktop command missing" "$FIX"
 command -v termux-x11 >/dev/null && ok "termux-x11 package installed" \
     || no "termux-x11 package missing" "Termux me chalao: pkg install x11-repo && pkg install termux-x11-nightly"
 if pm list packages 2>/dev/null | grep -q "com.termux.x11"; then ok "Termux:X11 app installed"
-else printf "${Y}[?]${N} Termux:X11 app check nahi ho paya – make sure the app from GitHub (Nightly) is installed\n"; fi
+else printf "${Y}[?]${N} Termux:X11 app check nahi ho paya – GitHub (Nightly) wala app installed hona chahiye\n"; fi
 
 if [ "$PROBLEMS" -gt 0 ]; then
     printf "\n${R}%s problem(s). Upar ke '->' wale steps karo, phir dobara doctor chalao.${N}\n" "$PROBLEMS"
@@ -46,9 +53,8 @@ proot-distro login ubuntu --user "$U" --shared-tmp -- env DISPLAY=:0 dbus-launch
 sleep 25
 if pgrep -f xfce4-session >/dev/null || pgrep -f xfwm4 >/dev/null; then
     ok "XFCE desktop is running – Termux:X11 app kholo, desktop dikhna chahiye"
-    echo "   (Agar ab bhi kaala hai: Termux:X11 me 3 ungliyon se tap ya notification se 'Preferences' -> Output -> Display resolution mode: native)"
 else
-    no "XFCE did not start" "Neeche ka error ka screenshot bhejo"
+    no "XFCE did not start" "Neeche ke error ka screenshot bhejo"
     echo "----- last lines of $LOG -----"
     tail -n 25 "$LOG"
 fi
