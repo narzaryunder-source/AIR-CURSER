@@ -5,14 +5,22 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import com.aircursor.data.AppLock
+import com.aircursor.data.Security
 import com.aircursor.service.Permissions
 import com.aircursor.ui.AirCursorTheme
 import com.aircursor.ui.HomeScreen
+import com.aircursor.ui.LockScreen
 import com.aircursor.ui.OnboardingScreen
 import com.aircursor.ui.PreviewScreen
+import com.aircursor.ui.SecurityScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -21,14 +29,30 @@ class MainActivity : ComponentActivity() {
         setContent {
             AirCursorTheme {
                 var screen by rememberSaveable { mutableStateOf(if (needsSetup) "setup" else "home") }
-                BackHandler(enabled = screen != "home") { screen = "home" }
-                when (screen) {
-                    "setup" -> OnboardingScreen(onFinish = { screen = "home" })
-                    "preview" -> PreviewScreen(onBack = { screen = "home" })
-                    else -> HomeScreen(
-                        onOpenSetup = { screen = "setup" },
-                        onOpenPreview = { screen = "preview" },
-                    )
+                // Re-checked every time the app comes back to the front.
+                var lockTick by remember { mutableIntStateOf(0) }
+                LifecycleEventEffect(Lifecycle.Event.ON_START) {
+                    AppLock.onAppShown()
+                    lockTick++
+                }
+                LifecycleEventEffect(Lifecycle.Event.ON_STOP) { AppLock.onAppHidden() }
+                val locked = remember(lockTick) { Security(this).hasPin && !AppLock.isUnlocked() }
+                var unlockedNow by remember(lockTick) { mutableStateOf(false) }
+
+                if (locked && !unlockedNow) {
+                    LockScreen(onUnlocked = { unlockedNow = true })
+                } else {
+                    BackHandler(enabled = screen != "home") { screen = "home" }
+                    when (screen) {
+                        "setup" -> OnboardingScreen(onFinish = { screen = "home" })
+                        "preview" -> PreviewScreen(onBack = { screen = "home" })
+                        "security" -> SecurityScreen(onBack = { screen = "home" })
+                        else -> HomeScreen(
+                            onOpenSetup = { screen = "setup" },
+                            onOpenPreview = { screen = "preview" },
+                            onOpenSecurity = { screen = "security" },
+                        )
+                    }
                 }
             }
         }

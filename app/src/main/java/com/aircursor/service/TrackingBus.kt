@@ -58,3 +58,29 @@ data class TrackingStats(
     val resolution: String = "-",
     val delegate: String = "-",
 )
+
+/** Live owner-hand check result, for the security screen. */
+data class OwnerCheck(val enabled: Boolean = false, val state: String = "-", val score: Float = 0f)
+
+/** Hand registration progress: 0..1, [done] when the profile was saved. */
+data class EnrollState(val progress: Float = 0f, val hint: String = "", val done: Boolean = false)
+
+object OwnerBus {
+    private val _check = kotlinx.coroutines.flow.MutableStateFlow(OwnerCheck())
+    val check: kotlinx.coroutines.flow.StateFlow<OwnerCheck> = _check
+
+    private val _enroll = kotlinx.coroutines.flow.MutableStateFlow<EnrollState?>(null)
+    val enroll: kotlinx.coroutines.flow.StateFlow<EnrollState?> = _enroll
+
+    /** Set by the UI to start registering the hand; cleared by the service when finished. */
+    @Volatile
+    var enrollRequested = false
+
+    fun postCheck(c: OwnerCheck) {
+        if (_check.value != c) _check.value = c
+    }
+
+    fun postEnroll(e: EnrollState?) {
+        _enroll.value = e
+    }
+}

@@ -32,9 +32,10 @@ object FakeHand {
                 pts[base + 2] = Pair(mx, my - 0.65f)
                 pts[base + 3] = Pair(mx, my - 0.85f)
             } else {
-                pts[base + 1] = Pair(mx, my - 0.3f)
-                pts[base + 2] = Pair(mx, my - 0.1f)
-                pts[base + 3] = Pair(mx, my + 0.2f)
+                // Bones keep their length when the finger curls (only the angle changes).
+                pts[base + 1] = Pair(mx, my - 0.4f)
+                pts[base + 2] = Pair(mx, my - 0.3f)
+                pts[base + 3] = Pair(mx, my - 0.05f)
             }
         }
         pts[HandIdx.THUMB_CMC] = Pair(-0.25f, -0.2f)
@@ -46,6 +47,16 @@ object FakeHand {
             else -> Pair(-0.75f, -0.7f)
         }
         return pts.map { (x, y) -> Landmark(cx + x * size, cy + y * size) }
+    }
+
+    /** A different person: wider palm and longer finger bones than [build]. */
+    fun otherPerson(shape: Shape, cx: Float = 0.5f, cy: Float = 0.7f, size: Float = 0.15f): List<Landmark> {
+        val base = build(shape, 0f, 0f, 1f)
+        return base.mapIndexed { i, p ->
+            val wide = if (i >= HandIdx.INDEX_MCP) 1.25f else 1f
+            val long = if (i >= HandIdx.INDEX_MCP && (i - HandIdx.INDEX_MCP) % 4 != 0) 1.15f else 1f
+            Landmark(cx + p.x * wide * size, cy + p.y * long * size)
+        }
     }
 
     fun scaled(lms: List<Landmark>, factor: Float): List<Landmark> =

@@ -44,7 +44,14 @@ import com.aircursor.core.EngineOutput
 import com.aircursor.core.GestureEngine
 import com.aircursor.core.GestureEvent
 import com.aircursor.core.HandFrame
+import com.aircursor.core.HandEnroller
+import com.aircursor.core.HandGeometry
+import com.aircursor.core.HandPose
+import com.aircursor.core.HandSignature
 import com.aircursor.core.Landmark
+import com.aircursor.core.OwnerGate
+import com.aircursor.core.PoseClassifier
+import com.aircursor.data.Security
 import com.aircursor.data.AppSettings
 import com.aircursor.data.Prefs
 import com.google.mediapipe.framework.image.BitmapExtractor
@@ -129,6 +136,12 @@ class HandTrackingService : LifecycleService() {
     @Volatile private var resolutionLabel = "-"
     @Volatile private var delegateLabel = "-"
     private val converter = YuvConverter()
+
+    // Owner hand lock
+    @Volatile private var ownerGate: OwnerGate? = null
+    private var ownerProfileKey: String? = null
+    private var enroller: HandEnroller? = null
+    private var lastGateState: OwnerGate.State? = null
     private var previewCounter = 0
 
     // Auto processor choice: measure GPU, then CPU, keep the faster one (done once per install).
@@ -275,6 +288,7 @@ class HandTrackingService : LifecycleService() {
     }
 
     private fun applyConfig() {
+        refreshOwnerGate()
         val size = ScreenUtils.realSize(this)
         val config = prefs.toGestureConfig(size.x, size.y)
         synchronized(engine) { engine.config = config }
@@ -286,6 +300,53 @@ class HandTrackingService : LifecycleService() {
         if (converter.mode != colourMode) converter.mode = colourMode
         val maxFps = prefs.get(AppSettings.TARGET_FPS)
         targetFps = if (maxFps >= 59.5f) 0 else maxFps.roundToInt().coerceIn(10, 60)
+    }
+
+    /** (Re)creates the owner check when the lock, the registered hand or the strictness changes. */
+    private fun refreshOwnerGate() {
+        val security = Security(this)
+        val profile = security.ownerProfile
+        val threshold = Security.threshold(prefs.get(AppSettings.OWNER_STRICTNESS))
+        if (!security.ownerLock || profile == null) {
+            ownerGate = null
+            ownerProfileKey = null
+            OwnerBus.postCheck(OwnerCheck(enabled = false))
+            return
+        }
+        val key = prefs.sp.getString(Security.KEY_PROFILE, null)
+        val gate = ownerGate
+        if (gate != null && key == ownerProfileKey) {
+            gate.threshold = threshold
+        } else {
+            ownerGate = OwnerGate(profile, threshold)
+            ownerProfileKey = key
+        }
+    }
+
+    /** Result thread: registration of the owner hand (open palm frames only). */
+    private fun handleEnrollment(features: FloatArray?, side: String?, pose: HandPose?) {
+        if (!OwnerBus.enrollRequested) {
+            enroller = null
+            return
+        }
+        val e = enroller ?: HandEnroller(45).also { enroller = it }
+        val hint = when {
+            features == null -> "Show your hand to the camera"
+            pose != HandPose.OPEN_PALM -> "Open your palm fully (all fingers straight)"
+            else -> "Hold still… slowly tilt your hand a little"
+        }
+        if (features != null && side != null && pose == HandPose.OPEN_PALM) e.add(features, side)
+        if (e.done) {
+            val profile = e.build()
+            enroller = null
+            OwnerBus.enrollRequested = false
+            if (profile != null) {
+                main.post { Security(this).saveOwnerProfile(profile) }
+                OwnerBus.postEnroll(EnrollState(1f, "Registered: ${profile.handedness} hand", done = true))
+            }
+        } else {
+            OwnerBus.postEnroll(EnrollState(e.progress, hint))
+        }
     }
 
     private fun setPaused(paused: Boolean) {
@@ -535,7 +596,27 @@ class HandTrackingService : LifecycleService() {
         val latency = (SystemClock.uptimeMillis() - t).toFloat()
         inferenceMs = if (inferenceMs == 0f) latency else inferenceMs * 0.9f + latency * 0.1f
         if (benchDelegate != null && result.landmarks().isNotEmpty()) recordBenchmark(latency)
-        val hand = result.landmarks().firstOrNull()?.map { Landmark(it.x(), it.y(), it.z()) }
+        var hand = result.landmarks().firstOrNull()?.map { Landmark(it.x(), it.y(), it.z()) }
+        val world = result.worldLandmarks().firstOrNull()?.map { Landmark(it.x(), it.y(), it.z()) }
+        val side = result.handedness().firstOrNull()?.firstOrNull()?.categoryName()
+        val features = world?.let { HandSignature.features(it) }
+        val rawPose = hand?.let { PoseClassifier.classify(HandGeometry(it, input.width.toFloat() / input.height.coerceAtLeast(1))) }
+        handleEnrollment(features, side, rawPose)
+
+        // Owner hand lock: a hand that is not the owner's is treated as "no hand".
+        val gate = ownerGate
+        if (gate != null && !OwnerBus.enrollRequested) {
+            val allowed = gate.update(features, side, t)
+            if (!allowed) hand = null
+            val state = gate.state
+            OwnerBus.postCheck(OwnerCheck(true, state.name, gate.score))
+            if (state != lastGateState) {
+                lastGateState = state
+                if (state == OwnerGate.State.STRANGER) {
+                    main.post { CursorAccessibilityService.instance?.showLabel("🔒 Not the owner's hand") }
+                }
+            }
+        }
         val aspect = input.width.toFloat() / input.height.coerceAtLeast(1)
 
         val out: EngineOutput

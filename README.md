@@ -90,6 +90,16 @@ Cursor ke rang: ⚪ normal · 🟡 pinch daba hua · 🟠 drag · 🔵 scroll. H
 - **Recalibrate:** apni finger aaram wali jagah rakho aur Recalibrate dabao – active box wahin center ho jayega.
 - **Test: live camera preview:** camera, haath ka skeleton aur active box (peela) dikhata hai.
 
+### 🔒 Security: Owner hand lock + PIN
+Home screen → **"🔒 Security"**:
+1. **PIN banao** (4–8 digits). Iske baad AirCursor app kholne par PIN maanga jayega.
+2. **Register my hand:** haath camera se 30–60 cm door, **khula panja**, ungliyan seedhi, achhi roshni. Progress 100% hone tak haath dikhate raho (thoda sa ghuma sakte ho).
+3. **"Only my hand can control"** ON → ab doosre ka haath ignore hoga (screen par "🔒 Not the owner's hand" aayega).
+4. **Live test:** kisi aur se haath dikhwao. Agar unka haath bhi "Owner" dikhe to **Strictness → Strict** karo.
+- Haath dobara register karna, lock band karna, PIN badalna ya hatana – sab ke liye **PIN** chahiye.
+- **PIN bhool gaye?** Lock screen par "Forgot PIN" → phone ka fingerprint / screen lock → PIN hat jayega, naya bana lo.
+- ⚠️ Haath ki pehchaan haddiyon ke proportion se hoti hai – fingerprint jitni pakki nahi. Bilkul milta-julta haath pass ho sakta hai. Sab data sirf phone me rehta hai.
+
 ### 🎯 Simple mode (default ON)
 - Sirf **cursor + pinch se click**. Scroll, palm, fist wale gestures band – isliye koi pose cursor ko rokta nahi, cursor hamesha haath ke saath chalta hai.
 - Baaki gestures chahiye to Home screen par "Simple mode" OFF karo.

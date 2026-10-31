@@ -105,6 +105,15 @@ object AppSettings {
     )
 
     val OPTIONS = listOf(REVERSE_SCROLL, HAPTICS, AUTO_PAUSE, SHOW_FPS)
+
+    val OWNER_LOCK = BoolSetting("owner_lock", "Only my hand can control", false)
+    val OWNER_STRICTNESS = FloatSetting("owner_strictness", "Hand check strictness", 1f, 0f, 2f, steps = 1) {
+        when (it.roundToInt()) {
+            0 -> "Relaxed"
+            1 -> "Normal"
+            else -> "Strict"
+        }
+    }
     val PERFORMANCE_OPTIONS = listOf(STABLE_30, HIGH_FPS_CAMERA)
 }
 

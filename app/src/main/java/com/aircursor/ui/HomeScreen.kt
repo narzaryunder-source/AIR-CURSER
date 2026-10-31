@@ -49,7 +49,7 @@ import com.aircursor.service.Permissions
 import com.aircursor.service.TrackingBus
 
 @Composable
-fun HomeScreen(onOpenSetup: () -> Unit, onOpenPreview: () -> Unit) {
+fun HomeScreen(onOpenSetup: () -> Unit, onOpenPreview: () -> Unit, onOpenSecurity: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { Prefs(context) }
     val status by TrackingBus.status.collectAsStateWithLifecycle()
@@ -143,6 +143,10 @@ fun HomeScreen(onOpenSetup: () -> Unit, onOpenPreview: () -> Unit) {
             }
             Spacer(Modifier.height(8.dp))
             Button(onClick = onOpenPreview, modifier = Modifier.fillMaxWidth()) { Text("Test: live camera preview") }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = onOpenSecurity, modifier = Modifier.fillMaxWidth()) {
+                Text("🔒 Security: owner hand lock & PIN")
+            }
 
             Spacer(Modifier.height(12.dp))
             Card(Modifier.fillMaxWidth()) {
