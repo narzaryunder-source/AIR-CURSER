@@ -12,6 +12,7 @@ pkill -f "startxfce4|xfce4-session|xfwm4|xfce4-panel|xfdesktop|xfconfd|xfsetting
 pkill -f "virgl_test_server" 2>/dev/null
 pkill -f "termux-x11|com.termux.x11" 2>/dev/null
 pulseaudio --kill 2>/dev/null
+termux-wake-unlock 2>/dev/null
 sleep 1
 pkill -9 -f "xfce4-session|xfwm4|xfce4-panel|xfdesktop|xfconfd" 2>/dev/null
 rm -rf "$TMPDIR/.X11-unix" "$TMPDIR/.X0-lock" "$TMPDIR/.ICE-unix" 2>/dev/null
@@ -26,6 +27,8 @@ if [ "$(id -u)" = "0" ]; then
     exit 1
 fi
 ubuntu-stop >/dev/null 2>&1
+# Keep Termux awake so Android does not kill it while you are in the Termux:X11 app.
+termux-wake-lock 2>/dev/null
 # Old session state from a killed run can stop the panel / window manager from starting.
 proot-distro login ubuntu --user __USER__ -- sh -c 'rm -rf "$HOME/.cache/sessions"' >/dev/null 2>&1
 export XDG_RUNTIME_DIR="$TMPDIR"

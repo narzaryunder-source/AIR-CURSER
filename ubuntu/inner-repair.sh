@@ -26,6 +26,9 @@ if [ ! -e /usr/share/xfce4/backdrops/xubuntu-wallpaper.png ]; then
     [ -n "$src" ] && ln -sf "$src" /usr/share/xfce4/backdrops/xubuntu-wallpaper.png
 fi
 
+# Less RAM/CPU: no window animations/shadows (Android kills Termux less often)
+[ -f /usr/share/xfwm4/defaults ] && sed -i 's/^use_compositing=true/use_compositing=false/' /usr/share/xfwm4/defaults
+
 # Self-repair: after Android kills Termux, the window manager / panel sometimes do not start.
 cat > /usr/local/bin/aircursor-heal <<'HEAL'
 #!/bin/sh
