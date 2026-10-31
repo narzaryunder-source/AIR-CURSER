@@ -128,7 +128,8 @@ step 5 40 "Installing the XFCE desktop (biggest step, 10-30 min)"
 apt-get install "${APT_OPTS[@]}" --no-install-recommends \
     sudo locales dbus-x11 at-spi2-core ca-certificates curl wget git nano gnupg \
     xfce4 xfce4-terminal xfce4-taskmanager thunar mousepad ristretto \
-    fonts-dejavu-core fonts-noto-color-emoji xdg-utils pulseaudio-utils librsvg2-common
+    fonts-dejavu-core fonts-noto-color-emoji xdg-utils pulseaudio-utils librsvg2-common \
+    libgl1 libglx-mesa0 libgl1-mesa-dri libegl1 procps
 # Nice-to-have packages (names differ between Ubuntu releases, so each is optional)
 step 6 70 "Installing small extras"
 for p in xfce4-whiskermenu-plugin adwaita-icon-theme xarchiver htop; do
@@ -207,6 +208,7 @@ proot-distro login "$DISTRO" --shared-tmp -- bash /tmp/aircursor-inner-repair.sh
 # shellcheck source=/dev/null
 . "$SHARED_TMP/aircursor-launchers.sh"
 install_launchers "$UBU_USER"
+echo "$UBU_USER" > "$HOME/.aircursor-ubuntu-user"
 rm -f "$SHARED_TMP/aircursor-launchers.sh" "$SHARED_TMP/aircursor-inner-repair.sh"
 
 ac_hb_stop

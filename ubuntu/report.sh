@@ -3,8 +3,14 @@
 # manager + panel, showing their errors). Run in a NEW Termux session while the desktop is open.
 #   curl -fsSL https://raw.githubusercontent.com/narzaryunder-source/AIR-CURSER/main/ubuntu/report.sh -o report.sh && bash report.sh
 if [ "$(id -u)" = "0" ]; then echo "Pehle 'exit' likho (aap Ubuntu ke andar ho)."; exit 1; fi
-U=$(grep -o -- '--user [a-z0-9_-]*' "$PREFIX/bin/ubuntu-desktop" 2>/dev/null | head -n 1 | awk '{print $2}')
+# Which Linux user the desktop runs as (saved once; never "0"/root).
+U=$(cat "$HOME/.aircursor-ubuntu-user" 2>/dev/null)
+[ -z "$U" ] && U=$(grep -o -- 'login ubuntu --user [a-z][a-z0-9_-]*' "$PREFIX/bin/ubuntu-desktop" 2>/dev/null | head -n 1 | awk '{print $4}')
+if [ -z "$U" ] || [ "$U" = "root" ]; then
+    U=$(proot-distro login ubuntu -- sh -c 'if id user >/dev/null 2>&1; then echo user; else awk -F: '"'"'$3>=1000 && $3<60000 && $1!="nobody" {print $1; exit}'"'"' /etc/passwd; fi' 2>/dev/null | tail -n 1)
+fi
 U=${U:-user}
+echo "$U" > "$HOME/.aircursor-ubuntu-user"
 echo "===== AirCursor Ubuntu report ====="
 pkg list-installed 2>/dev/null | grep -E "^(proot-distro|termux-x11-nightly)/" | cut -d' ' -f1,2
 echo "-- login as '$U' gives:"

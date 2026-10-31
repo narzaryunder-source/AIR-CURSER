@@ -18,7 +18,14 @@ elif ! proot-distro login ubuntu -- true >/dev/null 2>&1; then
     no "Ubuntu not installed" "$FIX"
 else
     ok "Ubuntu installed"
-    U=$(grep -o -- '--user [a-z0-9_-]*' "$PREFIX/bin/ubuntu-desktop" 2>/dev/null | head -n 1 | awk '{print $2}')
+    # Which Linux user the desktop runs as (saved once; never "0"/root).
+    U=$(cat "$HOME/.aircursor-ubuntu-user" 2>/dev/null)
+    [ -z "$U" ] && U=$(grep -o -- 'login ubuntu --user [a-z][a-z0-9_-]*' "$PREFIX/bin/ubuntu-desktop" 2>/dev/null | head -n 1 | awk '{print $4}')
+    if [ -z "$U" ] || [ "$U" = "root" ]; then
+        U=$(proot-distro login ubuntu -- sh -c 'if id user >/dev/null 2>&1; then echo user; else awk -F: '"'"'$3>=1000 && $3<60000 && $1!="nobody" {print $1; exit}'"'"' /etc/passwd; fi' 2>/dev/null | tail -n 1)
+    fi
+    U=${U:-user}
+    echo "$U" > "$HOME/.aircursor-ubuntu-user"
     # One login that reports what is inside Ubuntu.
     INFO=$(proot-distro login ubuntu -- sh -c "
         [ -x /usr/bin/startxfce4 ] && echo XFCE

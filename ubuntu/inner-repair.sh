@@ -10,7 +10,9 @@ dpkg --configure -a >/dev/null 2>&1
 
 # Packages the desktop needs (installs only what is missing)
 need=""
-for p in procps librsvg2-common dbus-x11 xfwm4 xfce4-panel xfdesktop4 xfce4-session xfce4-terminal thunar; do
+# libgl1 / libglx-mesa0 / libgl1-mesa-dri: the window manager aborts without libGL ("Couldn't open libGL.so.1")
+for p in procps librsvg2-common dbus-x11 libgl1 libglx-mesa0 libgl1-mesa-dri libegl1 \
+         xfwm4 xfce4-panel xfdesktop4 xfce4-session xfce4-terminal thunar; do
     dpkg -s "$p" >/dev/null 2>&1 || need="$need $p"
 done
 if [ -n "$need" ]; then
