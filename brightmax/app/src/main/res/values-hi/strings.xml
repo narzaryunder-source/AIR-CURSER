@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tagline">सुरक्षित अधिकतम स्क्रीन ब्राइटनेस</string>
+
+    <string name="tile_label">BrightMax</string>
+    <string name="tile_on">बूस्ट %1$d%%</string>
+    <string name="tile_off">बंद</string>
+
+    <string name="channel_status">बूस्ट स्थिति</string>
+    <string name="channel_status_desc">BrightMax चलने तक दिखती है, OFF बटन के साथ।</string>
+    <string name="channel_alerts">सुरक्षा चेतावनी</string>
+    <string name="channel_alerts_desc">गर्मी, बैटरी और टाइमर की चेतावनी।</string>
+    <string name="notif_title_on">बूस्ट चालू · %1$d%%</string>
+    <string name="notif_title_on_hdr">बूस्ट चालू · %1$d%% + HDR</string>
+    <string name="notif_text_on">ऑटो-ऑफ़ उलटी गिनती। अपनी ब्राइटनेस वापस लाने के लिए OFF दबाएँ।</string>
+    <string name="notif_text_reduced" formatted="false">फ़ोन गर्म है: बूस्ट 20% कम किया गया।</string>
+    <string name="notif_title_standby">BrightMax तैयार · बूस्ट बंद</string>
+    <string name="notif_text_standby">बूस्ट के लिए फ़्लोटिंग बटन या ON दबाएँ।</string>
+    <string name="action_off">OFF</string>
+    <string name="action_on">ON</string>
+    <string name="action_close">बंद करें</string>
+
+    <string name="reason_user">बंद किया गया।</string>
+    <string name="reason_timer">ऑटो-ऑफ़ टाइमर पूरा हुआ।</string>
+    <string name="reason_overheat">बैटरी बहुत गर्म है (%1$.1f °C)। फ़ोन की सुरक्षा के लिए बूस्ट बंद किया गया।</string>
+    <string name="reason_thermal">Android के अनुसार फ़ोन ज़्यादा गर्म हो रहा है। बूस्ट बंद किया गया।</string>
+    <string name="reason_low_battery" formatted="false">बैटरी 15% से कम है। बूस्ट बंद किया गया।</string>
+    <string name="reason_screen_off">स्क्रीन बंद हुई, इसलिए बूस्ट बंद किया गया।</string>
+    <string name="reason_permission">सिस्टम ब्राइटनेस बदलने की अनुमति नहीं है। अनुमति देने के लिए BrightMax खोलें।</string>
+    <string name="reason_service_stopped">BrightMax रोका गया। मूल ब्राइटनेस वापस आ गई।</string>
+
+    <string name="alert_boost_off_title">बूस्ट बंद हुआ</string>
+    <string name="alert_reduced_title">फ़ोन गर्म है: बूस्ट कम किया गया</string>
+    <string name="alert_reduced_text">बैटरी %1$.1f °C। ठंडा होने तक ब्राइटनेस 20%% कम और HDR रोका गया।</string>
+    <string name="alert_timer_title">बूस्ट 1 मिनट में बंद होगा</string>
+    <string name="alert_timer_text">ऑटो-ऑफ़ टाइमर लगभग पूरा है। आपकी सामान्य ब्राइटनेस वापस आ जाएगी।</string>
+    <string name="alert_cannot_start_title">बूस्ट शुरू नहीं हो सकता</string>
+
+    <string name="overlay_on">☀\n%1$d%%</string>
+    <string name="overlay_off">☀\nOFF</string>
+    <string name="overlay_cd_on">बूस्ट चालू। बंद करने के लिए टैप करें, BrightMax खोलने के लिए देर तक दबाएँ।</string>
+    <string name="overlay_cd_off">बूस्ट बंद। चालू करने के लिए टैप करें, BrightMax खोलने के लिए देर तक दबाएँ।</string>
+
+    <string name="perm_write_title">सिस्टम ब्राइटनेस बदलने दें</string>
+    <string name="perm_write_card">ज़रूरी। BrightMax ब्राइटनेस अधिकतम कर सके और बाद में वापस ला सके।</string>
+    <string name="perm_write_explain">ब्राइटनेस अधिकतम करने और बाद में आपकी मूल ब्राइटनेस वापस लाने के लिए BrightMax को \"सिस्टम सेटिंग बदलें\" अनुमति चाहिए।\n\nअगली स्क्रीन पर \"सिस्टम सेटिंग बदलने की अनुमति दें\" चालू करें, फिर वापस आएँ।</string>
+    <string name="perm_overlay_title">फ़्लोटिंग बटन की अनुमति दें</string>
+    <string name="perm_overlay_explain">दूसरे ऐप के ऊपर ON/OFF बटन दिखाने के लिए Android को \"दूसरे ऐप के ऊपर दिखाएँ\" अनुमति चाहिए।\n\nअगली स्क्रीन पर BrightMax ढूँढकर चालू करें, फिर वापस आएँ।</string>
+    <string name="perm_notif_title">सूचनाएँ बंद हैं</string>
+    <string name="perm_notif_card">सुझाव: सुरक्षा चेतावनी (गर्मी, टाइमर) और OFF बटन सूचनाओं में आते हैं।</string>
+    <string name="perm_notif_explain">BrightMax हमेशा दिखने वाले OFF बटन और सुरक्षा चेतावनियों (फ़ोन ज़्यादा गर्म, कम बैटरी, टाइमर खत्म) के लिए सूचनाओं का उपयोग करता है। इनके बिना आपको सिर्फ़ छोटे पॉप-अप संदेश दिखेंगे।</string>
+    <string name="perm_grant">अनुमति दें</string>
+    <string name="perm_allow">अनुमति दें</string>
+    <string name="open_settings">सेटिंग खोलें</string>
+
+    <string name="boost_on">चालू</string>
+    <string name="boost_off">बंद</string>
+    <string name="tap_to_start">बूस्ट के लिए टैप करें</string>
+    <string name="toggle_cd_on">बूस्ट चालू है। बंद करने के लिए दो बार टैप करें।</string>
+    <string name="toggle_cd_off">बूस्ट बंद है। चालू करने के लिए दो बार टैप करें।</string>
+    <string name="last_stop_prefix">पिछला बूस्ट बंद हुआ:</string>
+    <string name="reduced_banner" formatted="false">फ़ोन गर्म है (40 °C+): बूस्ट 20% कम और HDR रोका गया।</string>
+
+    <string name="level_title">ब्राइटनेस स्तर</string>
+    <string name="level_hint" formatted="false">अधिकतम सामान्य ब्राइटनेस का 50% से 100%।</string>
+    <string name="max">MAX</string>
+
+    <string name="hdr_title">HDR बूस्ट (अतिरिक्त ब्राइटनेस)</string>
+    <string name="hdr_switch">HDR हेडरूम उपयोग करें</string>
+    <string name="hdr_need_android14">Android 14 या नया चाहिए। सिर्फ़ अधिकतम ब्राइटनेस उपयोग होगी।</string>
+    <string name="hdr_not_supported">यह डिस्प्ले HDR सपोर्ट नहीं करता। सिर्फ़ अधिकतम ब्राइटनेस उपयोग होगी।</string>
+    <string name="hdr_paused_heat">फ़ोन गर्म होने तक रोका गया।</string>
+    <string name="hdr_active">चालू: डिस्प्ले अपने अतिरिक्त HDR निट्स उपयोग कर सकता है।</string>
+    <string name="hdr_ready">सपोर्टेड। बूस्ट के साथ चालू होगा।</string>
+    <string name="hdr_test_hint">HDR टेस्ट: बायाँ चौकोर सादे सफ़ेद से ज़्यादा चमकीला दिखना चाहिए।</string>
+
+    <string name="timer_title">ऑटो-ऑफ़ टाइमर</string>
+    <string name="minutes_short">%1$d मिनट</string>
+    <string name="timer_hint">खत्म होने से 1 मिनट पहले चेतावनी मिलेगी।</string>
+
+    <string name="overlay_title">फ़्लोटिंग बटन</string>
+    <string name="overlay_text">दूसरे ऐप के ऊपर खिसकाने योग्य ON/OFF बटन दिखाएँ। BrightMax खोलने के लिए देर तक दबाएँ।</string>
+    <string name="overlay_close">BrightMax बंद करें</string>
+
+    <string name="status_title">लाइव स्थिति</string>
+    <string name="status_level">वर्तमान स्तर</string>
+    <string name="status_reduced_suffix">(कम किया गया)</string>
+    <string name="status_off">बंद</string>
+    <string name="status_hdr_supported">HDR सपोर्ट</string>
+    <string name="status_peak_nits">डिस्प्ले पीक (रिपोर्टेड)</string>
+    <string name="nits">%1$d निट्स</string>
+    <string name="status_headroom">अभी HDR हेडरूम</string>
+    <string name="status_battery_temp">बैटरी तापमान</string>
+    <string name="status_battery">बैटरी</string>
+    <string name="status_remaining">बचा समय</string>
+    <string name="yes">हाँ</string>
+    <string name="no">नहीं</string>
+    <string name="not_reported">उपलब्ध नहीं</string>
+
+    <string name="footer_safety" formatted="false">सुरक्षा: 40 °C पर −20% · 43 °C पर बंद · 15% बैटरी से कम पर बंद · स्क्रीन बंद होने पर बंद। सिर्फ़ आधिकारिक Android API उपयोग होते हैं; कोई root, kernel या hardware बदलाव नहीं।</string>
+
+    <string name="ok">ठीक है</string>
+    <string name="cancel">रद्द करें</string>
+
+    <string name="disclaimer_title">शुरू करने से पहले</string>
+    <string name="disclaimer_text" formatted="false">लंबे समय तक अधिकतम ब्राइटनेस (और HDR बूस्ट) से फ़ोन ज़्यादा गर्म होता है और बैटरी बहुत जल्दी खत्म होती है।\n\nBrightMax आपके फ़ोन की सुरक्षा करता है: 40 °C पर बूस्ट कम करता है, 43 °C पर, 15% बैटरी से कम पर, स्क्रीन बंद होने पर और टाइमर खत्म होने पर बंद करता है, और हमेशा आपकी मूल ब्राइटनेस वापस लाता है।\n\nज़रूरत होने पर ही उपयोग करें (धूप, प्रेज़ेंटेशन)।</string>
+    <string name="disclaimer_accept">मैं समझ गया/गई</string>
+</resources>
