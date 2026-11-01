@@ -6,15 +6,15 @@ import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 
-/** Quick Settings tile "Cloud PC": one tap from the notification shade starts the Cloud PC. */
+/** Quick Settings tile "AirCursor PC": one tap from the notification shade opens the desktop. */
 class CloudPcTileService : TileService() {
 
     override fun onStartListening() {
         super.onStartListening()
         val tile = qsTile ?: return
         tile.state = Tile.STATE_INACTIVE
-        tile.label = "Cloud PC"
-        if (Build.VERSION.SDK_INT >= 29) tile.subtitle = "Start"
+        tile.label = "AirCursor PC"
+        if (Build.VERSION.SDK_INT >= 29) tile.subtitle = "Open"
         tile.updateTile()
     }
 

@@ -1,11 +1,16 @@
 package com.aircursor.cloudpc
 
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -13,6 +18,7 @@ import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -21,19 +27,29 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.DrawableRes
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.aircursor.MainActivity
+import com.aircursor.R
 import com.aircursor.core.Keysyms
+import com.aircursor.service.HandTrackingService
+import com.aircursor.service.Permissions
 import com.aircursor.service.ScreenUtils
+import java.io.File
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-/** Full-screen Cloud PC desktop. The hand cursor works here as a real mouse. */
+/** Full-screen AirCursor PC desktop. The hand cursor works here as a real mouse. */
 class CloudPcDesktopActivity : ComponentActivity() {
     companion object {
+        private const val PREFS = "cloudpc_engine"
+        private const val KEY_FPS = "show_fps"
+        private const val ON = 0xEE4F46E5.toInt()
+        private const val OFF = 0xA0101828.toInt()
+
         /** Desktop size with the phone's landscape shape (even numbers for the VNC server). */
         fun desktopSize(c: Context): Pair<Int, Int> {
             val s = ScreenUtils.realSize(c)
@@ -48,13 +64,17 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private var view: RfbView? = null
     private lateinit var status: TextView
     private lateinit var tools: LinearLayout
-    private val stickyButtons = HashMap<Int, Button>()
-    private var handButton: Button? = null
+    private val stickyButtons = HashMap<Int, View>()
+    private var handButton: View? = null
+    private var fpsButton: View? = null
+    private var pendingExport: File? = null
+
+    private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (!CloudPcEngine.isReady(this) || !CloudPcDesktop.isInstalled(this)) {
-            Toast.makeText(this, "Pehle Cloud PC aur Desktop install karo", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Install AirCursor PC first", Toast.LENGTH_LONG).show()
             startActivity(Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_OPEN, "cloudpc"))
             finish()
             return
@@ -71,6 +91,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
         val v = RfbView(this, CloudPcDesktop.socketPath(this))
         v.sharpness = AirBoost.current(this).sharpen
+        v.showFps = prefs.getBoolean(KEY_FPS, false)
         view = v
         val root = FrameLayout(this)
         root.setBackgroundColor(Color.BLACK)
@@ -78,23 +99,24 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
         status = TextView(this).apply {
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             gravity = Gravity.CENTER
-            setPadding(dp(24), dp(16), dp(24), dp(16))
-            background = GradientDrawable().apply {
-                setColor(0xCC1E2A3A.toInt())
-                cornerRadius = dp(16).toFloat()
-            }
-            text = "Desktop start ho raha hai…"
+            setPadding(dp(28), dp(18), dp(28), dp(18))
+            background = round(0xE6131A2E.toInt(), 18)
+            text = "Starting AirCursor PC…"
         }
         root.addView(status, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
 
         tools = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
+            setPadding(dp(4), dp(4), dp(4), dp(4))
         }
-        val toolScroll = ScrollView(this).apply { addView(tools) }
-        val handle = toolButton("☰") {
+        val toolScroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            addView(tools)
+        }
+        val handle = iconButton(R.drawable.ic_ui_menu, "Toolbar") {
             tools.visibility = if (tools.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }
         val side = LinearLayout(this).apply {
@@ -103,44 +125,47 @@ class CloudPcDesktopActivity : ComponentActivity() {
             addView(handle)
             addView(toolScroll)
         }
-        root.addView(side, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
+        root.addView(side, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL).apply {
+            setMargins(0, 0, dp(6), 0)
+        })
 
-        tools.addView(toolButton("⌨") { toggleKeyboard() })
-        handButton = toolButton("✋") { toggleHand() }
-        tools.addView(handButton)
-        tools.addView(toolButton("📋") { pasteFromPhone() })
-        tools.addView(toolButton("🖼") {
+        tools.addView(iconButton(R.drawable.ic_ui_keyboard, "Keyboard") { toggleKeyboard() })
+        handButton = iconButton(R.drawable.ic_ui_hand, "Hand control") { toggleHand() }.also { tools.addView(it) }
+        tools.addView(iconButton(R.drawable.ic_ui_paste, "Paste from phone") { pasteFromPhone() })
+        tools.addView(iconButton(R.drawable.ic_ui_folder, "Files") { filesMenu() })
+        tools.addView(iconButton(R.drawable.ic_ui_image, "Wallpaper") {
             pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
         })
-        tools.addView(toolButton("⚡") { boostNow() })
-        tools.addView(toolButton("Esc") { v.sendKey(Keysyms.ESCAPE) })
-        tools.addView(toolButton("Tab") { v.sendKey(Keysyms.TAB) })
+        tools.addView(iconButton(R.drawable.ic_ui_bolt, "Boost") { boostNow() })
+        fpsButton = iconButton(R.drawable.ic_ui_speed, "FPS meter") {
+            v.showFps = !v.showFps
+            prefs.edit().putBoolean(KEY_FPS, v.showFps).apply()
+            updateButtons()
+        }.also { tools.addView(it) }
+        tools.addView(keyButton("Esc") { v.sendKey(Keysyms.ESCAPE) })
+        tools.addView(keyButton("Tab") { v.sendKey(Keysyms.TAB) })
         for ((label, sym) in listOf("Ctrl" to Keysyms.CONTROL_L, "Alt" to Keysyms.ALT_L, "Win" to Keysyms.SUPER_L)) {
-            val b = toolButton(label) { v.toggleSticky(sym) }
+            val b = keyButton(label) { v.toggleSticky(sym) }
             stickyButtons[sym] = b
             tools.addView(b)
         }
-        tools.addView(toolButton("↑") { v.sendKey(Keysyms.UP) })
-        tools.addView(toolButton("↓") { v.sendKey(Keysyms.DOWN) })
-        tools.addView(toolButton("←") { v.sendKey(Keysyms.LEFT) })
-        tools.addView(toolButton("→") { v.sendKey(Keysyms.RIGHT) })
-        tools.addView(toolButton("✕") { askExit() })
+        tools.addView(iconButton(R.drawable.ic_ui_up, "Up") { v.sendKey(Keysyms.UP) })
+        tools.addView(iconButton(R.drawable.ic_ui_down, "Down") { v.sendKey(Keysyms.DOWN) })
+        tools.addView(iconButton(R.drawable.ic_ui_left, "Left") { v.sendKey(Keysyms.LEFT) })
+        tools.addView(iconButton(R.drawable.ic_ui_right, "Right") { v.sendKey(Keysyms.RIGHT) })
+        tools.addView(iconButton(R.drawable.ic_ui_close, "Close") { askExit() })
 
         v.onStatus = { msg ->
             status.text = msg ?: ""
             status.visibility = if (msg == null) View.GONE else View.VISIBLE
         }
+        v.onStickyChanged = { updateButtons() }
         v.onDesktopClipboard = { text ->
-            val cm = getSystemService(android.content.ClipboardManager::class.java)
-            cm?.setPrimaryClip(android.content.ClipData.newPlainText("Cloud PC", text))
-            Toast.makeText(this, "📋 Desktop se copy → phone clipboard", Toast.LENGTH_SHORT).show()
-        }
-        v.onStickyChanged = {
-            for ((sym, b) in stickyButtons) {
-                (b.background as? GradientDrawable)?.setColor(if (sym in v.sticky) 0xEE1E88E5.toInt() else 0x99000000.toInt())
-            }
+            getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("AirCursor PC", text))
+            Toast.makeText(this, "Copied to phone", Toast.LENGTH_SHORT).show()
         }
         setContentView(root)
+        updateButtons()
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = askExit()
@@ -149,31 +174,85 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).roundToInt()
 
-    private fun toolButton(label: String, onClick: () -> Unit) = Button(this).apply {
+    private fun round(color: Int, radiusDp: Int) = GradientDrawable().apply {
+        setColor(color)
+        cornerRadius = dp(radiusDp).toFloat()
+    }
+
+    private fun iconButton(@DrawableRes icon: Int, description: String, onClick: () -> Unit) = ImageButton(this).apply {
+        setImageResource(icon)
+        imageTintList = ColorStateList.valueOf(Color.WHITE)
+        contentDescription = description
+        background = round(OFF, 12)
+        setPadding(dp(11), dp(11), dp(11), dp(11))
+        scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+        layoutParams = LinearLayout.LayoutParams(dp(46), dp(46)).apply { setMargins(dp(2), dp(3), dp(2), dp(3)) }
+        setOnClickListener { onClick() }
+        setOnLongClickListener {
+            Toast.makeText(context, description, Toast.LENGTH_SHORT).show()
+            true
+        }
+    }
+
+    private fun keyButton(label: String, onClick: () -> Unit) = Button(this).apply {
         text = label
         isAllCaps = false
         setTextColor(Color.WHITE)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
         minWidth = 0
-        minimumWidth = dp(48)
+        minimumWidth = 0
         minHeight = 0
-        minimumHeight = dp(36)
-        setPadding(dp(8), dp(2), dp(8), dp(2))
-        background = GradientDrawable().apply {
-            setColor(0x99000000.toInt())
-            cornerRadius = dp(8).toFloat()
-        }
-        layoutParams = LinearLayout.LayoutParams(dp(56), dp(38)).apply { setMargins(dp(4), dp(3), dp(4), dp(3)) }
+        minimumHeight = 0
+        setPadding(0, 0, 0, 0)
+        background = round(OFF, 12)
+        layoutParams = LinearLayout.LayoutParams(dp(46), dp(40)).apply { setMargins(dp(2), dp(3), dp(2), dp(3)) }
         setOnClickListener { onClick() }
     }
 
-    /** Phone photo -> Cloud PC wallpaper (the photo is copied; the phone's file is never changed). */
+    private fun setOn(b: View?, on: Boolean) {
+        (b?.background as? GradientDrawable)?.setColor(if (on) ON else OFF)
+    }
+
+    private fun updateButtons() {
+        val v = view ?: return
+        for ((sym, b) in stickyButtons) setOn(b, sym in v.sticky)
+        setOn(handButton, HandTrackingService.isRunning)
+        setOn(fpsButton, v.showFps)
+    }
+
+    // ---- Toolbar actions ----
+
+    /** Hand cursor on/off right from the desktop (the camera service may only start while we are visible). */
+    private fun toggleHand() {
+        if (HandTrackingService.isRunning) {
+            HandTrackingService.stop(this)
+            Toast.makeText(this, "Hand control off", Toast.LENGTH_SHORT).show()
+        } else if (!Permissions.camera(this) || !Permissions.accessibility(this)) {
+            Toast.makeText(this, "Open AirCursor and finish the setup first", Toast.LENGTH_LONG).show()
+        } else {
+            HandTrackingService.start(this)
+            Toast.makeText(this, "Hand control on – show your hand to the front camera", Toast.LENGTH_SHORT).show()
+        }
+        tools.postDelayed({ updateButtons() }, 800)
+    }
+
+    private fun pasteFromPhone() {
+        val cm = getSystemService(ClipboardManager::class.java)
+        val text = cm?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+        if (text.isNullOrEmpty()) {
+            Toast.makeText(this, "The phone clipboard is empty", Toast.LENGTH_SHORT).show()
+            return
+        }
+        view?.pasteFromPhone(text)
+    }
+
+    /** Phone photo -> desktop wallpaper (the photo is copied; the phone's file is never changed). */
     private val pickPhoto = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) setWallpaper(uri)
     }
 
-    private fun setWallpaper(uri: android.net.Uri) {
-        Toast.makeText(this, "🖼 Wallpaper lag raha hai…", Toast.LENGTH_SHORT).show()
+    private fun setWallpaper(uri: Uri) {
+        Toast.makeText(this, "Setting wallpaper…", Toast.LENGTH_SHORT).show()
         Thread {
             try {
                 val ext = when (contentResolver.getType(uri)) {
@@ -181,58 +260,118 @@ class CloudPcDesktopActivity : ComponentActivity() {
                     "image/webp" -> "webp"
                     else -> "jpg"
                 }
-                val dir = java.io.File(CloudPcEngine.rootfs(this), "root/Pictures/Wallpapers").apply { mkdirs() }
+                val dir = File(CloudPcEngine.rootfs(this), "root/Pictures/Wallpapers").apply { mkdirs() }
                 val name = "phone-${System.currentTimeMillis()}.$ext"
-                contentResolver.openInputStream(uri)?.use { input ->
-                    java.io.File(dir, name).outputStream().use { input.copyTo(it) }
-                }
+                contentResolver.openInputStream(uri)?.use { input -> File(dir, name).outputStream().use { input.copyTo(it) } }
                 CloudPcService.send(
                     this, CloudPcService.ACTION_RUN,
                     CloudPcDesktop.inSession("aircursor-set-wallpaper /root/Pictures/Wallpapers/$name"),
                 )
             } catch (e: Exception) {
-                runOnUiThread { Toast.makeText(this, "Photo copy nahi hui: ${e.message}", Toast.LENGTH_LONG).show() }
+                runOnUiThread { Toast.makeText(this, "Could not copy the photo: ${e.message}", Toast.LENGTH_LONG).show() }
             }
         }.start()
     }
 
-    /** AirBoost now: stop background jobs inside the desktop and free RAM. */
+    /** AirBoost now: stop background jobs inside the desktop and free memory. */
     private fun boostNow() {
         CloudPcService.send(this, CloudPcService.ACTION_RUN, CloudPcDesktop.inSession("cloudpc-light 0; free -h | head -n 2"))
-        Toast.makeText(this, "⚡ Boost: background kaam band, RAM free", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Boost: background jobs stopped", Toast.LENGTH_SHORT).show()
     }
 
-    private fun updateHandButton() {
-        val on = com.aircursor.service.HandTrackingService.isRunning
-        (handButton?.background as? GradientDrawable)?.setColor(if (on) 0xEE2E7D32.toInt() else 0x99000000.toInt())
+    // ---- Files between the phone and the PC ----
+
+    private val importFiles = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) importFromPhone(uris)
     }
 
-    /** Hand cursor on/off right from the desktop (camera service may only start while we are visible). */
-    private fun toggleHand() {
-        val svc = com.aircursor.service.HandTrackingService
-        if (svc.isRunning) {
-            svc.stop(this)
-            Toast.makeText(this, "Haath ka cursor OFF", Toast.LENGTH_SHORT).show()
-        } else if (!com.aircursor.service.Permissions.camera(this) || !com.aircursor.service.Permissions.accessibility(this)) {
-            Toast.makeText(this, "AirCursor app me pehle setup poora karo (camera + accessibility)", Toast.LENGTH_LONG).show()
-        } else {
-            svc.start(this)
-            Toast.makeText(this, "Haath ka cursor ON – ungli camera ke saamne", Toast.LENGTH_SHORT).show()
-        }
-        tools.postDelayed({ updateHandButton() }, 800)
+    private val exportFile = registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val src = pendingExport
+        pendingExport = null
+        if (uri != null && src != null) saveToPhone(src, uri)
     }
 
-    private fun pasteFromPhone() {
-        val cm = getSystemService(android.content.ClipboardManager::class.java)
-        val text = cm?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
-        if (text.isNullOrEmpty()) {
-            Toast.makeText(this, "Phone clipboard khali hai", Toast.LENGTH_SHORT).show()
+    private fun filesMenu() {
+        AlertDialog.Builder(this)
+            .setTitle("Files")
+            .setItems(arrayOf("Import from phone", "Save to phone")) { _, which ->
+                if (which == 0) importFiles.launch(arrayOf("*/*")) else chooseExport()
+            }
+            .show()
+    }
+
+    private fun importFromPhone(uris: List<Uri>) {
+        val dir = File(CloudPcEngine.rootfs(this), "root/Downloads/${CloudPcTools.FROM_PHONE}").apply { mkdirs() }
+        Thread {
+            var ok = 0
+            for (uri in uris) {
+                try {
+                    val target = uniqueFile(dir, displayName(uri) ?: "file-${System.currentTimeMillis()}")
+                    contentResolver.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } }
+                    ok++
+                } catch (_: Exception) {
+                }
+            }
+            runOnUiThread {
+                Toast.makeText(this, "$ok file(s) copied to Downloads/${CloudPcTools.FROM_PHONE}", Toast.LENGTH_LONG).show()
+            }
+        }.start()
+    }
+
+    private fun chooseExport() {
+        val dir = File(CloudPcEngine.rootfs(this), "root/Desktop/${CloudPcTools.TO_PHONE}").apply { mkdirs() }
+        val files = dir.listFiles()?.filter { it.isFile }?.sortedBy { it.name.lowercase() }.orEmpty()
+        if (files.isEmpty()) {
+            Toast.makeText(this, "Put files in the \"${CloudPcTools.TO_PHONE}\" folder on the desktop first", Toast.LENGTH_LONG).show()
             return
         }
-        view?.pasteFromPhone(text)
-        Toast.makeText(this, "📋 Phone ka text desktop me paste", Toast.LENGTH_SHORT).show()
+        AlertDialog.Builder(this)
+            .setTitle("Save to phone")
+            .setItems(files.map { it.name }.toTypedArray()) { _, which ->
+                pendingExport = files[which]
+                exportFile.launch(files[which].name)
+            }
+            .show()
     }
 
+    private fun saveToPhone(src: File, uri: Uri) {
+        Thread {
+            val ok = try {
+                contentResolver.openOutputStream(uri)?.use { out -> src.inputStream().use { it.copyTo(out) } }
+                true
+            } catch (_: Exception) {
+                false
+            }
+            runOnUiThread {
+                Toast.makeText(this, if (ok) "Saved to phone" else "Could not save the file", Toast.LENGTH_SHORT).show()
+            }
+        }.start()
+    }
+
+    private fun displayName(uri: Uri): String? {
+        val name = try {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0) else null
+            }
+        } catch (_: Exception) {
+            null
+        }
+        return name?.replace('/', '_')
+    }
+
+    private fun uniqueFile(dir: File, name: String): File {
+        var f = File(dir, name)
+        var i = 1
+        val base = name.substringBeforeLast('.', name)
+        val ext = if (name.contains('.')) "." + name.substringAfterLast('.') else ""
+        while (f.exists()) {
+            f = File(dir, "$base ($i)$ext")
+            i++
+        }
+        return f
+    }
+
+    @Suppress("DEPRECATION")
     private fun toggleKeyboard() {
         val v = view ?: return
         val imm = getSystemService(InputMethodManager::class.java) ?: return
@@ -242,8 +381,8 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
     private fun askExit() {
         AlertDialog.Builder(this)
-            .setTitle("Cloud PC desktop")
-            .setItems(arrayOf("Background me chalne do (wapas aa sakte ho)", "Desktop band karo", "Cancel")) { _, which ->
+            .setTitle("AirCursor PC")
+            .setItems(arrayOf("Keep running in the background", "Stop the desktop", "Cancel")) { _, which ->
                 when (which) {
                     0 -> finish()
                     1 -> {
@@ -263,11 +402,12 @@ class CloudPcDesktopActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         DesktopInput.target = view
-        updateHandButton()
+        updateButtons()
     }
 
     override fun onPause() {
         if (DesktopInput.target === view) DesktopInput.target = null
+        view?.releaseAll()
         super.onPause()
     }
 

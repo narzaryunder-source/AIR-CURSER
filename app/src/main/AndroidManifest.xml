@@ -29,8 +29,8 @@
 
     <application
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher"
+        android:icon="@mipmap/brand_aircursor"
+        android:roundIcon="@mipmap/brand_aircursor"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
@@ -50,26 +50,21 @@
             android:name=".pc.PcActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher"
+            android:icon="@mipmap/brand_aircursor"
             android:label="@string/pc_mode_label"
             android:launchMode="singleTask"
             android:resizeableActivity="true"
             android:screenOrientation="sensorLandscape"
             android:taskAffinity="com.aircursor.pc"
-            android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name=".ubuntu.UbuntuLaunchActivity"
             android:excludeFromRecents="true"
             android:exported="true"
-            android:icon="@mipmap/ic_cloud_pc"
+            android:icon="@mipmap/brand_pc"
             android:label="@string/ubuntu_pc_label"
-            android:roundIcon="@mipmap/ic_cloud_pc"
+            android:roundIcon="@mipmap/brand_pc"
             android:taskAffinity="com.aircursor.ubuntu"
             android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
@@ -122,7 +117,7 @@
             android:name=".cloudpc.CloudPcDesktopActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
             android:exported="false"
-            android:label="Cloud PC"
+            android:label="@string/ubuntu_pc_label"
             android:launchMode="singleTask"
             android:screenOrientation="sensorLandscape"
             android:taskAffinity="com.aircursor.cloudpc"
@@ -141,7 +136,7 @@
         <service
             android:name=".ubuntu.CloudPcTileService"
             android:exported="true"
-            android:icon="@drawable/ic_cloud_tile"
+            android:icon="@drawable/ic_ui_desktop"
             android:label="@string/ubuntu_pc_label"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>

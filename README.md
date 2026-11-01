@@ -1,3 +1,27 @@
+# AirCursor
+
+**Touchless control for Android – plus a full PC on your phone.**
+
+| App | What it does |
+|---|---|
+| **AirCursor** | Move a mouse pointer in the air with your index finger (front camera). Pinch to click, hold for long press / right click, hold and move to drag. |
+| **AirCursor PC** | A full Ubuntu 24.04 desktop inside the app – Windows-style taskbar, App Store, Firefox, AI apps (Claude, ChatGPT, Gemini, offline AI), files between phone and PC, AirBoost for more FPS. No Termux needed. |
+
+**Download:** https://github.com/narzaryunder-source/AIR-CURSER/releases/latest/download/AirCursor.apk
+
+### First start (for testers)
+1. Install the APK (allow "install unknown apps" for your browser if asked).
+2. Sign in (Google or phone number) – once; you stay signed in.
+3. Follow the setup: camera, accessibility, battery.
+4. Home → **Hand control** on. Home → **AirCursor PC** → Install (about 450 MB, Wi-Fi) → Open desktop.
+5. Help & guide in the app explains gestures, apps, AI, files and speed. The desktop has a **Getting Started** guide too.
+
+Privacy: hand tracking runs only on the phone; camera images are never saved or sent. AirCursor PC and its files stay inside the app on the phone. Signing out never deletes data.
+
+Owner docs: [Login setup](docs/LOGIN-SETUP.md) · [Business plan](docs/BUSINESS.md) · [Third-party notices](third_party/PROOT-NOTICE.md)
+
+---
+
 # AirCursor 🖱️✋
 
 Phone ko **bina touch kiye** chalao! AirCursor aapke phone par PC jaisa mouse pointer (cursor) dikhata hai.

@@ -30,8 +30,11 @@ class CloudPcInstaller(private val c: Context) {
     @Volatile
     var process: Process? = null
 
+    /** The base system is the first part of the full install: its 0..1 is shown as 0..[scale]. */
+    var scale = 1f
+
     private fun step(title: String, progress: Float) {
-        CloudPcBus.update { it.copy(title = title, progress = progress) }
+        CloudPcBus.update { it.copy(title = title, progress = progress * scale) }
         CloudPcBus.line("==> $title", force = true)
     }
 
@@ -40,52 +43,52 @@ class CloudPcInstaller(private val c: Context) {
     }
 
     fun install() {
-        if (!CloudPcEngine.isSupported()) throw IOException("Yeh phone 64-bit (arm64) nahi hai – Cloud PC nahi chalega.")
+        if (!CloudPcEngine.isSupported()) throw IOException("This phone is not 64-bit (arm64), so AirCursor PC cannot run on it.")
         val rootfs = CloudPcEngine.rootfs(c)
         if (!CloudPcEngine.isExtracted(c)) {
-            val need = 1_500_000_000L
+            val need = 3_000_000_000L
             if (CloudPcEngine.freeBytes(c) < need) {
-                throw IOException("Phone me kam se kam 1.5 GB khali jagah chahiye (desktop ke liye 6 GB).")
+                throw IOException("Not enough free space. AirCursor PC needs at least 3 GB free.")
             }
             val dl = CloudPcEngine.downloads(c).apply { mkdirs() }
             val tar = File(dl, "ubuntu-base.tar.gz")
-            step("Ubuntu download ho raha hai (30 MB)…", 0f)
+            step("Downloading Ubuntu…", 0f)
             download(CloudPcEngine.ROOTFS_URL, tar, CloudPcEngine.ROOTFS_SIZE) { f ->
-                CloudPcBus.update { it.copy(progress = f * 0.40f) }
+                CloudPcBus.update { it.copy(progress = f * 0.40f * scale) }
             }
-            step("Download check ho raha hai (SHA-256)…", 0.40f)
+            step("Checking the download…", 0.40f)
             if (sha256(tar) != CloudPcEngine.ROOTFS_SHA256) {
                 tar.delete()
-                throw IOException("Download kharab nikla. Dobara Install dabao (internet check karo).")
+                throw IOException("The download was damaged. Please check the internet connection and try again.")
             }
             checkCancel()
-            step("Ubuntu files khul rahi hain…", 0.45f)
+            step("Unpacking Ubuntu…", 0.45f)
             val partial = File(CloudPcEngine.base(c), "rootfs.partial")
             SafeFiles.deleteTree(partial.toPath(), CloudPcEngine.base(c).toPath())
             val x = TarExtractor(partial.toPath())
             val total = tar.length().toFloat()
             CountingStream(tar.inputStream().buffered(1 shl 16)) { done ->
-                CloudPcBus.update { it.copy(progress = 0.45f + 0.20f * (done / total).coerceIn(0f, 1f)) }
+                CloudPcBus.update { it.copy(progress = (0.45f + 0.20f * (done / total).coerceIn(0f, 1f)) * scale) }
                 if (cancelled) throw Cancelled()
             }.use { counted -> GZIPInputStream(counted, 1 shl 16).use { x.extract(it) } }
             CloudPcBus.line("${x.files} files ready")
             SafeFiles.deleteTree(rootfs.toPath(), CloudPcEngine.base(c).toPath())
-            if (!partial.renameTo(rootfs)) throw IOException("Files rakhne me dikkat (storage?)")
+            if (!partial.renameTo(rootfs)) throw IOException("Could not save the files (storage full?)")
             configure(rootfs.toPath())
             File(rootfs, CloudPcEngine.MARK_EXTRACTED).writeText("1\n")
             tar.delete()
         }
         checkCancel()
 
-        step("Engine test (proot)…", 0.66f)
+        step("Starting the engine…", 0.66f)
         if (!engineWorks()) {
-            CloudPcBus.line("Doosre tareeke se try kar rahe hain (no-seccomp)…")
+            CloudPcBus.line("Trying compatibility mode…")
             CloudPcEngine.setNoSeccomp(c, true)
-            if (!engineWorks()) throw IOException("Engine is phone par start nahi hua. Neeche log ka screenshot bhejo.")
+            if (!engineWorks()) throw IOException("The engine could not start on this phone. Please send a screenshot of the log.")
         }
         checkCancel()
 
-        step("Pehli baar setup: apt update + basic tools (2-5 min)…", 0.70f)
+        step("Setting up the system…", 0.70f)
         val script = """
             set -e
             echo "==> apt-get update"
@@ -97,14 +100,14 @@ class CloudPcInstaller(private val c: Context) {
         var ok = false
         val code = CloudPcEngine.run(c, script, onProcess = { process = it }) { line ->
             if (line.contains("CLOUDPC_FIRSTBOOT_OK")) ok = true
-            if (line.startsWith("==> basic tools")) CloudPcBus.update { it.copy(progress = 0.85f) }
+            if (line.startsWith("==> basic tools")) CloudPcBus.update { it.copy(progress = 0.85f * scale) }
             CloudPcBus.line(line)
         }
         process = null
         checkCancel()
-        if (code != 0 || !ok) throw IOException("Setup ruk gaya (code $code). Internet check karke Retry dabao.")
+        if (code != 0 || !ok) throw IOException("Setup stopped (code $code). Check the internet connection and tap Continue.")
         File(rootfs, CloudPcEngine.MARK_READY).writeText("1\n")
-        step("Cloud PC ready ✅", 1f)
+        step("Base system ready", 1f)
     }
 
     private fun engineWorks(): Boolean {
@@ -151,8 +154,8 @@ class CloudPcInstaller(private val c: Context) {
                 throw e
             } catch (e: IOException) {
                 attempt++
-                CloudPcBus.line("Download ruk gaya (${e.message}). Dobara try #$attempt…")
-                if (attempt >= 5) throw IOException("Internet se download nahi ho paya. Wi-Fi/data check karke Retry dabao.")
+                CloudPcBus.line("Download interrupted (${e.message}). Retry $attempt…")
+                if (attempt >= 5) throw IOException("Download failed. Check Wi-Fi or mobile data and try again.")
                 Thread.sleep(2000L * attempt)
                 checkCancel()
             }

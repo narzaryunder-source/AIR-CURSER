@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 1
+    const val VERSION = 2
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf("app-store.sh", "ubuntu-extras.sh", "install-deb.sh", "windows-layout.sh", "wallpaper-gui.sh")
@@ -65,6 +65,13 @@ object CloudPcTools {
         put("usr/local/bin/cloudpc-ai-offline", AI_OFFLINE, exec = true)
         put("usr/local/bin/cloudpc-light", LIGHT_MODE, exec = true)
 
+        // "Getting Started" guide (opens in the browser)
+        put("usr/share/aircursor/guide.html", c.assets.open("cloudpc/guide.html").bufferedReader().use { it.readText() })
+        put(
+            "usr/share/applications/aircursor-guide.desktop",
+            entry("Getting Started", "xdg-open /usr/share/aircursor/guide.html", "help-browser", "Utility;", "How to use AirCursor PC"),
+        )
+
         // Menu entries
         put("usr/share/applications/aircursor-store.desktop", entry("App Store", "aircursor-store", "system-software-install", "System;", "Apps install karo – tick karo aur Install"))
         put("usr/share/applications/aircursor-wallpaper.desktop", entry("Change Wallpaper", "aircursor-wallpaper", "preferences-desktop-wallpaper", "Settings;DesktopSettings;", "Wallpaper badlo"))
@@ -87,6 +94,7 @@ object CloudPcTools {
         // Desktop icons (only added once, so the user can delete them).
         val desk = "root/Desktop"
         val icons = listOf(
+            "Getting-Started.desktop" to "usr/share/applications/aircursor-guide.desktop",
             "App-Store.desktop" to "usr/share/applications/aircursor-store.desktop",
             "Firefox.desktop" to "usr/share/applications/firefox.desktop",
             "Terminal.desktop" to "usr/share/applications/xfce4-terminal.desktop",
@@ -102,8 +110,14 @@ object CloudPcTools {
             val rel = "$desk/AI Apps/${ai.id}.desktop"
             if (!File(r, rel).exists()) put(rel, ai.desktopEntry(), exec = true)
         }
+        // Folders for moving files between the phone and the PC (toolbar → Files).
+        File(r, "$desk/$TO_PHONE").mkdirs()
+        File(r, "root/Downloads/$FROM_PHONE").mkdirs()
         put(MARK, "$VERSION\n")
     }
+
+    const val TO_PHONE = "To phone"
+    const val FROM_PHONE = "From phone"
 
     private fun entry(name: String, exec: String, icon: String, categories: String, comment: String) =
         "[Desktop Entry]\nType=Application\nName=$name\nComment=$comment\nExec=$exec\nIcon=$icon\n" +
@@ -140,7 +154,7 @@ object CloudPcTools {
             xfconf-query -c xfce4-desktop -p "${'$'}p" -s "${'$'}IMG"
         done
         xfdesktop --reload >/dev/null 2>&1 &
-        echo "Wallpaper lag gaya ✅"
+        echo "Wallpaper set"
     """.trimIndent() + "\n"
 
     private val AI_OFFLINE = """

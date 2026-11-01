@@ -87,13 +87,12 @@ object AppSettings {
     val SHOW_FPS = BoolSetting("show_fps", "Debug overlay (FPS, latency)", false)
     val HAPTICS = BoolSetting("haptics", "Vibrate on click / gesture", true)
     val CLICK_ONLY = BoolSetting(
-        "click_only", "Simple mode: move, click, drag", true,
-        "Pinch = click, pinch + move = drag. Scroll, palm and fist gestures are off, so nothing stops the cursor.",
+        "click_only", "Simple mode (recommended)", true,
+        "Pinch to click, hold to long-press (right click on the PC), hold and move to drag. Other gestures are off.",
     )
     val MOUSE_MODE = BoolSetting(
         "mouse_mode", "Mouse mode (recommended)", true,
-        "Cursor moves like a PC mouse and feels the same near or far from the camera. " +
-            "Off = the yellow box in the camera is mapped to the screen.",
+        "The pointer moves like a PC mouse and feels the same near or far from the camera.",
     )
     val STABLE_30 = BoolSetting(
         "stable30", "Stable 30 fps camera", true,
@@ -106,11 +105,11 @@ object AppSettings {
 
     val INVERT_X = BoolSetting(
         "invert_lr", "Swap left / right", false,
-        "Turn on if the cursor goes left when your hand goes right.",
+        "Turn on if the pointer moves the opposite way to your hand.",
     )
     val DWELL = BoolSetting(
         "dwell_click", "Dwell click (no pinch)", false,
-        "Hold the cursor still for 1.2 s to click. Good for shaky hands.",
+        "Hold the pointer still for 1.2 s to click. Helpful for shaky hands.",
     )
     val CLICK_SOUND = BoolSetting("click_sound", "Click sound", false)
 
@@ -126,7 +125,7 @@ object AppSettings {
     }
     val SMART_SAVER = BoolSetting(
         "smart_saver", "Smart battery saver", true,
-        "No hand for 10 s = camera checks only 8 times a second. Wakes up instantly when your hand comes back.",
+        "Uses less battery when no hand is seen for 10 seconds.",
     )
     val PERFORMANCE_OPTIONS = listOf(SMART_SAVER, STABLE_30, HIGH_FPS_CAMERA)
 }

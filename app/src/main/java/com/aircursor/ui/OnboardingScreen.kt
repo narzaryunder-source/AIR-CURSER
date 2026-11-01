@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -62,17 +63,16 @@ fun OnboardingScreen(onFinish: () -> Unit) {
         add(
             Step(
                 "Welcome to AirCursor",
-                "AirCursor puts a PC-style mouse pointer on your phone. You move it in the air with your " +
-                    "index finger in front of the front camera, and pinch to click.\n\n" +
-                    "Privacy: all hand tracking runs on this phone. No image or data is ever sent to the internet.\n\n" +
-                    "The next few steps give AirCursor the permissions it needs.",
+                "AirCursor puts a mouse pointer on your phone that you move in the air with your index finger. " +
+                    "Pinch to click.\n\nHand tracking runs only on this phone – camera images are never saved or sent.\n\n" +
+                    "The next steps give AirCursor the permissions it needs.",
                 null, true, null, {},
             ),
         )
         add(
             Step(
-                "1. Camera",
-                "AirCursor needs the front camera to see your hand. Frames are processed instantly and never saved.",
+                "Camera",
+                "AirCursor uses the front camera to see your hand. Frames are processed instantly and never saved.",
                 cameraOk, false, "Allow camera",
             ) {
                 permissionLauncher.launch(Manifest.permission.CAMERA)
@@ -81,8 +81,8 @@ fun OnboardingScreen(onFinish: () -> Unit) {
         if (Build.VERSION.SDK_INT >= 33) {
             add(
                 Step(
-                    "2. Notifications",
-                    "Shows a small notification while AirCursor is on, with Pause, Recalibrate and Turn off buttons.",
+                    "Notifications",
+                    "Shows a small notification while hand control is on, with Pause and Turn off buttons.",
                     notifOk, true, "Allow notifications",
                 ) {
                     permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -90,16 +90,13 @@ fun OnboardingScreen(onFinish: () -> Unit) {
             )
             add(
                 Step(
-                    "3. Allow restricted settings",
-                    "If you installed AirCursor as an APK file (not from Play Store), Android 13+ greys out the " +
-                        "Accessibility switch for it and says \"Restricted setting\".\n\n" +
-                        "Fix it once:\n" +
-                        "• First try the next step. If the switch is grey, come back here.\n" +
-                        "• Tap \"Open App info\" below.\n" +
-                        "• Tap the ⋮ (three dots) menu at the top right.\n" +
-                        "• Tap \"Allow restricted settings\" and confirm with your PIN/fingerprint.\n" +
-                        "• Go back and continue.\n\n" +
-                        "(The ⋮ option only appears after you have tried to turn the accessibility switch on once.)",
+                    "Allow restricted settings",
+                    "Apps installed from a file can show a greyed-out Accessibility switch (\"Restricted setting\"). " +
+                        "If that happens:\n\n" +
+                        "1. Try the next step once.\n" +
+                        "2. Come back and tap Open App info.\n" +
+                        "3. Open the menu at the top right and choose Allow restricted settings.\n" +
+                        "4. Confirm with your screen lock, then continue.",
                     if (a11yOk) true else null, true, "Open App info",
                 ) {
                     Intents.appInfo(context)
@@ -108,11 +105,10 @@ fun OnboardingScreen(onFinish: () -> Unit) {
         }
         add(
             Step(
-                "${if (Build.VERSION.SDK_INT >= 33) 4 else 2}. Accessibility service",
-                "AirCursor uses an Accessibility service to draw the cursor over other apps and to tap, " +
-                    "swipe, go Back/Home and open notifications for you. It does not read your screen content.\n\n" +
-                    "Tap the button → find \"AirCursor\" (sometimes under \"Installed apps\" or \"Downloaded apps\") → " +
-                    "turn it On → Allow.",
+                "Accessibility service",
+                "AirCursor uses an Accessibility service to draw the pointer over other apps and to tap, swipe, " +
+                    "go Back or Home for you. It does not read your screen content.\n\n" +
+                    "Tap the button, find AirCursor (sometimes under Installed or Downloaded apps), switch it on and allow.",
                 a11yOk, false, "Open Accessibility settings",
             ) {
                 Intents.accessibility(context)
@@ -120,9 +116,9 @@ fun OnboardingScreen(onFinish: () -> Unit) {
         )
         add(
             Step(
-                "${if (Build.VERSION.SDK_INT >= 33) 5 else 3}. Battery",
-                "Allow AirCursor to run without battery restrictions so Android does not stop the camera " +
-                    "service while you use other apps.",
+                "Battery",
+                "Allow AirCursor to run without battery restrictions so Android does not stop hand control " +
+                    "while you use other apps.",
                 batteryOk, true, "Remove battery restriction",
             ) {
                 Intents.battery(context)
@@ -130,9 +126,9 @@ fun OnboardingScreen(onFinish: () -> Unit) {
         )
         add(
             Step(
-                "All set!",
-                "Turn AirCursor on from the big switch, the Quick Settings tile, or the notification.\n\n" +
-                    "Tip: add the AirCursor tile: pull down Quick Settings → ✎ edit → drag \"AirCursor\" up.",
+                "All set",
+                "Switch on Hand control on the home screen.\n\n" +
+                    "Tip: add the AirCursor and AirCursor PC tiles to Quick Settings (pull down twice, tap edit, drag the tiles up).",
                 null, true, null, {},
             ),
         )
@@ -142,13 +138,17 @@ fun OnboardingScreen(onFinish: () -> Unit) {
     if (index > steps.lastIndex) index = steps.lastIndex
     val step = steps[index]
 
-    Surface(Modifier.fillMaxSize()) {
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             Modifier
                 .fillMaxSize()
                 .padding(20.dp),
         ) {
-            Text("Setup", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                BrandLogo(size = 36.dp)
+                Spacer(Modifier.width(12.dp))
+                Text("Setup", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            }
             Spacer(Modifier.height(4.dp))
             Text("Step ${index + 1} of ${steps.size}", style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(8.dp))
@@ -161,6 +161,9 @@ fun OnboardingScreen(onFinish: () -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .weight(1f),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+                colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             ) {
                 Column(
                     Modifier
@@ -172,7 +175,7 @@ fun OnboardingScreen(onFinish: () -> Unit) {
                     Text(step.body, style = MaterialTheme.typography.bodyLarge)
                     Spacer(Modifier.height(16.dp))
                     when (step.done) {
-                        true -> Text("✓ Done", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                        true -> CheckLine("Done", true)
                         false -> Text(
                             if (step.optional) "Not done (optional)" else "Not done yet",
                             color = MaterialTheme.colorScheme.error,
@@ -186,7 +189,7 @@ fun OnboardingScreen(onFinish: () -> Unit) {
                     }
                     if (step.title.contains("Camera") && step.done == false) {
                         TextButton(onClick = { Intents.appInfo(context) }) {
-                            Text("Denied before? Open App info → Permissions → Camera")
+                            Text("Denied before? Open App info, then Permissions, then Camera")
                         }
                     }
                 }

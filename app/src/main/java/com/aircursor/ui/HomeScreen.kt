@@ -1,7 +1,10 @@
 package com.aircursor.ui
 
 import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,30 +12,31 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -40,310 +44,333 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.aircursor.data.AppSettings
-import com.aircursor.data.BoolSetting
-import com.aircursor.data.FloatSetting
-import com.aircursor.data.Prefs
+import com.aircursor.R
+import com.aircursor.auth.AppUser
+import com.aircursor.auth.AuthManager
+import com.aircursor.cloudpc.CloudPcBus
+import com.aircursor.cloudpc.CloudPcDesktop
+import com.aircursor.cloudpc.CloudPcDesktopActivity
+import com.aircursor.cloudpc.CloudPcEngine
 import com.aircursor.pro.ProAccess
 import com.aircursor.service.HandTrackingService
 import com.aircursor.service.Permissions
 import com.aircursor.service.TrackingBus
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun HomeScreen(
     onOpenSetup: () -> Unit,
     onOpenPreview: () -> Unit,
     onOpenSecurity: () -> Unit,
-    onOpenPro: () -> Unit,
-    onOpenCloudPc: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenPc: () -> Unit,
+    onOpenHelp: () -> Unit,
 ) {
     val context = LocalContext.current
-    val prefs = remember { Prefs(context) }
     val status by TrackingBus.status.collectAsStateWithLifecycle()
+    val user by AuthManager.user.collectAsStateWithLifecycle()
     var tick by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { tick++ }
     val cameraOk = remember(tick) { Permissions.camera(context) }
     val a11yOk = remember(tick, status.accessibilityConnected) { Permissions.accessibility(context) }
-    val batteryOk = remember(tick) { Permissions.batteryUnrestricted(context) }
-    var settingsVersion by remember { mutableIntStateOf(0) }
-    // Live Pro plan settings (price, on/off) – quietly, in the background.
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { ProAccess.refresh(context) }
-    }
+    var showAccount by remember { mutableStateOf(false) }
 
-    Surface(Modifier.fillMaxSize()) {
+    // Live plan settings (for later subscriptions) – quietly, in the background.
+    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { ProAccess.refresh(context) } }
+
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text("AirCursor", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text("Control your phone in the air with your finger", style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.height(16.dp))
-
-            // Big on/off switch
-            val on = status.running
-            Card(
-                Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (on) MaterialTheme.colorScheme.primaryContainer
-                    else MaterialTheme.colorScheme.surfaceVariant,
-                ),
-            ) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            if (on) "ON" else "OFF",
-                            style = MaterialTheme.typography.displaySmall,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        val line = when {
-                            on && status.handPresent && !status.paused && !status.screenOff &&
-                                status.accessibilityConnected ->
-                                "Hand detected · %.0f fps tracking".format(status.fps)
-                            !on -> "Tap the switch to start"
-                            status.screenOff -> "Waiting for unlock"
-                            status.paused -> "Paused – tap Resume (or hold a still fist 2 s)"
-                            !status.accessibilityConnected -> "Accessibility service is off!"
-                            status.handPresent -> "Hand detected · %.0f fps".format(status.fps)
-                            else -> "Show your hand to the front camera"
-                        }
-                        Text(line, style = MaterialTheme.typography.bodyMedium)
-                    }
-                    Switch(
-                        checked = on,
-                        modifier = Modifier.scale(1.6f).padding(end = 12.dp),
-                        onCheckedChange = { want ->
-                            if (want) {
-                                if (!cameraOk || !a11yOk) {
-                                    Toast.makeText(context, "Finish the setup first", Toast.LENGTH_SHORT).show()
-                                    onOpenSetup()
-                                } else {
-                                    HandTrackingService.start(context)
-                                }
-                            } else {
-                                HandTrackingService.stop(context)
-                            }
-                        },
+            // Header
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BrandLogo(size = 42.dp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("AirCursor", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        user?.let { "Hi, ${it.name.substringBefore(' ')}" } ?: "Touchless control",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            }
-            status.error?.let {
-                Spacer(Modifier.height(8.dp))
-                Text(it, color = MaterialTheme.colorScheme.error)
-            }
-
-            Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    enabled = on,
-                    onClick = { HandTrackingService.send(context, HandTrackingService.ACTION_TOGGLE_PAUSE) },
-                    modifier = Modifier.weight(1f),
-                ) { Text(if (status.paused) "Resume" else "Pause") }
-                OutlinedButton(
-                    enabled = on,
-                    onClick = { HandTrackingService.send(context, HandTrackingService.ACTION_RECALIBRATE) },
-                    modifier = Modifier.weight(1f),
-                ) { Text("Recalibrate") }
-            }
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(
-                enabled = on,
-                onClick = {
-                    HandTrackingService.send(context, HandTrackingService.ACTION_AUTOTUNE)
-                    Toast.makeText(context, "Ungli camera ke saamne 2 second bilkul still rakho", Toast.LENGTH_LONG).show()
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("🎯 Auto-tune anti-shake (2 s)") }
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = onOpenPreview, modifier = Modifier.fillMaxWidth()) { Text("Test: live camera preview") }
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = onOpenSecurity, modifier = Modifier.fillMaxWidth()) {
-                Text("🔒 Security: owner hand lock & PIN")
+                Box(
+                    Modifier
+                        .clip(CircleShape)
+                        .clickable { showAccount = true },
+                ) { Avatar(user?.name, size = 40.dp) }
             }
 
-            Spacer(Modifier.height(12.dp))
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    BoolRow(prefs, AppSettings.CLICK_ONLY)
-                }
-            }
+            if (!cameraOk || !a11yOk) SetupNeededCard(onOpenSetup)
 
-            Spacer(Modifier.height(12.dp))
+            HandControlCard(enabledToStart = cameraOk && a11yOk, onNeedSetup = onOpenSetup)
+
+            PcCard(onOpenPc)
+
             UpdateCard()
 
-            Spacer(Modifier.height(12.dp))
-            Button(onClick = onOpenCloudPc, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                Text("☁️  Cloud PC built-in (BETA, Termux nahi chahiye)")
-            }
-
-            Spacer(Modifier.height(12.dp))
-            UbuntuCard(onNeedPro = onOpenPro)
-
-            Spacer(Modifier.height(12.dp))
-            OutlinedButton(onClick = onOpenPro, modifier = Modifier.fillMaxWidth()) {
-                Text("⭐ Cloud PC Pro – plan & license")
-            }
-
-            Spacer(Modifier.height(12.dp))
-            Button(
-                onClick = {
-                    if (ProAccess.allowed(context)) com.aircursor.pc.PcMode.openDesktop(context) else onOpenPro()
-                },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-            ) { Text("🖥️  Open PC Mode", style = MaterialTheme.typography.titleMedium) }
-            Text(
-                "Desktop, taskbar, start menu, windows, Files, Notepad, Calculator, Paint. " +
-                    "Exit from Start → \"Exit PC mode\". Your phone's files are never deleted.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-
-            // Setup status
-            Spacer(Modifier.height(16.dp))
-            SectionTitle("Setup")
-            StatusLine("Camera permission", cameraOk)
-            StatusLine("Accessibility service", a11yOk)
-            StatusLine("Battery unrestricted", batteryOk)
-            TextButton(onClick = onOpenSetup) { Text("Open setup guide") }
-
-            // Gesture cheat sheet
-            Spacer(Modifier.height(8.dp))
-            SectionTitle("Air gestures")
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    GESTURE_HELP.forEach { (g, a) ->
-                        Row(Modifier.padding(vertical = 3.dp)) {
-                            Text(g, Modifier.weight(1.3f), fontWeight = FontWeight.SemiBold)
-                            Text(a, Modifier.weight(1f))
-                        }
-                    }
-                }
-            }
-
-            // Settings (re-created when reset so sliders reload their values)
-            androidx.compose.runtime.key(settingsVersion, tick) {
-                Spacer(Modifier.height(16.dp))
-                SectionTitle("Gestures on/off")
-                AppSettings.GESTURES.forEach { BoolRow(prefs, it) }
-
-                Spacer(Modifier.height(16.dp))
-                SectionTitle("Cursor movement")
-                BoolRow(prefs, AppSettings.MOUSE_MODE)
-                Text(
-                    "Lag compensation predicts where your finger is going, so the cursor keeps up. " +
-                        "Lower smoothing = steadier cursor. Higher responsiveness = less lag on fast moves.",
-                    style = MaterialTheme.typography.bodySmall,
+            SectionCard {
+                NavRow(R.drawable.ic_ui_sliders, "Settings", "Cursor, gestures and performance", onClick = onOpenSettings)
+                NavRow(R.drawable.ic_ui_help, "Help & guide", "How to use gestures, the PC, apps and AI", tint = Brand.Sky, onClick = onOpenHelp)
+                NavRow(R.drawable.ic_ui_shield, "Security", "Owner hand lock and PIN", tint = Brand.Violet, onClick = onOpenSecurity)
+                NavRow(R.drawable.ic_ui_camera, "Camera test", "See what the camera sees", tint = Brand.Success, onClick = onOpenPreview)
+                NavRow(
+                    R.drawable.ic_ui_check, "Permissions", "Camera, accessibility and battery",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    badge = if (!cameraOk || !a11yOk) "Action needed" else null,
+                    onClick = onOpenSetup,
                 )
-                AppSettings.SLIDERS.forEach { SliderRow(prefs, it) }
-
-                Spacer(Modifier.height(16.dp))
-                SectionTitle("Performance")
-                Text(
-                    "Camera changes restart the camera instantly.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                AppSettings.PERFORMANCE_OPTIONS.forEach { BoolRow(prefs, it) }
-                AppSettings.PERFORMANCE_SLIDERS.forEach { SliderRow(prefs, it) }
-
-                Spacer(Modifier.height(16.dp))
-                SectionTitle("Options")
-                AppSettings.OPTIONS.forEach { BoolRow(prefs, it) }
             }
-            TextButton(onClick = {
-                prefs.resetAll()
-                settingsVersion++
-            }) { Text("Reset all settings to default") }
 
-            Spacer(Modifier.height(16.dp))
             Text(
-                "Hand tracking runs only on this phone: camera images never leave it. " +
-                    "Internet is used only to check for updates and Pro plan info.",
+                "Hand tracking runs only on this phone – camera images never leave it.",
                 style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp),
             )
-            Spacer(Modifier.height(24.dp))
         }
     }
-}
 
-private val GESTURE_HELP = listOf(
-    "☝️ Move index finger" to "Move cursor",
-    "🤏 Quick pinch" to "Tap",
-    "☝️ Hold still 1.2s (Dwell on)" to "Tap without pinch",
-    "🤏 Pinch & hold 0.5s" to "Long press",
-    "🤏 Pinch & move" to "Drag",
-    "✌️ Two fingers up/down" to "Scroll",
-    "✌️ Two fingers left/right" to "Swipe sideways",
-    "✋ Palm swipe left" to "Back",
-    "✋ Palm hold still 1s" to "Home",
-    "✋ Palm swipe down" to "Notifications",
-    "✋ Palm swipe up" to "Recent apps",
-    "✊ Still fist 2s (if on)" to "Pause / Resume",
-)
-
-@Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(vertical = 6.dp),
-    )
+    if (showAccount) AccountDialog(user, onDismiss = { showAccount = false })
 }
 
 @Composable
-private fun StatusLine(label: String, ok: Boolean) {
-    Row(Modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(if (ok) "✓" else "✗", color = if (ok) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error)
-        Spacer(Modifier.width(8.dp))
-        Text(label)
-    }
-}
-
-@Composable
-private fun BoolRow(prefs: Prefs, setting: BoolSetting) {
-    var checked by remember { mutableStateOf(prefs.get(setting)) }
+private fun SetupNeededCard(onOpenSetup: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp),
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.errorContainer)
+            .clickable(onClick = onOpenSetup)
+            .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        UiIcon(R.drawable.ic_ui_alert, tint = MaterialTheme.colorScheme.onErrorContainer)
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(setting.label)
-            if (setting.description.isNotEmpty()) {
-                Text(setting.description, style = MaterialTheme.typography.bodySmall)
-            }
+            Text("Finish setup", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onErrorContainer)
+            Text(
+                "Allow camera and accessibility to use hand control.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
         }
-        Switch(checked = checked, onCheckedChange = {
-            checked = it
-            prefs.set(setting, it)
-        })
+        UiIcon(R.drawable.ic_ui_chevron, tint = MaterialTheme.colorScheme.onErrorContainer, size = 18.dp)
     }
-    HorizontalDivider()
 }
 
 @Composable
-private fun SliderRow(prefs: Prefs, setting: FloatSetting) {
-    var value by remember { mutableFloatStateOf(prefs.get(setting)) }
-    Column(Modifier.padding(top = 8.dp)) {
-        Row {
-            Text(setting.label, Modifier.weight(1f))
-            Text(setting.format(value), fontWeight = FontWeight.SemiBold)
-        }
-        Slider(
-            value = value,
-            valueRange = setting.min..setting.max,
-            steps = setting.steps,
-            onValueChange = {
-                value = it
-                prefs.set(setting, it)
-            },
-        )
+private fun HandControlCard(enabledToStart: Boolean, onNeedSetup: () -> Unit) {
+    val context = LocalContext.current
+    val status by TrackingBus.status.collectAsStateWithLifecycle()
+    val on = status.running
+    val line = when {
+        !on -> "Off"
+        status.screenOff -> "Waiting for unlock"
+        status.paused -> "Paused"
+        !status.accessibilityConnected -> "Accessibility service is off"
+        status.handPresent -> "Hand detected · %.0f fps".format(status.fps)
+        else -> "On · show your hand to the front camera"
     }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(Brand.handGradient)
+            .padding(18.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color.White.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center,
+            ) { UiIcon(R.drawable.ic_ui_hand, tint = Color.White, size = 26.dp) }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Hand control", color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(line, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(
+                checked = on,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Brand.Indigo,
+                    checkedTrackColor = Color.White,
+                    uncheckedThumbColor = Color.White,
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.25f),
+                    uncheckedBorderColor = Color.White.copy(alpha = 0.6f),
+                ),
+                onCheckedChange = { want ->
+                    if (want) {
+                        if (!enabledToStart) {
+                            Toast.makeText(context, "Finish the setup first", Toast.LENGTH_SHORT).show()
+                            onNeedSetup()
+                        } else {
+                            HandTrackingService.start(context)
+                        }
+                    } else {
+                        HandTrackingService.stop(context)
+                    }
+                },
+            )
+        }
+        status.error?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, color = Color.White, style = MaterialTheme.typography.bodySmall)
+        }
+        if (on) {
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassButton(
+                    if (status.paused) "Resume" else "Pause",
+                    if (status.paused) R.drawable.ic_ui_play else R.drawable.ic_ui_pause,
+                    onClick = { HandTrackingService.send(context, HandTrackingService.ACTION_TOGGLE_PAUSE) },
+                    modifier = Modifier.weight(1f),
+                )
+                GlassButton(
+                    "Recenter", R.drawable.ic_ui_crosshair,
+                    onClick = { HandTrackingService.send(context, HandTrackingService.ACTION_RECALIBRATE) },
+                    modifier = Modifier.weight(1f),
+                )
+                GlassButton(
+                    "Auto-tune", R.drawable.ic_ui_target,
+                    onClick = {
+                        HandTrackingService.send(context, HandTrackingService.ACTION_AUTOTUNE)
+                        Toast.makeText(context, "Hold your finger still for 2 seconds", Toast.LENGTH_LONG).show()
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PcCard(onOpenPc: () -> Unit) {
+    val context = LocalContext.current
+    val state by CloudPcBus.state.collectAsStateWithLifecycle()
+    var tick by remember { mutableIntStateOf(0) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { tick++ }
+    val installed = remember(tick, state.version, state.busy) {
+        CloudPcEngine.isReady(context) && CloudPcDesktop.isInstalled(context)
+    }
+    val (pill, pillColor) = when {
+        state.busy -> "Setting up" to Brand.Warning
+        state.desktopRunning -> "Running" to Brand.Success
+        installed -> "Ready" to Brand.Sky
+        else -> "Not installed" to MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BrandLogo(R.drawable.logo_pc, size = 46.dp)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("AirCursor PC", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "Full Ubuntu desktop on your phone",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            StatusPill(pill, pillColor)
+        }
+        Spacer(Modifier.height(14.dp))
+        if (state.busy) {
+            Text(state.title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(6.dp))
+            if (state.progress >= 0f) {
+                LinearProgressIndicator(progress = { state.progress }, modifier = Modifier.fillMaxWidth())
+            } else {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
+            Spacer(Modifier.height(10.dp))
+            SecondaryButton("View progress", onClick = onOpenPc)
+        } else if (installed) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PrimaryButton(
+                    "Open desktop",
+                    onClick = {
+                        if (ProAccess.allowed(context)) {
+                            context.startActivity(android.content.Intent(context, CloudPcDesktopActivity::class.java))
+                        } else {
+                            Toast.makeText(context, "Your plan has ended", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    icon = R.drawable.ic_ui_play,
+                    modifier = Modifier.weight(1f),
+                    container = Brand.Sky,
+                )
+                SecondaryButton("Manage", onClick = onOpenPc, modifier = Modifier.weight(0.6f))
+            }
+        } else {
+            PrimaryButton("Set up AirCursor PC", onClick = onOpenPc, icon = R.drawable.ic_ui_download, container = Brand.Sky)
+        }
+    }
+}
+
+@Composable
+private fun AccountDialog(user: AppUser?, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var confirmSignOut by remember { mutableStateOf(false) }
+    if (confirmSignOut) {
+        AlertDialog(
+            onDismissRequest = { confirmSignOut = false },
+            title = { Text("Sign out?") },
+            text = { Text("Your settings and AirCursor PC files stay on this phone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmSignOut = false
+                    onDismiss()
+                    scope.launch { AuthManager.signOut(context) }
+                }) { Text("Sign out") }
+            },
+            dismissButton = { TextButton(onClick = { confirmSignOut = false }) { Text("Cancel") } },
+        )
+        return
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Avatar(user?.name, size = 56.dp) },
+        title = { Text(user?.name ?: "Account") },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                val detail = user?.phone ?: user?.email
+                val guest = user?.guest == true
+                val provider = user?.provider
+                if (detail != null) Text(detail, style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    when {
+                        user == null -> ""
+                        guest && AuthManager.configured -> "You are not signed in."
+                        guest -> "Using AirCursor without an account."
+                        provider == "google.com" -> "Signed in with Google"
+                        provider == "phone" -> "Signed in with phone number"
+                        else -> "Signed in"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            if (user != null && !user.guest) {
+                TextButton(onClick = { confirmSignOut = true }) { Text("Sign out", color = MaterialTheme.colorScheme.error) }
+            } else if (AuthManager.configured) {
+                TextButton(onClick = {
+                    onDismiss()
+                    scope.launch { AuthManager.signOut(context) }
+                }) { Text("Sign in") }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
 }

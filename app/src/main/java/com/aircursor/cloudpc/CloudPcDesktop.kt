@@ -72,12 +72,14 @@ object CloudPcDesktop {
         fi
         # Less work for the phone: no window shadows / animations.
         [ -f /usr/share/xfwm4/defaults ] && sed -i 's/^use_compositing=true/use_compositing=false/' /usr/share/xfwm4/defaults
-        Xvnc :1 -geometry "${'$'}{W}x${'$'}{H}" -depth 24 -dpi 96 -SecurityTypes None \
+        Xvnc :1 -geometry "${'$'}{W}x${'$'}{H}" -depth 24 -dpi 96 -SecurityTypes None -FrameRate 60 \
             -rfbunixpath "${'$'}SOCK" -rfbport -1 -AlwaysShared -AcceptSetDesktopSize &
         XPID=${'$'}!
         for i in ${'$'}(seq 1 150); do [ -S "${'$'}SOCK" ] && break; sleep 0.2; done
         echo CLOUDPC_VNC_READY
         export DISPLAY=:1 XDG_CURRENT_DESKTOP=XFCE NO_AT_BRIDGE=1
+        # Speed: software OpenGL (llvmpipe) on every CPU core, no vsync waits, no GL error checks.
+        export LP_NUM_THREADS="${'$'}(nproc 2>/dev/null || echo 4)" GALLIUM_DRIVER=llvmpipe vblank_mode=0 MESA_NO_ERROR=1
         # Firefox/Electron sandboxes cannot work inside proot (Android already isolates the app).
         export MOZ_FAKE_NO_SANDBOX=1 MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1 \
             MOZ_DISABLE_RDD_SANDBOX=1 MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1 MOZ_DISABLE_UTILITY_SANDBOX=1

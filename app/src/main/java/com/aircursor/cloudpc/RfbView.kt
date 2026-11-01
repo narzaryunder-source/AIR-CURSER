@@ -71,6 +71,9 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
 
     // Pointer state (framebuffer coordinates)
     private var buttons = 0
+    /** A hand drag (pinch + move) or a finger is down: only then may the left button be held. */
+    private var handDragging = false
+    private var fingerDown = false
     private var lastFbX = 0
     private var lastFbY = 0
     @Volatile private var pendingMove = false
@@ -110,7 +113,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
         val start = SystemClock.uptimeMillis()
         while (running && g == generation) {
             try {
-                post { onStatus?.invoke("Desktop start ho raha hai… (pehli baar 30-60 s)") }
+                post { onStatus?.invoke("Starting AirCursor PC…\nThe first start can take up to a minute.") }
                 val s = LocalSocket()
                 s.connect(LocalSocketAddress(socketPath, LocalSocketAddress.Namespace.FILESYSTEM))
                 socket = s
@@ -132,7 +135,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
                 } catch (_: Exception) {
                 }
                 if (SystemClock.uptimeMillis() - start > 180_000) {
-                    post { onStatus?.invoke("Desktop se connect nahi hua. Cloud PC screen par log dekho.") }
+                    post { onStatus?.invoke("The desktop did not start.\nClose it and try again, or see the log in AirCursor.") }
                     break
                 }
                 Thread.sleep(700)
@@ -155,28 +158,51 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
         }
     }
 
-    /** UI thread: copy changed pixels into the bitmap and redraw. */
+    // Frames per second actually shown (AirBoost FPS meter).
+    var showFps = false
+        set(value) {
+            field = value
+            invalidate()
+        }
+    private var framesThisSecond = 0
+    private var fpsWindowStart = 0L
+    private var fps = 0
+    private val fpsPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textSize = 14f * resources.displayMetrics.density
+        isFakeBoldText = true
+    }
+    private val fpsBg = Paint().apply { color = 0x99000000.toInt() }
+
+    /** UI thread: copy the new picture into the bitmap (one block copy) and redraw. */
     private fun applyDirty() {
         val c = client ?: return
-        val r = Rect()
         synchronized(dirty) {
-            r.set(dirty)
             dirty.setEmpty()
             dirtyPosted = false
         }
+        val w: Int
+        val h: Int
+        val fb: ByteArray
         synchronized(c.lock) {
-            val w = c.width
-            val h = c.height
-            if (w <= 0 || h <= 0) return
-            var b = bitmap
-            if (b == null || b.width != w || b.height != h || resizePending) {
-                b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                bitmap = b
-                resizePending = false
-                r.set(0, 0, w, h)
-            }
-            r.intersect(0, 0, w, h)
-            if (!r.isEmpty) b.setPixels(c.pixels, r.top * w + r.left, w, r.left, r.top, r.width(), r.height())
+            w = c.width
+            h = c.height
+            fb = c.rgba
+        }
+        if (w <= 0 || h <= 0 || fb.size != w * h * 4) return
+        var b = bitmap
+        if (b == null || b.width != w || b.height != h || resizePending) {
+            b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            bitmap = b
+            resizePending = false
+        }
+        b.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(fb))
+        framesThisSecond++
+        val now = SystemClock.uptimeMillis()
+        if (now - fpsWindowStart >= 1000) {
+            fps = framesThisSecond
+            framesThisSecond = 0
+            fpsWindowStart = now
         }
         invalidate()
     }
@@ -203,10 +229,21 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
         if (sharpness > 0f && android.os.Build.VERSION.SDK_INT >= 33 && canvas.isHardwareAccelerated &&
             drawSharpened(canvas, b)
         ) {
+            drawFps(canvas)
             return
         }
         src.set(0, 0, b.width, b.height)
         canvas.drawBitmap(b, src, dst, paint)
+        drawFps(canvas)
+    }
+
+    private fun drawFps(canvas: Canvas) {
+        if (!showFps) return
+        val d = resources.displayMetrics.density
+        val text = "$fps FPS"
+        val tw = fpsPaint.measureText(text)
+        canvas.drawRoundRect(dst.left + 8 * d, dst.top + 8 * d, dst.left + 20 * d + tw, dst.top + 34 * d, 8 * d, 8 * d, fpsBg)
+        canvas.drawText(text, dst.left + 14 * d, dst.top + 27 * d, fpsPaint)
     }
 
     @android.annotation.TargetApi(33)
@@ -335,6 +372,17 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
         }
     }
 
+    /** Activity left the screen: make sure no mouse button stays pressed in the desktop. */
+    fun releaseAll() {
+        handDragging = false
+        fingerDown = false
+        dragging = false
+        if (buttons != 0) {
+            buttons = 0
+            sendPointer(lastFbX, lastFbY, 0)
+        }
+    }
+
     fun toggleSticky(keysym: Int) {
         if (!sticky.remove(keysym)) sticky += keysym
         onStickyChanged?.invoke()
@@ -344,6 +392,12 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
 
     override fun hover(sx: Float, sy: Float) {
         val (x, y) = screenToFb(sx, sy)
+        // Safety: a lost "release" must never leave the button held (that turns every
+        // hand movement into a selection box / drag on the desktop).
+        if (buttons != 0 && !handDragging && !fingerDown) {
+            buttons = 0
+            sendPointer(x, y, 0)
+        }
         if (x != lastFbX || y != lastFbY) sendMoveCoalesced(x, y)
     }
 
@@ -354,6 +408,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
 
     override fun press(sx: Float, sy: Float) {
         val (x, y) = screenToFb(sx, sy)
+        handDragging = true
         lastFbX = x
         lastFbY = y
         sendPointer(x, y, buttons)
@@ -368,6 +423,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
 
     override fun release(sx: Float, sy: Float) {
         val (x, y) = screenToFb(sx, sy)
+        handDragging = false
         buttons = buttons and RfbClient.BUTTON_LEFT.inv()
         sendPointer(x, y, buttons)
     }
@@ -419,6 +475,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                fingerDown = true
                 requestFocus()
                 downX = e.x
                 downY = e.y
@@ -474,6 +531,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
                     !longPressed && !twoFinger -> clickAt(x, y, RfbClient.BUTTON_LEFT)
                 }
                 dragging = false
+                fingerDown = false
             }
             MotionEvent.ACTION_CANCEL -> {
                 removeCallbacks(longPress)
@@ -482,6 +540,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
                     sendPointer(lastFbX, lastFbY, buttons)
                 }
                 dragging = false
+                fingerDown = false
             }
         }
         return true

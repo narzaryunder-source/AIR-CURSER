@@ -6,6 +6,12 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Sign-in turns on when the owner adds app/google-services.json (Firebase project). Without it the
+// app still builds and people continue as a guest.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 // CI passes the run number so every APK has a higher versionCode (installs as an update).
 val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 
@@ -133,6 +139,13 @@ dependencies {
 
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
     implementation("androidx.documentfile:documentfile:1.0.1")
+
+    // Sign-in: Firebase Authentication (Google + phone OTP) and Android's Credential Manager.
+    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
     testImplementation("junit:junit:4.13.2")
 }

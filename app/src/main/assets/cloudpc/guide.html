@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AirCursor PC – Getting Started</title>
+<style>
+  :root { --ink:#0f172a; --muted:#475569; --line:#e2e8f0; --brand:#4f46e5; --brand2:#0891b2; --bg:#f8fafc; --card:#ffffff; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: "Noto Sans", "DejaVu Sans", Arial, sans-serif; background:var(--bg); color:var(--ink); line-height:1.55; }
+  header { background: linear-gradient(120deg, var(--brand), var(--brand2)); color:#fff; padding:36px 24px 30px; }
+  header h1 { margin:0 0 6px; font-size:30px; letter-spacing:-0.5px; }
+  header p { margin:0; opacity:.9; font-size:16px; }
+  main { max-width: 980px; margin: -18px auto 40px; padding: 0 16px; }
+  nav { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 18px; margin-bottom:18px; }
+  nav a { display:inline-block; margin:4px 14px 4px 0; color:var(--brand); text-decoration:none; font-weight:600; font-size:14px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px 22px; margin-bottom:16px; }
+  h2 { margin:0 0 10px; font-size:20px; }
+  h3 { margin:16px 0 6px; font-size:16px; }
+  p, li { color:var(--muted); font-size:15px; }
+  ol, ul { padding-left: 22px; margin: 6px 0; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:6px; padding:1px 6px; font-size:13px; color:var(--ink); }
+  code { background:#f1f5f9; border-radius:6px; padding:1px 6px; font-size:13px; color:#0f172a; }
+  table { border-collapse: collapse; width:100%; margin-top:6px; }
+  td, th { border-bottom:1px solid var(--line); padding:9px 8px; text-align:left; font-size:14px; vertical-align:top; }
+  th { color:var(--ink); font-weight:700; }
+  .tip { background:#eef2ff; border-left:4px solid var(--brand); padding:10px 14px; border-radius:8px; color:#3730a3; font-size:14px; margin-top:10px; }
+  .warn { background:#fff7ed; border-left:4px solid #ea580c; padding:10px 14px; border-radius:8px; color:#9a3412; font-size:14px; margin-top:10px; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
+  .pill { border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+  .pill b { display:block; color:var(--ink); margin-bottom:4px; }
+  footer { text-align:center; color:#94a3b8; font-size:13px; margin: 24px 0 40px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Welcome to AirCursor PC</h1>
+  <p>A full Ubuntu desktop running privately on your phone – controlled by touch, keyboard or your hand in the air.</p>
+</header>
+<main>
+<nav>
+  <a href="#basics">Basics</a><a href="#hand">Hand control</a><a href="#apps">Install apps</a><a href="#ai">AI apps</a>
+  <a href="#files">Files</a><a href="#internet">Internet</a><a href="#keyboard">Keyboard &amp; copy-paste</a>
+  <a href="#speed">Speed (AirBoost)</a><a href="#help">Problems?</a>
+</nav>
+
+<section id="basics">
+  <h2>1. Desktop basics</h2>
+  <div class="grid">
+    <div class="pill"><b>Start menu</b>Tap <b>Start</b> (bottom left) or press the Win key. Type to search any app.</div>
+    <div class="pill"><b>Taskbar</b>Shows pinned apps and open windows. Tap a window button to switch to it.</div>
+    <div class="pill"><b>Windows</b>Drag the title bar to move. Use the buttons at the top right to minimise, maximise or close.</div>
+    <div class="pill"><b>Desktop icons</b>Double-tap an icon to open it (App Store, Firefox, Terminal, AI Apps).</div>
+  </div>
+  <h3>Touch controls</h3>
+  <table>
+    <tr><th>Action</th><th>Touch</th></tr>
+    <tr><td>Click</td><td>Tap</td></tr>
+    <tr><td>Double click</td><td>Tap twice quickly</td></tr>
+    <tr><td>Right click (menu)</td><td>Press and hold</td></tr>
+    <tr><td>Drag / select</td><td>Touch and move</td></tr>
+    <tr><td>Scroll</td><td>Two fingers up / down</td></tr>
+  </table>
+  <div class="tip">The menu button on the right edge of the screen opens the toolbar: keyboard, hand control, paste from phone, wallpaper, files, boost and FPS meter.</div>
+</section>
+
+<section id="hand">
+  <h2>2. Hand control (no touching)</h2>
+  <p>Turn on hand control with the hand button in the toolbar. Hold your hand 30–60 cm from the front camera, palm facing the screen.</p>
+  <table>
+    <tr><th>Do this in the air</th><th>Result</th></tr>
+    <tr><td>Move your index finger</td><td>Move the mouse pointer</td></tr>
+    <tr><td>Quick pinch (thumb + index) and open</td><td>Left click</td></tr>
+    <tr><td>Two quick pinches</td><td>Double click</td></tr>
+    <tr><td>Pinch and hold still (yellow ring fills)</td><td>Right click</td></tr>
+    <tr><td>Pinch, hold a moment, then move</td><td>Drag (move windows, select text)</td></tr>
+    <tr><td>Two fingers up, move hand up/down</td><td>Scroll (when Simple mode is off)</td></tr>
+  </table>
+  <div class="tip">If the pointer shakes, open AirCursor and tap <b>Auto-tune</b>, then keep your finger still for 2 seconds.</div>
+</section>
+
+<section id="apps">
+  <h2>3. Install apps</h2>
+  <ol>
+    <li>Open <b>App Store</b> (desktop icon or Start menu).</li>
+    <li>Tick the apps you want – for example LibreOffice (Word/Excel), GIMP (photos), VLC (videos), VS Code (coding) – and tap <b>Install</b>.</li>
+    <li>For anything else tap <b>Search 60,000+ apps</b>, type a word like <code>chess</code>, <code>pdf</code> or <code>music</code>.</li>
+    <li>Installed apps appear in the Start menu.</li>
+  </ol>
+  <h3>Apps from a website (.deb)</h3>
+  <p>Download the <b>ARM64</b> (aarch64) <code>.deb</code> file in Firefox and double-tap it in the Downloads folder to install.</p>
+  <div class="warn">Windows programs (<code>.exe</code>) do not run here – this is Linux. Most popular programs have a Linux version in the App Store.</div>
+</section>
+
+<section id="ai">
+  <h2>4. AI apps</h2>
+  <div class="grid">
+    <div class="pill"><b>Claude, ChatGPT, Gemini</b>Open the <b>AI Apps</b> folder on the desktop. They open in Firefox – sign in once with your own account and Firefox remembers it.</div>
+    <div class="pill"><b>Offline AI</b>Works without internet using a small model (Ollama). First start downloads about 1 GB. It is slower on a phone.</div>
+    <div class="pill"><b>Claude Code</b>AI that writes code in the Terminal. Install it from the App Store, then type <code>claude</code> in Terminal.</div>
+  </div>
+</section>
+
+<section id="files">
+  <h2>5. Files</h2>
+  <ul>
+    <li>Your files are in the <b>Home</b> folder (Documents, Downloads, Pictures…).</li>
+    <li><b>Bring files from your phone:</b> toolbar → <b>Files</b> → <b>Import from phone</b>. They are copied into <code>Downloads/From phone</code>.</li>
+    <li><b>Send files to your phone:</b> put them in the <code>To phone</code> folder on the desktop, then toolbar → <b>Files</b> → <b>Save to phone</b>.</li>
+    <li>Files you import are copies – the originals on your phone are never changed or deleted.</li>
+  </ul>
+  <div class="warn">Everything in AirCursor PC is stored inside the AirCursor app. Uninstalling AirCursor deletes it – save important files to your phone first. App updates keep everything.</div>
+</section>
+
+<section id="internet">
+  <h2>6. Internet</h2>
+  <p>Open <b>Firefox</b> from the taskbar. Bookmarks, passwords and logins stay saved between sessions. Downloads go to the Downloads folder.</p>
+</section>
+
+<section id="keyboard">
+  <h2>7. Keyboard and copy-paste</h2>
+  <ul>
+    <li>Toolbar → keyboard button shows the phone keyboard. A Bluetooth or USB keyboard also works.</li>
+    <li><b>Ctrl</b>, <b>Alt</b> and <b>Win</b> in the toolbar stay pressed for the next key (for example Ctrl, then C).</li>
+    <li>Text you copy in the PC is automatically copied to your phone.</li>
+    <li>To paste text from your phone into the PC, use toolbar → <b>Paste</b>.</li>
+  </ul>
+  <p>Useful shortcuts: <kbd>Ctrl</kbd>+<kbd>C</kbd> copy · <kbd>Ctrl</kbd>+<kbd>V</kbd> paste · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Alt</kbd>+<kbd>Tab</kbd> switch window · <kbd>Alt</kbd>+<kbd>F4</kbd> close window.</p>
+</section>
+
+<section id="speed">
+  <h2>8. Speed (AirBoost)</h2>
+  <table>
+    <tr><th>Profile</th><th>Use it for</th></tr>
+    <tr><td><b>Game</b></td><td>Games and videos – highest FPS</td></tr>
+    <tr><td><b>Performance</b></td><td>Fast and smooth everyday use on slower phones</td></tr>
+    <tr><td><b>Balanced</b></td><td>Recommended for most phones</td></tr>
+    <tr><td><b>Quality</b></td><td>Sharpest text on fast phones</td></tr>
+  </table>
+  <p>Change the profile in AirCursor → AirCursor PC. AirBoost draws the desktop with fewer pixels and sharpens it on the phone, so it stays clear but runs faster. The <b>Boost</b> button in the toolbar stops background jobs at once; the <b>FPS</b> button shows the frame rate.</p>
+</section>
+
+<section id="help">
+  <h2>9. Something not working?</h2>
+  <table>
+    <tr><th>Problem</th><th>Fix</th></tr>
+    <tr><td>Black or frozen screen</td><td>Toolbar → close → "Stop desktop", then open it again.</td></tr>
+    <tr><td>Slow</td><td>Choose the <b>Game</b> or <b>Performance</b> profile and tap <b>Boost</b>.</td></tr>
+    <tr><td>Taskbar missing</td><td>Open Terminal and type <code>aircursor-windows-layout --force</code></td></tr>
+    <tr><td>An app will not install</td><td>Check the internet connection and try again in the App Store.</td></tr>
+    <tr><td>Pointer shakes or clicks are hard</td><td>AirCursor → Auto-tune. Or turn on Dwell click in Settings.</td></tr>
+  </table>
+</section>
+<footer>AirCursor PC · Ubuntu 24.04 LTS · Your data stays on this phone</footer>
+</main>
+</body>
+</html>

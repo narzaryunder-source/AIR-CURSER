@@ -116,7 +116,7 @@ fun LockScreen(onUnlocked: () -> Unit) {
                 .padding(24.dp),
             verticalArrangement = Arrangement.Center,
         ) {
-            Text("🔒 AirCursor is locked", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("AirCursor is locked", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(16.dp))
             PinField(pin, { pin = it; error = null }, "Enter PIN")
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -212,7 +212,7 @@ fun SecurityScreen(onBack: () -> Unit) {
                 .padding(16.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onBack) { Text("← Back") }
+                TextButton(onClick = onBack) { Text("Back") }
                 Text("Security", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
 
@@ -279,7 +279,7 @@ private fun ProtectedSections(
             Spacer(Modifier.height(8.dp))
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("✋ Owner hand lock", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Owner hand lock", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
                         if (profileHandedness == null) "No hand registered yet."
                         else "Registered: $profileHandedness hand",
@@ -296,7 +296,7 @@ private fun ProtectedSections(
                             OwnerBus.postEnroll(null)
                         }) { Text("Cancel") }
                     } else {
-                        if (e?.done == true) Text("✓ ${e.hint}", color = Color(0xFF2E7D32))
+                        if (e?.done == true) Text(e.hint, color = Color(0xFF2E7D32))
                         Button(
                             onClick = {
                                 val start = {
@@ -339,8 +339,8 @@ private fun ProtectedSections(
                         StrictnessSlider(prefs)
                         if (lockOn && running) {
                             val (label, color) = when (checkState) {
-                                "OWNER" -> "✓ Owner's hand" to Color(0xFF2E7D32)
-                                "STRANGER" -> "✗ Not the owner's hand" to MaterialTheme.colorScheme.error
+                                "OWNER" -> "Owner's hand" to Color(0xFF2E7D32)
+                                "STRANGER" -> "Not the owner's hand" to MaterialTheme.colorScheme.error
                                 "CHECKING" -> "… checking" to MaterialTheme.colorScheme.onSurface
                                 else -> "No hand in view" to MaterialTheme.colorScheme.onSurface
                             }
@@ -365,7 +365,7 @@ private fun ProtectedSections(
             Spacer(Modifier.height(12.dp))
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("🔑 PIN", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("App PIN", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text("AirCursor asks for the PIN when it is opened.")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = { onConfirm("Change PIN" to onChangePin) }) {

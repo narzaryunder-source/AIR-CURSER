@@ -451,9 +451,12 @@ class GestureEngineTest {
         }
         assertTrue("cursor should keep moving", d.last.x > start + 50f)
         d.feed(Shape.OPEN_PALM, cx = x, frames = 60)
-        d.feed(Shape.POINT, cx = x, frames = 5).feed(Shape.PINCH, cx = x, frames = 25).feed(Shape.POINT, cx = x, frames = 3)
+        // Quick pinch = click; pinch held still = long press (right click on the PC).
+        d.feed(Shape.POINT, cx = x, frames = 5).feed(Shape.PINCH, cx = x, frames = 4).feed(Shape.POINT, cx = x, frames = 8)
         assertEquals(1, d.count<GestureEvent.Tap>())
-        assertEquals(0, d.count<GestureEvent.LongPress>())
+        d.feed(Shape.PINCH, cx = x, frames = 25).feed(Shape.POINT, cx = x, frames = 3)
+        assertEquals(1, d.count<GestureEvent.Tap>())
+        assertEquals(1, d.count<GestureEvent.LongPress>())
         assertEquals(0, d.count<GestureEvent.Home>())
         assertEquals(0, d.count<GestureEvent.PauseChanged>())
         assertEquals(0, d.count<GestureEvent.ScrollVelocity>())
@@ -474,6 +477,67 @@ class GestureEngineTest {
         assertEquals(1, d.count<GestureEvent.DragEnd>())
         assertEquals(0, d.count<GestureEvent.Tap>())
         assertEquals(0, d.count<GestureEvent.PauseChanged>())
+    }
+
+    // ---- Click vs drag (no accidental drags / selection boxes) ----
+
+    @Test
+    fun handDriftWhilePinchingStaysAClick() {
+        val d = Driver(GestureEngine(mouseConfig.copy(clickOnly = true)))
+        d.feed(Shape.POINT, frames = 10)
+        var x = 0.5f
+        // The hand drifts a little (~5% of the hand size) while the fingers are pinched (short pinch).
+        repeat(6) {
+            x += 0.0013f
+            d.feed(Shape.PINCH, cx = x)
+        }
+        d.feed(Shape.POINT, cx = x, frames = 3)
+        assertEquals(1, d.count<GestureEvent.Tap>())
+        assertEquals(0, d.count<GestureEvent.DragStart>())
+    }
+
+    @Test
+    fun holdThenMoveStartsADrag() {
+        val d = Driver(GestureEngine(mouseConfig.copy(clickOnly = true)))
+        d.feed(Shape.POINT, frames = 10).feed(Shape.PINCH, frames = 9) // ~300 ms still
+        var x = 0.5f
+        repeat(8) {
+            x += 0.01f
+            d.feed(Shape.PINCH, cx = x)
+        }
+        assertEquals(CursorMode.DRAGGING, d.last.mode)
+        d.feed(Shape.POINT, cx = x, frames = 3)
+        assertEquals(1, d.count<GestureEvent.DragStart>())
+        assertEquals(1, d.count<GestureEvent.DragEnd>())
+        assertEquals(0, d.count<GestureEvent.Tap>())
+        assertEquals(0, d.count<GestureEvent.LongPress>())
+    }
+
+    @Test
+    fun bigFastMoveDragsWithoutWaiting() {
+        val d = Driver(GestureEngine(mouseConfig.copy(clickOnly = true)))
+        d.feed(Shape.POINT, frames = 10).feed(Shape.PINCH, frames = 5)
+        var x = 0.5f
+        repeat(3) {
+            x += 0.05f
+            d.feed(Shape.PINCH, cx = x)
+        }
+        assertEquals(CursorMode.DRAGGING, d.last.mode)
+    }
+
+    @Test
+    fun holdingStillShowsARingThenLongPress() {
+        val d = Driver(GestureEngine(mouseConfig.copy(clickOnly = true)))
+        d.feed(Shape.POINT, frames = 10).feed(Shape.PINCH, frames = 2)
+        var sawRing = false
+        repeat(16) {
+            d.feed(Shape.PINCH)
+            if (d.last.holdKind == HoldKind.PRESS) sawRing = true
+        }
+        assertTrue(sawRing)
+        assertEquals(1, d.count<GestureEvent.LongPress>())
+        d.feed(Shape.POINT, frames = 3)
+        assertEquals(0, d.count<GestureEvent.Tap>())
     }
 
     // ---- Mouse (relative) mode ----

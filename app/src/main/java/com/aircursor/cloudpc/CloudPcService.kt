@@ -95,7 +95,7 @@ class CloudPcService : Service() {
         }
         goForeground()
         when (action) {
-            ACTION_INSTALL -> submit("Cloud PC install") { install() }
+            ACTION_INSTALL -> submit("Preparing…") { install() }
             ACTION_RUN -> {
                 val cmd = intent.getStringExtra(EXTRA_COMMAND).orEmpty()
                 if (cmd.isNotBlank()) submit(cmd.take(40)) { runCommand(cmd) }
@@ -122,8 +122,8 @@ class CloudPcService : Service() {
             try {
                 job()
             } catch (e: CloudPcInstaller.Cancelled) {
-                CloudPcBus.line("Ruk gaya (cancelled).", force = true)
-                CloudPcBus.update { it.copy(error = "Cancelled – Install dobara dabao, jahan ruka wahin se chalega.") }
+                CloudPcBus.line("Cancelled.", force = true)
+                CloudPcBus.update { it.copy(error = "Cancelled. Tap Continue to resume where it stopped.") }
             } catch (e: Throwable) {
                 Log.w(TAG, "job failed", e)
                 CloudPcBus.line("ERROR: ${e.message}", force = true)
@@ -140,46 +140,77 @@ class CloudPcService : Service() {
         }
     }
 
+    /** One step for the user: base system (first 30%) + desktop and apps (the rest). */
     private fun install() {
         val inst = CloudPcInstaller(this)
+        inst.scale = 0.3f
         installer = inst
         try {
-            inst.install()
+            if (!CloudPcEngine.isReady(this)) inst.install()
+            if (inst.cancelled) throw CloudPcInstaller.Cancelled()
+            if (!CloudPcDesktop.isInstalled(this)) installDesktop(0.3f)
+            CloudPcBus.line("==> AirCursor PC is ready", force = true)
+            CloudPcBus.update { it.copy(title = "Ready", progress = 1f) }
         } finally {
             installer = null
         }
     }
 
     private fun runCommand(cmd: String) {
-        if (!CloudPcEngine.isExtracted(this)) throw IllegalStateException("Pehle Install karo.")
+        if (!CloudPcEngine.isExtracted(this)) throw IllegalStateException("Install AirCursor PC first.")
         CloudPcBus.line("$ $cmd", force = true)
-        CloudPcBus.update { it.copy(title = "Chal raha hai: ${cmd.take(40)}", progress = -1f) }
+        CloudPcBus.update { it.copy(title = "Running: ${cmd.take(40)}", progress = -1f) }
         val code = CloudPcEngine.run(this, cmd, onProcess = { running = it }) { CloudPcBus.line(it) }
         running = null
         CloudPcBus.line("[exit $code]", force = true)
-        CloudPcBus.update { it.copy(title = if (code == 0) "Ho gaya ✅" else "Khatam (code $code)") }
+        CloudPcBus.update { it.copy(title = if (code == 0) "Done" else "Finished with code $code") }
     }
 
-    private fun installDesktop() {
-        if (!CloudPcEngine.isReady(this)) throw IllegalStateException("Pehle Cloud PC install karo.")
-        CloudPcBus.update { it.copy(title = "Desktop install ho raha hai (5-15 min, ~400 MB)…", progress = -1f) }
+    /**
+     * Desktop + apps (apt). Progress comes from apt's own output: the number of packages it will
+     * install, then each download ("Get:") and each install ("Setting up").
+     */
+    private fun installDesktop(start: Float = 0f) {
+        if (!CloudPcEngine.isReady(this)) throw IllegalStateException("Install the base system first.")
+        CloudPcBus.update { it.copy(title = "Installing the desktop and apps (about 450 MB)…", progress = start) }
         var ok = false
+        var total = 0
+        var got = 0
+        var setUp = 0
+        val countRe = Regex("""(\d+) newly installed""")
+        var best = start
+        fun show() {
+            if (total <= 0) return
+            val f = (got.toFloat() / total * 0.5f + setUp.toFloat() / total * 0.5f).coerceIn(0f, 1f)
+            best = maxOf(best, start + (0.98f - start) * f) // never jumps backwards
+            CloudPcBus.update { it.copy(progress = best) }
+        }
         val code = CloudPcEngine.run(this, CloudPcDesktop.INSTALL_SCRIPT, onProcess = { running = it }) { line ->
             if (line.contains("CLOUDPC_DESKTOP_OK")) ok = true
+            countRe.find(line)?.let { m -> total += m.groupValues[1].toInt() }
+            when {
+                line.startsWith("Get:") -> { got++; show() }
+                line.startsWith("Setting up ") -> {
+                    setUp++
+                    show()
+                    CloudPcBus.update { it.copy(title = "Installing " + line.removePrefix("Setting up ").substringBefore(' ').substringBefore(':')) }
+                }
+                line.startsWith("==> ") -> CloudPcBus.update { it.copy(title = line.removePrefix("==> ")) }
+            }
             CloudPcBus.line(line)
         }
         running = null
-        if (code != 0 || !ok) throw java.io.IOException("Desktop install ruk gaya (code $code). Internet check karke dobara dabao.")
+        if (installer?.cancelled == true) throw CloudPcInstaller.Cancelled()
+        if (code != 0 || !ok) throw java.io.IOException("Desktop setup stopped (code $code). Check the internet connection and tap Continue.")
         java.io.File(CloudPcEngine.rootfs(this), CloudPcDesktop.MARK_DESKTOP).writeText("1\n")
-        CloudPcBus.line("==> Desktop ready ✅", force = true)
-        CloudPcBus.update { it.copy(title = "Desktop ready ✅", progress = 1f) }
+        CloudPcBus.update { it.copy(title = "Desktop ready", progress = 1f) }
     }
 
     /** Starts Xvnc + XFCE as a long-running process; the viewer connects to its private socket. */
     private fun startDesktop(width: Int, height: Int) {
         if (desktopActive) return
         if (!CloudPcDesktop.isInstalled(this)) {
-            CloudPcBus.update { it.copy(error = "Pehle 'Desktop install' karo.") }
+            CloudPcBus.update { it.copy(error = "Install AirCursor PC first.") }
             stopIfIdle()
             return
         }
@@ -189,12 +220,12 @@ class CloudPcService : Service() {
             try {
                 CloudPcDesktop.writeStartScript(this)
                 if (CloudPcTools.needsSetup(this)) {
-                    CloudPcBus.line("==> Cloud PC tools (App Store, Windows look, AI apps)…", force = true)
+                    CloudPcBus.line("==> Updating desktop tools (App Store, layout, AI apps)…", force = true)
                     CloudPcEngine.run(this, CloudPcTools.PACKAGES_SCRIPT, onProcess = { desktop = it }) { CloudPcBus.line(it) }
                     CloudPcTools.writeFiles(this)
                 }
                 val light = AirBoost.current(this).light
-                CloudPcBus.line("==> Desktop start ${width}x$height (AirBoost: ${AirBoost.current(this).label})", force = true)
+                CloudPcBus.line("==> Starting the desktop ${width}x$height (AirBoost: ${AirBoost.current(this).label})", force = true)
                 val code = CloudPcEngine.run(
                     this, CloudPcDesktop.startCommand(width, height, light), onProcess = { desktop = it },
                 ) { line ->
@@ -202,10 +233,10 @@ class CloudPcService : Service() {
                     // XFCE prints a lot of harmless warnings: keep only the important ones in the log.
                     if (line.contains("CLOUDPC") || line.contains("rror") || line.contains("Xvnc")) CloudPcBus.line(line)
                 }
-                CloudPcBus.line("==> Desktop band (code $code)", force = true)
+                CloudPcBus.line("==> Desktop stopped (code $code)", force = true)
             } catch (e: Throwable) {
                 Log.w(TAG, "desktop failed", e)
-                CloudPcBus.line("Desktop ERROR: ${e.message}", force = true)
+                CloudPcBus.line("Desktop error: ${e.message}", force = true)
                 CloudPcBus.update { it.copy(error = e.message) }
             } finally {
                 desktop = null
@@ -231,9 +262,9 @@ class CloudPcService : Service() {
     }
 
     private fun remove() {
-        CloudPcBus.update { it.copy(title = "Built-in Ubuntu hata rahe hain…") }
+        CloudPcBus.update { it.copy(title = "Removing AirCursor PC…") }
         CloudPcEngine.remove(this)
-        CloudPcBus.line("Built-in Ubuntu hata diya. Phone ki files par koi asar nahi.", force = true)
+        CloudPcBus.line("AirCursor PC removed. Your phone's own files were not touched.", force = true)
         CloudPcBus.update { it.copy(title = "Removed") }
     }
 
@@ -256,7 +287,7 @@ class CloudPcService : Service() {
     private fun goForeground() {
         val nm = getSystemService(NotificationManager::class.java)
         nm?.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Cloud PC", NotificationManager.IMPORTANCE_LOW).apply {
+            NotificationChannel(CHANNEL, "AirCursor PC", NotificationManager.IMPORTANCE_LOW).apply {
                 description = "Shown while Cloud PC installs or runs something"
                 setShowBadge(false)
             },
@@ -271,9 +302,9 @@ class CloudPcService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val n: Notification = NotificationCompat.Builder(this, CHANNEL)
-            .setSmallIcon(com.aircursor.R.drawable.ic_cloud_tile)
-            .setContentTitle("☁️ Cloud PC")
-            .setContentText("Kaam chal raha hai… (app me progress dekho)")
+            .setSmallIcon(com.aircursor.R.drawable.ic_ui_desktop)
+            .setContentTitle("AirCursor PC")
+            .setContentText("Running – tap to open")
             .setContentIntent(open)
             .addAction(0, "Stop", stop)
             .setOngoing(true)

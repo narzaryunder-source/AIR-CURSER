@@ -20,7 +20,10 @@ data class GestureConfig(
     val screenWidth: Int = 1080,
     val screenHeight: Int = 2400,
     val pointerMode: PointerMode = PointerMode.RELATIVE,
-    /** Simple mode: the cursor always follows the hand; pinch = click, pinch + move = drag. No other gestures. */
+    /**
+     * Simple mode: the cursor always follows the hand; pinch = click, pinch hold = long press
+     * (right click on the PC), pinch hold + move = drag. No palm / fist / two-finger gestures.
+     */
     val clickOnly: Boolean = false,
     // Cursor mapping and smoothing
     val margin: Float = 0.15f,
@@ -45,8 +48,15 @@ data class GestureConfig(
     val pinchFreezeMs: Long = 120,
     val pinchLookbackMs: Long = 100,
     val longPressMs: Long = 500,
-    /** Movement (fraction of the shorter screen side) needed to turn a pinch into a drag. */
+    /** Movement (fraction of the shorter screen side) needed to turn a held pinch into a drag. */
     val dragStartFraction: Float = 0.035f,
+    /**
+     * A drag starts only after the pinch was held this long (then [dragStartFraction] of movement),
+     * or at once for a big, deliberate move ([dragFlickFraction]). Small hand drift while pinching
+     * therefore stays a click instead of becoming an accidental drag/selection.
+     */
+    val dragHoldMs: Long = 250,
+    val dragFlickFraction: Float = 0.09f,
     val tapCooldownMs: Long = 150,
     /** Absolute mode: after a frozen phase the cursor glides back to the finger instead of jumping. */
     val clutchTauMs: Float = 120f,
@@ -118,7 +128,7 @@ sealed class GestureEvent {
 
 enum class CursorMode { NORMAL, PRESSING, DRAGGING, SCROLLING, PALM, PAUSED }
 
-enum class HoldKind { FIST, PALM, DWELL }
+enum class HoldKind { FIST, PALM, DWELL, PRESS }
 
 class HandFrame(
     val timestampMs: Long,
@@ -669,12 +679,22 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
         val moved = hypot(pointerX - pinchX, pointerY - pinchY)
         val dragThreshold = config.dragStartFraction * min(config.screenWidth, config.screenHeight)
         when (phase) {
-            PinchPhase.PRESSED -> when {
-                config.enableDrag && t >= freezeUntilMs && moved > dragThreshold -> startDrag(false, events)
-                config.clickOnly -> Unit
-                config.enableLongPress && t - pinchStartMs >= config.longPressMs -> {
-                    events += GestureEvent.LongPress(pinchX, pinchY)
-                    phase = PinchPhase.LONG_PRESSED
+            PinchPhase.PRESSED -> {
+                val held = t - pinchStartMs
+                val flick = config.dragFlickFraction * min(config.screenWidth, config.screenHeight)
+                val dragNow = config.enableDrag && t >= freezeUntilMs &&
+                    (moved > flick || (held >= config.dragHoldMs && moved > dragThreshold))
+                when {
+                    dragNow -> startDrag(false, events)
+                    config.enableLongPress && held >= config.longPressMs -> {
+                        events += GestureEvent.LongPress(pinchX, pinchY)
+                        phase = PinchPhase.LONG_PRESSED
+                    }
+                    config.enableLongPress && held > config.longPressMs * 0.3f -> {
+                        // Ring around the cursor: keep holding = long press (right click on the PC).
+                        holdKind = HoldKind.PRESS
+                        holdProgress = held.toFloat() / config.longPressMs
+                    }
                 }
             }
             PinchPhase.LONG_PRESSED ->

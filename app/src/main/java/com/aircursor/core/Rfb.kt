@@ -15,6 +15,10 @@ data class RfbDirty(val x: Int, val y: Int, val w: Int, val h: Int, val resized:
  * Small VNC (RFB 3.3/3.7/3.8) client: "None" security, 32-bit true colour, Raw + CopyRect
  * + DesktopSize. Enough for a desktop on the same phone (unix socket), so no compression needed.
  * One thread calls [readMessage] in a loop; input events may be sent from any thread.
+ *
+ * Speed: the server is asked for pixels in exactly the byte order Android bitmaps use
+ * (R, G, B, A), so screen updates are read straight into [rgba] and copied to the bitmap in
+ * one block – no per-pixel conversion.
  */
 class RfbClient(input: InputStream, output: OutputStream) {
     private val din = DataInputStream(BufferedInputStream(input, 1 shl 16))
@@ -27,8 +31,9 @@ class RfbClient(input: InputStream, output: OutputStream) {
     var name = ""
         private set
 
-    /** ARGB pixels, row by row. Lock on [lock] while reading or writing. */
-    var pixels = IntArray(0)
+    /** Pixels as R, G, B, A bytes (A = 255), row by row. Replaced (not resized) on desktop resize. */
+    @Volatile
+    var rgba = ByteArray(0)
         private set
     val lock = Any()
 
@@ -72,13 +77,13 @@ class RfbClient(input: InputStream, output: OutputStream) {
         din.readFully(nb)
         name = String(nb, Charsets.UTF_8)
         resize(w, h)
-        // 32 bpp, depth 24, little endian, true colour: bytes B G R X.
+        // 32 bpp, depth 24, little endian, true colour, red at bit 0: bytes R G B X = Android's layout.
         send {
             writeByte(0)
             write(ByteArray(3))
             writeByte(32); writeByte(24); writeByte(0); writeByte(1)
             writeShort(255); writeShort(255); writeShort(255)
-            writeByte(16); writeByte(8); writeByte(0)
+            writeByte(0); writeByte(8); writeByte(16)
             write(ByteArray(3))
         }
         // No cursor pseudo-encoding: the desktop draws its own pointer into the picture,
@@ -105,7 +110,7 @@ class RfbClient(input: InputStream, output: OutputStream) {
         synchronized(lock) {
             width = w
             height = h
-            pixels = IntArray(w * h)
+            rgba = ByteArray(w * h * 4).also { b -> for (i in 3 until b.size step 4) b[i] = -1 }
         }
         if (row.size < w * 4) row = ByteArray(w * 4)
     }
@@ -226,35 +231,54 @@ class RfbClient(input: InputStream, output: OutputStream) {
 
     private fun readRaw(x: Int, y: Int, w: Int, h: Int) {
         val bytes = w * 4
-        if (row.size < bytes) row = ByteArray(bytes)
+        val fb = rgba
+        val fw = width
+        val fh = height
+        val inside = x + w <= fw
+        if (!inside && row.size < bytes) row = ByteArray(bytes)
         for (j in 0 until h) {
-            din.readFully(row, 0, bytes)
             val yy = y + j
-            if (yy >= height) continue
-            synchronized(lock) {
-                val base = yy * width
-                var o = 0
-                for (i in 0 until w) {
-                    val xx = x + i
-                    if (xx < width) {
-                        pixels[base + xx] = (0xFF shl 24) or
-                            ((row[o + 2].toInt() and 0xFF) shl 16) or
-                            ((row[o + 1].toInt() and 0xFF) shl 8) or
-                            (row[o].toInt() and 0xFF)
-                    }
-                    o += 4
+            if (inside && yy < fh) {
+                // Straight into the framebuffer; then make the padding byte an opaque alpha.
+                val off = (yy * fw + x) * 4
+                din.readFully(fb, off, bytes)
+                var i = off + 3
+                val end = off + bytes
+                while (i < end) {
+                    fb[i] = -1
+                    i += 4
+                }
+            } else {
+                din.readFully(row, 0, bytes)
+                if (yy >= fh || x >= fw) continue
+                val n = (fw - x) * 4
+                System.arraycopy(row, 0, fb, (yy * fw + x) * 4, n)
+                var i = (yy * fw + x) * 4 + 3
+                val end = (yy * fw + x) * 4 + n
+                while (i < end) {
+                    fb[i] = -1
+                    i += 4
                 }
             }
         }
     }
 
     private fun copyRect(sx: Int, sy: Int, x: Int, y: Int, w: Int, h: Int) {
-        synchronized(lock) {
-            if (sx + w > width || sy + h > height || x + w > width || y + h > height) return
-            val tmp = IntArray(w * h)
-            for (j in 0 until h) System.arraycopy(pixels, (sy + j) * width + sx, tmp, j * w, w)
-            for (j in 0 until h) System.arraycopy(tmp, j * w, pixels, (y + j) * width + x, w)
-        }
+        val fb = rgba
+        val fw = width
+        if (sx + w > fw || sy + h > height || x + w > fw || y + h > height) return
+        val rowBytes = w * 4
+        val tmp = ByteArray(rowBytes * h)
+        for (j in 0 until h) System.arraycopy(fb, ((sy + j) * fw + sx) * 4, tmp, j * rowBytes, rowBytes)
+        for (j in 0 until h) System.arraycopy(tmp, j * rowBytes, fb, ((y + j) * fw + x) * 4, rowBytes)
+    }
+
+    /** Pixel at (x, y) as 0xAARRGGBB (tests, screenshots). */
+    fun argbAt(x: Int, y: Int): Int {
+        val o = (y * width + x) * 4
+        val b = rgba
+        return ((b[o + 3].toInt() and 0xFF) shl 24) or ((b[o].toInt() and 0xFF) shl 16) or
+            ((b[o + 1].toInt() and 0xFF) shl 8) or (b[o + 2].toInt() and 0xFF)
     }
 
     private fun skipFully(n: Long) {

@@ -31,7 +31,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.aircursor.pro.ProAccess
 import com.aircursor.ubuntu.UbuntuMode
 
-/** Home screen card: one tap starts Cloud PC (Ubuntu desktop + Termux:X11 + hand cursor). */
+/** Termux mode (older setup): starts the Termux Ubuntu desktop + Termux:X11 + hand cursor. */
 @Composable
 fun UbuntuCard(onNeedPro: () -> Unit) {
     val context = LocalContext.current
@@ -45,32 +45,27 @@ fun UbuntuCard(onNeedPro: () -> Unit) {
 
     fun startNow() {
         val err = UbuntuMode.start(context)
-        if (err != null) {
-            Toast.makeText(context, "Termux ne command nahi li. Neeche 'Repair' dabao.", Toast.LENGTH_LONG).show()
-        } else {
-            Toast.makeText(context, "☁️ Cloud PC start ho raha hai… (1-2 min)", Toast.LENGTH_SHORT).show()
-        }
+        Toast.makeText(
+            context,
+            if (err != null) "Termux did not accept the command. Try Repair." else "Starting the Termux desktop…",
+            Toast.LENGTH_LONG,
+        ).show()
     }
 
     fun repairNow() {
         val err = UbuntuMode.repair(context)
-        if (err != null) {
-            Toast.makeText(context, "Termux ne command nahi li: $err", Toast.LENGTH_LONG).show()
-        } else {
-            Toast.makeText(
-                context,
-                "🛠 Repair + update background me chal raha hai (3-10 min). Termux kholne ki zaroorat nahi. " +
-                    "Khatam hone par Cloud PC icon dabao.",
-                Toast.LENGTH_LONG,
-            ).show()
-        }
+        Toast.makeText(
+            context,
+            if (err != null) "Termux did not accept the command: $err" else "Repair and update running in the background (3–10 min).",
+            Toast.LENGTH_LONG,
+        ).show()
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         tick++
         val action = pending
         pending = null
-        if (!ok) Toast.makeText(context, "Permission ke bina Cloud PC nahi chalega", Toast.LENGTH_LONG).show()
+        if (!ok) Toast.makeText(context, "Permission is needed for Termux mode", Toast.LENGTH_LONG).show()
         else if (action == "repair") repairNow()
         else startNow()
     }
@@ -88,51 +83,24 @@ fun UbuntuCard(onNeedPro: () -> Unit) {
         if (action == "repair") repairNow() else startNow()
     }
 
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Text("☁️ Cloud PC", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("Ek tap: Ubuntu desktop + Termux:X11 + haath se cursor", style = MaterialTheme.typography.bodySmall)
-            Spacer(Modifier.height(6.dp))
-            Check("Termux installed", termux)
-            Check("Termux:X11 installed", x11)
-            Check("Permission: run commands in Termux", allowed)
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    enabled = termux && x11,
-                    onClick = { run("start") },
-                    modifier = Modifier.weight(1f),
-                ) { Text("▶ Start") }
-                OutlinedButton(
-                    enabled = termux,
-                    onClick = {
-                        UbuntuMode.stop(context)
-                        Toast.makeText(context, "Ubuntu band", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.weight(1f),
-                ) { Text("■ Stop") }
-            }
-            OutlinedButton(
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        CheckLine("Termux installed", termux)
+        CheckLine("Termux:X11 installed", x11)
+        CheckLine("Permission to run commands in Termux", allowed)
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PrimaryButton("Start", onClick = { run("start") }, enabled = termux && x11, modifier = Modifier.weight(1f))
+            SecondaryButton(
+                "Stop",
+                onClick = {
+                    UbuntuMode.stop(context)
+                    Toast.makeText(context, "Termux desktop stopped", Toast.LENGTH_SHORT).show()
+                },
                 enabled = termux,
-                onClick = { run("repair") },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("🛠 Repair / Update (Termux me kuch type nahi karna)") }
-            Text(
-                "Phone ki home screen par \"Cloud PC\" icon, ya notification shade me \"Cloud PC\" tile se " +
-                    "bhi seedha khulta hai. Termux:X11 → settings → Input → Touchscreen mode = Direct touch. " +
-                    "Cloud PC aapke phone par hi chalta hai – files phone me safe.",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 6.dp),
+                modifier = Modifier.weight(1f),
             )
         }
+        Spacer(Modifier.height(8.dp))
+        SecondaryButton("Repair and update", onClick = { run("repair") }, enabled = termux, icon = com.aircursor.R.drawable.ic_ui_refresh)
     }
-}
-
-@Composable
-private fun Check(label: String, ok: Boolean) {
-    Text(
-        (if (ok) "✓ " else "✗ ") + label,
-        color = if (ok) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
-        style = MaterialTheme.typography.bodySmall,
-    )
 }

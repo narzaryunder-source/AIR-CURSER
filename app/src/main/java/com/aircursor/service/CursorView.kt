@@ -46,6 +46,18 @@ class CursorView(context: Context) : View(context) {
         }
     var debugText: String? = null
 
+    /**
+     * On the PC desktop the desktop draws its own pointer exactly where clicks land, so the
+     * overlay arrow is hidden (two arrows would look messy); rings, ripples and labels stay.
+     */
+    var hideArrow = false
+        set(value) {
+            if (field != value) {
+                field = value
+                invalidate()
+            }
+        }
+
     private var alphaNow = 1f
 
     // Latest tracking sample (screen px, uptime ms) and the hand velocity (px per ms).
@@ -288,6 +300,7 @@ class CursorView(context: Context) : View(context) {
                 ringPaint.color = when (kind) {
                     HoldKind.FIST -> 0xFFFF5252.toInt()
                     HoldKind.DWELL -> 0xFF40C4FF.toInt()
+                    HoldKind.PRESS -> 0xFFFFB300.toInt()
                     else -> 0xFF4CAF50.toInt()
                 }
                 canvas.drawCircle(cx, cy, radius, ringBgPaint)
@@ -305,11 +318,13 @@ class CursorView(context: Context) : View(context) {
             val a = (alphaNow * 255).toInt()
             fillPaint.alpha = a
             outlinePaint.alpha = a
-            canvas.save()
-            canvas.translate(cx, cy)
-            canvas.drawPath(arrow, fillPaint)
-            canvas.drawPath(arrow, outlinePaint)
-            canvas.restore()
+            if (!hideArrow) {
+                canvas.save()
+                canvas.translate(cx, cy)
+                canvas.drawPath(arrow, fillPaint)
+                canvas.drawPath(arrow, outlinePaint)
+                canvas.restore()
+            }
 
             if (mode == CursorMode.PAUSED) {
                 // Small "pause" bars next to the arrow

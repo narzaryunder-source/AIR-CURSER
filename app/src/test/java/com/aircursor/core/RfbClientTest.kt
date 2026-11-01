@@ -38,9 +38,9 @@ class RfbClientTest {
         writeShort(x); writeShort(y); writeShort(w); writeShort(h); writeInt(enc)
     }
 
-    /** One pixel in the format the client asked for: B G R X. */
+    /** One pixel in the format the client asked for: R G B X (Android's byte order). */
     private fun DataOutputStream.px(rgb: Int) {
-        writeByte(rgb and 0xFF); writeByte((rgb shr 8) and 0xFF); writeByte((rgb shr 16) and 0xFF); writeByte(0)
+        writeByte((rgb shr 16) and 0xFF); writeByte((rgb shr 8) and 0xFF); writeByte(rgb and 0xFF); writeByte(0)
     }
 
     @Test
@@ -60,7 +60,11 @@ class RfbClientTest {
         assertEquals(0, d.readUnsignedByte()) // SetPixelFormat
         d.skipBytes(3)
         assertEquals(32, d.readUnsignedByte())
-        d.skipBytes(15)
+        d.skipBytes(9)
+        assertEquals(0, d.readUnsignedByte()) // red shift 0 -> bytes R G B X like Android bitmaps
+        assertEquals(8, d.readUnsignedByte())
+        assertEquals(16, d.readUnsignedByte())
+        d.skipBytes(3)
         assertEquals(2, d.readUnsignedByte()) // SetEncodings
         d.skipBytes(1)
         val n = d.readUnsignedShort()
@@ -88,17 +92,18 @@ class RfbClientTest {
         c.handshake()
         val d1 = c.readMessage()!!
         assertEquals(RfbDirty(1, 0, 2, 1, false), d1)
-        assertEquals(0xFFFF0000.toInt(), c.pixels[1])
-        assertEquals(0xFF00FF00.toInt(), c.pixels[2])
+        assertEquals(0xFFFF0000.toInt(), c.argbAt(1, 0))
+        assertEquals(0xFF00FF00.toInt(), c.argbAt(2, 0))
+        assertEquals(0xFF000000.toInt(), c.argbAt(0, 0)) // untouched pixels are opaque black
         val d2 = c.readMessage()!!
         assertEquals(RfbDirty(0, 1, 2, 1, false), d2)
-        assertEquals(0xFFFF0000.toInt(), c.pixels[4]) // copied from (1,0)
-        assertEquals(0xFF00FF00.toInt(), c.pixels[5])
+        assertEquals(0xFFFF0000.toInt(), c.argbAt(0, 1)) // copied from (1,0)
+        assertEquals(0xFF00FF00.toInt(), c.argbAt(1, 1))
         assertEquals(null, c.readMessage()) // bell
         val d3 = c.readMessage()!!
         assertTrue(d3.resized)
         assertEquals(8, c.width)
-        assertEquals(24, c.pixels.size)
+        assertEquals(8 * 3 * 4, c.rgba.size)
     }
 
     @Test

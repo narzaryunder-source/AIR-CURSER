@@ -60,7 +60,7 @@ fun PreviewScreen(onBack: () -> Unit) {
                 .padding(16.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onBack) { Text("← Back") }
+                TextButton(onClick = onBack) { Text("Back") }
                 Text("Live preview", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(8.dp))

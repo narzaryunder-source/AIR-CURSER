@@ -635,7 +635,7 @@ class HandTrackingService : LifecycleService() {
             if (state != lastGateState) {
                 lastGateState = state
                 if (state == OwnerGate.State.STRANGER) {
-                    main.post { CursorAccessibilityService.instance?.showLabel("🔒 Not the owner's hand") }
+                    main.post { CursorAccessibilityService.instance?.showLabel("Not the owner's hand") }
                 }
             }
         }

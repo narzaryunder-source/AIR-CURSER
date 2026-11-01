@@ -299,7 +299,8 @@ class CursorAccessibilityService : AccessibilityService() {
             cursorY = out.y
         }
         view.update(out.x, out.y, out.timestampMs, out.mode, out.handPresent, out.holdKind, out.holdProgress)
-        // Cloud PC desktop on screen: the hand cursor is its mouse (hover highlights menus).
+        view.hideArrow = DesktopInput.target != null
+        // PC desktop on screen: the hand cursor is its mouse (hover highlights menus).
         DesktopInput.target?.let { desk ->
             if (out.handPresent && !out.paused && (out.mode == CursorMode.NORMAL || out.mode == CursorMode.PRESSING)) {
                 desk.hover(out.x, out.y)

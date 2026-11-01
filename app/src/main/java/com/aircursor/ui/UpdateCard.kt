@@ -54,7 +54,7 @@ private fun latestRelease(): Long? = try {
     null
 }
 
-/** Shows "New version" with a download button when GitHub has a newer AirCursor. */
+/** Shows an "Update available" card with a download button when GitHub has a newer AirCursor. */
 @Composable
 fun UpdateCard() {
     val context = LocalContext.current
@@ -63,29 +63,31 @@ fun UpdateCard() {
     LaunchedEffect(Unit) {
         latest = (withContext(Dispatchers.IO) { latestRelease() } ?: 0L).toInt()
     }
-    if (latest <= current) {
-        Text(
-            "AirCursor v$current" + if (latest > 0) " ✓ latest" else "",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        return
-    }
-    Card(
-        Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Text("🆕 Naya version v$latest aa gaya", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("Aapke paas v$current hai. Download karke install karo – settings safe rahengi.")
-            Button(
-                onClick = {
-                    try {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(APK_URL)))
-                    } catch (_: Exception) {
-                    }
-                },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            ) { Text("⬇ Download update") }
+    if (latest <= current) return
+    SectionCard {
+        androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            IconBadge(com.aircursor.R.drawable.ic_ui_download, Brand.Success)
+            androidx.compose.foundation.layout.Spacer(Modifier.padding(start = 12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Update available", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "Version $latest is ready (you have $current). Your settings and files stay.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
+        androidx.compose.foundation.layout.Spacer(Modifier.padding(top = 12.dp))
+        PrimaryButton(
+            "Download update",
+            onClick = {
+                try {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(APK_URL)))
+                } catch (_: Exception) {
+                }
+            },
+            icon = com.aircursor.R.drawable.ic_ui_download,
+            container = Brand.Success,
+        )
     }
 }
