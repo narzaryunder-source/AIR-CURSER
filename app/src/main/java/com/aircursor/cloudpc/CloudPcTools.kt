@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 2
+    const val VERSION = 3
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf("app-store.sh", "ubuntu-extras.sh", "install-deb.sh", "windows-layout.sh", "wallpaper-gui.sh")
@@ -69,7 +69,11 @@ object CloudPcTools {
         put("usr/share/aircursor/guide.html", c.assets.open("cloudpc/guide.html").bufferedReader().use { it.readText() })
         put(
             "usr/share/applications/aircursor-guide.desktop",
-            entry("Getting Started", "xdg-open /usr/share/aircursor/guide.html", "help-browser", "Utility;", "How to use AirCursor PC"),
+            entry(
+                "Getting Started",
+                "sh -c \"firefox /usr/share/aircursor/guide.html || xdg-open /usr/share/aircursor/guide.html\"",
+                "help-browser", "Utility;", "How to use AirCursor PC",
+            ),
         )
 
         // Menu entries
@@ -104,7 +108,9 @@ object CloudPcTools {
         for ((name, src) in icons) {
             val target = File(r, "$desk/$name")
             val source = File(r, src)
-            if (!target.exists() && source.isFile) put("$desk/$name", source.readText(), exec = true)
+            // The guide icon is ours: always refresh it. Other icons are added once (the user may delete them).
+            val refresh = name == "Getting-Started.desktop" && target.exists()
+            if ((refresh || !target.exists()) && source.isFile) put("$desk/$name", source.readText(), exec = true)
         }
         for (ai in AI_APPS) {
             val rel = "$desk/AI Apps/${ai.id}.desktop"
