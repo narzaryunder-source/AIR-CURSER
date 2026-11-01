@@ -10,6 +10,7 @@ import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.util.TypedValue
 import android.view.Gravity
@@ -68,6 +69,28 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private var handButton: View? = null
     private var fpsButton: View? = null
     private var pendingExport: File? = null
+
+    // Start screen: the latest step from the log, and one automatic restart if the desktop hangs.
+    private var baseStatus: String? = null
+    private var connectingSince = 0L
+    private var restarted = false
+    private val statusTick = object : Runnable {
+        override fun run() {
+            val base = baseStatus
+            if (base != null && status.visibility == View.VISIBLE) {
+                val last = CloudPcBus.log.value.lastOrNull { it.isNotBlank() }?.trim()?.take(90)
+                status.text = if (last != null) "$base\n\n$last" else base
+                val st = CloudPcBus.state.value
+                val waited = SystemClock.uptimeMillis() - connectingSince
+                // Ready but no picture, or the desktop ended on its own: start it once more.
+                if (!restarted && waited > 45_000 && !st.busy && (st.desktopReady || !st.desktopRunning)) {
+                    restarted = true
+                    restartDesktop()
+                }
+            }
+            status.postDelayed(this, 1000)
+        }
+    }
 
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
@@ -163,9 +186,13 @@ class CloudPcDesktopActivity : ComponentActivity() {
         tools.addView(iconButton(R.drawable.ic_ui_close, "Close") { askExit() })
 
         v.onStatus = { msg ->
+            if (msg != null && baseStatus == null) connectingSince = SystemClock.uptimeMillis()
+            baseStatus = msg
             status.text = msg ?: ""
             status.visibility = if (msg == null) View.GONE else View.VISIBLE
         }
+        connectingSince = SystemClock.uptimeMillis()
+        status.post(statusTick)
         v.onStickyChanged = { updateButtons() }
         v.onDesktopClipboard = { text ->
             getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("AirCursor PC", text))
@@ -306,6 +333,24 @@ class CloudPcDesktopActivity : ComponentActivity() {
             }
             .setNegativeButton("Close", null)
             .show()
+    }
+
+    /** Stops a hung desktop and starts it again (the viewer keeps trying to connect meanwhile). */
+    private fun restartDesktop() {
+        baseStatus = "Restarting AirCursor PC…"
+        CloudPcService.send(this, CloudPcService.ACTION_DESKTOP_STOP)
+        Thread {
+            val t0 = SystemClock.uptimeMillis()
+            while (CloudPcBus.state.value.desktopRunning && SystemClock.uptimeMillis() - t0 < 15_000) {
+                Thread.sleep(300)
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val (w, h) = desktopSize(this)
+                CloudPcService.startDesktop(this, w, h)
+                connectingSince = SystemClock.uptimeMillis()
+            }
+        }.start()
     }
 
     /** Steady FPS: games and the desktop picture are held at this rate (smoother than ups and downs). */
@@ -492,6 +537,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        if (::status.isInitialized) status.removeCallbacks(statusTick)
         view?.release()
         view = null
         super.onDestroy()

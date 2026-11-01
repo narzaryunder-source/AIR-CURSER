@@ -63,6 +63,9 @@ object CloudPcDesktop {
         export XDG_RUNTIME_DIR=/tmp/runtime-root
         mkdir -p "${'$'}XDG_RUNTIME_DIR" /tmp/.X11-unix /tmp/.ICE-unix
         chmod 700 "${'$'}XDG_RUNTIME_DIR"; chmod 1777 /tmp/.X11-unix /tmp/.ICE-unix
+        # Leftovers of a desktop that Android stopped half-way would block the new one.
+        for p in Xtigervnc Xvnc xfce4-session xfwm4 xfce4-panel xfdesktop xfsettingsd; do pkill -x "${'$'}p" 2>/dev/null; done
+        sleep 0.3
         rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 "${'$'}SOCK"
         rm -rf /root/.cache/sessions
         # Panel: start with the normal layout instead of the "first start" question.

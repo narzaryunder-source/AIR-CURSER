@@ -136,7 +136,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
                     socket?.close()
                 } catch (_: Exception) {
                 }
-                if (SystemClock.uptimeMillis() - start > 180_000) {
+                if (SystemClock.uptimeMillis() - start > 420_000) {
                     post { onStatus?.invoke("The desktop did not start.\nClose it and try again, or see the log in AirCursor.") }
                     break
                 }

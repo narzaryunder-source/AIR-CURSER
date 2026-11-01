@@ -132,6 +132,8 @@ private val TOPICS = listOf(
             "Desktop black or frozen" to "Toolbar → Close → Stop the desktop, then open it again",
             "Desktop slow" to "Toolbar → AirBoost → Game",
             "VS Code or a game closes at once" to "AirCursor PC → Let big apps run (Android 32-program limit)",
+            "VS Code \"crashed, code 5\"" to "Tap VS Code again: it opens in Firefox (VS Code Server)",
+            "Desktop stuck on Starting" to "Wait – it restarts itself after 45 s; the last step is shown",
             "FPS jumps up and down" to "AirBoost → Steady FPS → 30 or 45",
             "New app not on the desktop" to "Start menu → All apps or search its name",
             "Taskbar missing" to "Terminal: aircursor-windows-layout --force",

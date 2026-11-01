@@ -54,7 +54,7 @@ def web(id, name, desc, cat, url, domain, popular=False, builtin_desktop=None, c
 AI, OFFICE, MEDIA, GAMES, WEB = "AI & Coding", "Office", "Photo & Video", "Games", "Web apps"
 CATALOG = [
     # AI & coding
-    App("vscode", "VS Code", "Code editor from Microsoft: Python, web, C++ and more", AI, 110,
+    App("vscode", "VS Code", "Code editor from Microsoft. On most phones it opens in Firefox (VS Code Server)", AI, 110,
         ["code.visualstudio.com"], ["pkg:code"], ["desk:code.desktop", "pkg:code"], "applications-development", popular=True),
     App("claude", "Claude Code", "AI coding assistant in the terminal (Claude account needed)", AI, 80,
         ["claude.ai"], ["cmd:claude"], ["term:claude"], "utilities-terminal"),

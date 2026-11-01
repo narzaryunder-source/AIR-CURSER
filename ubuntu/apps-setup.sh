@@ -71,6 +71,12 @@ while IFS= read -r f; do
     fi
 done < <(comm -13 <(sort "$SIG" 2>/dev/null) <(echo "$NEWSIG") | cut -d'|' -f1)
 echo "$NEWSIG" > "$SIG"
+# VS Code opens through cloudpc-vscode: the desktop window where it works, else VS Code Server in Firefox.
+if [ -x /usr/local/bin/cloudpc-vscode ]; then
+    for f in "$OVR/code.desktop" "$H/Desktop/code.desktop"; do
+        [ -f "$f" ] && sed -i 's|cloudpc-launch code.desktop /usr/share/code/code|cloudpc-launch code.desktop cloudpc-vscode|' "$f"
+    done
+fi
 OURS=$(grep -l '^X-CloudPC-Wrapped=true' "$OVR"/*.desktop 2>/dev/null)
 # Apps that were removed: remove our copies and their icons.
 APPS=()
