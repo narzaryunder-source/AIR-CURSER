@@ -319,8 +319,7 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         echo "  (Link: ${'$'}URL)"
         echo ""
         exit 0
-    """.trimIndent() + "
-"
+    """.trimIndent() + "\n"
 
     /** Claude Code in a terminal, with sign-in in the phone's browser. */
     private val CLAUDE = """
@@ -339,8 +338,7 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         echo ""
         claude "${'$'}@"
         exec bash
-    """.trimIndent() + "
-"
+    """.trimIndent() + "\n"
 
     /** Changes the desktop size at once (live AirBoost), no restart needed. Arguments: width height. */
     private val RESIZE = """
