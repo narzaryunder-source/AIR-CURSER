@@ -80,6 +80,8 @@ object CloudPcDesktop {
         export DISPLAY=:1 XDG_CURRENT_DESKTOP=XFCE NO_AT_BRIDGE=1
         # Speed: software OpenGL (llvmpipe) on every CPU core, no vsync waits, no GL error checks.
         export LP_NUM_THREADS="${'$'}(nproc 2>/dev/null || echo 4)" GALLIUM_DRIVER=llvmpipe vblank_mode=0 MESA_NO_ERROR=1
+        # GTK4 apps: simple CPU drawing (much faster than OpenGL on a software GPU); no DRI3 probing.
+        export GSK_RENDERER=cairo LIBGL_DRI3_DISABLE=1
         # Firefox's own Linux sandbox cannot work inside proot; the whole PC already runs inside
         # Android's app sandbox. "Fake no sandbox" = Firefox treats it like a kernel without
         # sandbox support (no crashes, no scary banner), unlike forcing it off.
@@ -98,6 +100,14 @@ object CloudPcDesktop {
             sleep 15
             # Live AirBoost resizes must not pop up the display settings window.
             xfconf-query -c displays -p /Notify --create -t int -s 0 >/dev/null 2>&1
+            # One click opens desktop icons and files (easy with the hand cursor and touch). Set once.
+            if [ ! -f /var/lib/cloudpc/single-click ]; then
+                xfconf-query -c xfce4-desktop -p /desktop-icons/single-click --create -t bool -s true
+                xfconf-query -c thunar -p /misc-single-click --create -t bool -s true
+                mkdir -p /var/lib/cloudpc && touch /var/lib/cloudpc/single-click
+            fi >/dev/null 2>&1
+            # Every installed app: working launcher, desktop icon, Start menu entry.
+            command -v cloudpc-apps >/dev/null && nice -n 10 cloudpc-apps >/dev/null 2>&1
             for i in 1 2 3 4 5; do
                 pgrep -x xfwm4 >/dev/null || (xfwm4 --replace >/dev/null 2>&1 &)
                 pgrep -x xfce4-panel >/dev/null || (xfce4-panel >/dev/null 2>&1 &)

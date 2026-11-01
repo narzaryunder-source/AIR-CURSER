@@ -85,7 +85,7 @@ progress_install() {   # $1 = window title, rest = ids/packages for ubuntu-extra
             G
             s/^(.*)\n(.*)$/# \2  –  \1/' ) \
         | zenity --progress --auto-close --no-cancel --width=640 --title="$title" --text="Starting…"
-    add_shortcuts "$(comm -13 <(echo "$before") <(menu_snapshot))"
+    if command -v cloudpc-apps >/dev/null 2>&1; then cloudpc-apps; else add_shortcuts "$(comm -13 <(echo "$before") <(menu_snapshot))"; fi
     local failed
     failed=$(sed -r 's/\x1b\[[0-9;]*m//g' "$LOG" | grep -E '^(Failed: |  - )' | sed -r 's/^Failed: //; s/^  - //' | head -n 8)
     if [ -n "$failed" ]; then

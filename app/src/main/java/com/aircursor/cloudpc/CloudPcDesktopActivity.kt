@@ -430,12 +430,25 @@ class CloudPcDesktopActivity : ComponentActivity() {
         super.onResume()
         DesktopInput.target = view
         view?.sharpness = AirBoost.current(this).sharpen
+        // Steady speed instead of short bursts followed by heat slow-downs (phones that support it).
+        if (android.os.Build.VERSION.SDK_INT >= 24) {
+            try {
+                window.setSustainedPerformanceMode(true)
+            } catch (_: Exception) {
+            }
+        }
         updateButtons()
     }
 
     override fun onPause() {
         if (DesktopInput.target === view) DesktopInput.target = null
         view?.releaseAll()
+        if (android.os.Build.VERSION.SDK_INT >= 24) {
+            try {
+                window.setSustainedPerformanceMode(false)
+            } catch (_: Exception) {
+            }
+        }
         super.onPause()
     }
 

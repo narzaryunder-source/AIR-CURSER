@@ -14,6 +14,7 @@ import android.os.SystemClock
 import android.text.InputType
 import android.util.Log
 import android.view.HapticFeedbackConstants
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -237,10 +238,21 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
         drawFps(canvas)
     }
 
+    private val fpsTick = Runnable { invalidate() }
+
     private fun drawFps(canvas: Canvas) {
         if (!showFps) return
         val d = resources.displayMetrics.density
-        val text = "$fps FPS"
+        val now = SystemClock.uptimeMillis()
+        if (now - fpsWindowStart >= 2000) {
+            fps = 0
+            framesThisSecond = 0
+            fpsWindowStart = now
+        }
+        // VNC only sends changes: a still screen has few frames, which is not lag.
+        val text = if (fps <= 2 && now - lastInputMs > 1500) "Idle – screen not changing" else "$fps FPS"
+        removeCallbacks(fpsTick)
+        postDelayed(fpsTick, 1000)   // keeps the meter current while nothing changes (one pending tick only)
         val tw = fpsPaint.measureText(text)
         canvas.drawRoundRect(dst.left + 8 * d, dst.top + 8 * d, dst.left + 20 * d + tw, dst.top + 34 * d, 8 * d, 8 * d, fpsBg)
         canvas.drawText(text, dst.left + 14 * d, dst.top + 27 * d, fpsPaint)
@@ -291,7 +303,11 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
 
     // ---- Sending (never on the UI thread: a busy desktop must not freeze the phone) ----
 
+    /** Last time the person did something (the FPS meter tells "idle" from "slow"). */
+    @Volatile private var lastInputMs = 0L
+
     private fun sendPointer(x: Int, y: Int, mask: Int) {
+        lastInputMs = SystemClock.uptimeMillis()
         val c = client ?: return
         sender.execute {
             try {
@@ -302,6 +318,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
     }
 
     private fun sendMoveCoalesced(x: Int, y: Int) {
+        lastInputMs = SystemClock.uptimeMillis()
         lastFbX = x
         lastFbY = y
         val c = client ?: return
@@ -330,6 +347,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
     }
 
     fun sendKey(keysym: Int) {
+        lastInputMs = SystemClock.uptimeMillis()
         val c = client ?: return
         val mods = sticky.toList()
         sticky.clear()
@@ -471,8 +489,55 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
         }
     }
 
+    // ---- Physical mouse (USB / Bluetooth): moves, clicks and scrolls like on a PC ----
+
+    private fun mouseMask(state: Int): Int {
+        var m = 0
+        if (state and MotionEvent.BUTTON_PRIMARY != 0) m = m or RfbClient.BUTTON_LEFT
+        if (state and MotionEvent.BUTTON_SECONDARY != 0) m = m or RfbClient.BUTTON_RIGHT
+        if (state and MotionEvent.BUTTON_TERTIARY != 0) m = m or RfbClient.BUTTON_MIDDLE
+        return m
+    }
+
+    private fun handleMouse(e: MotionEvent): Boolean {
+        val (x, y) = viewToFb(e.x, e.y)
+        when (e.actionMasked) {
+            MotionEvent.ACTION_HOVER_MOVE, MotionEvent.ACTION_MOVE -> {
+                buttons = mouseMask(e.buttonState)
+                sendMoveCoalesced(x, y)
+            }
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL,
+            MotionEvent.ACTION_BUTTON_PRESS, MotionEvent.ACTION_BUTTON_RELEASE -> {
+                if (e.actionMasked == MotionEvent.ACTION_DOWN) requestFocus()
+                lastFbX = x
+                lastFbY = y
+                buttons = if (e.actionMasked == MotionEvent.ACTION_CANCEL) 0 else mouseMask(e.buttonState)
+                sendPointer(x, y, buttons)
+            }
+            MotionEvent.ACTION_SCROLL -> {
+                val v = e.getAxisValue(MotionEvent.AXIS_VSCROLL)
+                val h = e.getAxisValue(MotionEvent.AXIS_HSCROLL)
+                repeat(maxOf(1, abs(v).toInt()).coerceAtMost(5)) {
+                    if (v > 0f) wheel(x, y, RfbClient.WHEEL_UP) else if (v < 0f) wheel(x, y, RfbClient.WHEEL_DOWN)
+                }
+                if (h > 0f) wheel(x, y, WHEEL_RIGHT) else if (h < 0f) wheel(x, y, WHEEL_LEFT)
+            }
+            MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_EXIT -> Unit
+            else -> return false
+        }
+        return true
+    }
+
+    override fun onGenericMotionEvent(e: MotionEvent): Boolean {
+        if (e.isFromSource(InputDevice.SOURCE_MOUSE) || e.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE)) {
+            if (handleMouse(e)) return true
+        }
+        return super.onGenericMotionEvent(e)
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (e.isFromSource(InputDevice.SOURCE_MOUSE) && handleMouse(e)) return true
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 fingerDown = true

@@ -10,18 +10,22 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 5
+    const val VERSION = 6
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
-    private val SCRIPTS = listOf("app-store.sh", "ubuntu-extras.sh", "install-deb.sh", "windows-layout.sh", "wallpaper-gui.sh")
+    private val SCRIPTS = listOf(
+        "app-store.sh", "app-store.py", "ubuntu-extras.sh", "install-deb.sh", "windows-layout.sh", "wallpaper-gui.sh",
+        "launch.sh", "apps-setup.sh",
+    )
 
     fun needsSetup(c: Context): Boolean =
         File(CloudPcEngine.rootfs(c), MARK).let { !it.exists() || it.readText().trim() != VERSION.toString() }
 
-    /** Packages the tools need (small). Installed once; failures (no internet) are not fatal. */
+    /** Packages the tools need (App Store window, dialogs). Failures (no internet) are not fatal. */
+    private const val TOOL_PACKAGES = "zenity wget xdg-utils libnotify-bin python3-gi gir1.2-gtk-3.0"
     const val PACKAGES_SCRIPT =
-        "apt-get install -y --no-install-recommends zenity wget xdg-utils libnotify-bin >/dev/null 2>&1 || " +
-            "(apt-get update >/dev/null 2>&1 && apt-get install -y --no-install-recommends zenity wget xdg-utils libnotify-bin) " +
+        "apt-get install -y --no-install-recommends $TOOL_PACKAGES >/dev/null 2>&1 || " +
+            "(apt-get update >/dev/null 2>&1 && apt-get install -y --no-install-recommends $TOOL_PACKAGES) " +
             "|| echo 'Tools packages: no internet, will retry later'"
 
     fun writeFiles(c: Context) {
@@ -52,7 +56,8 @@ object CloudPcTools {
             exec = true,
         )
         val wrappers = mapOf(
-            "aircursor-store" to "app-store.sh",
+            "cloudpc-launch" to "launch.sh",
+            "cloudpc-apps" to "apps-setup.sh",
             "ubuntu-extras" to "ubuntu-extras.sh",
             "aircursor-install-deb" to "install-deb.sh",
             "aircursor-windows-layout" to "windows-layout.sh",
@@ -61,6 +66,22 @@ object CloudPcTools {
         for ((name, script) in wrappers) {
             put("usr/local/bin/$name", "#!/bin/sh\nexport SUDO_USER=root\nexec bash /$LIB/$script \"\$@\"\n", exec = true)
         }
+        // App Store: the new window (GTK) when Python's GTK support is there, else the simple one.
+        put(
+            "usr/local/bin/aircursor-store",
+            "#!/bin/sh\nexport SUDO_USER=root\n" +
+                "if python3 -c 'import gi; gi.require_version(\"Gtk\", \"3.0\"); from gi.repository import Gtk' 2>/dev/null; then\n" +
+                "    exec python3 /$LIB/app-store.py \"\$@\"\nfi\nexec bash /$LIB/app-store.sh \"\$@\"\n",
+            exec = true,
+        )
+        // After every app install/remove (App Store, terminal, .deb from the browser): fix the app,
+        // add its desktop icon and Start menu favourite.
+        put(
+            "etc/apt/apt.conf.d/80-cloudpc-apps",
+            "DPkg::Post-Invoke { \"if [ -x /usr/local/bin/cloudpc-apps ]; then /usr/local/bin/cloudpc-apps >/dev/null 2>&1 || true; fi\"; };\n",
+        )
+        // Games: FPS overlay (Right Shift + F12 hides it) and a steady 60 FPS limit.
+        put("etc/cloudpc/MangoHud.conf", MANGOHUD)
         put("usr/local/bin/aircursor-set-wallpaper", SET_WALLPAPER, exec = true)
         put("usr/local/bin/cloudpc-ai-offline", AI_OFFLINE, exec = true)
         put("usr/local/bin/cloudpc-light", LIGHT_MODE, exec = true)
@@ -82,7 +103,7 @@ object CloudPcTools {
         )
 
         // Menu entries
-        put("usr/share/applications/aircursor-store.desktop", entry("App Store", "aircursor-store", "system-software-install", "System;", "Install apps – tick them and press Install"))
+        put("usr/share/applications/aircursor-store.desktop", entry("App Store", "aircursor-store", "system-software-install", "System;", "Apps, games and AI – install with one tap"))
         put("usr/share/applications/aircursor-wallpaper.desktop", entry("Change Wallpaper", "aircursor-wallpaper", "preferences-desktop-wallpaper", "Settings;DesktopSettings;", "Change the desktop picture"))
         put(
             "usr/share/applications/aircursor-install-deb.desktop",
@@ -193,7 +214,25 @@ object CloudPcTools {
         #!/bin/sh
         sleep "${'$'}{1:-25}"
         pkill -x tumblerd; pkill -x xfce4-power-manager; pkill -f xfce4-screensaver; pkill -x light-locker; pkill -f xfce4-notes
+        . /tmp/cloudpc-session.env 2>/dev/null
+        # No animations; windows move and resize as an outline (far less drawing for the phone).
+        xfconf-query -c xsettings -p /Gtk/EnableAnimations --create -t bool -s false
+        xfconf-query -c xfwm4 -p /general/box_move --create -t bool -s true
+        xfconf-query -c xfwm4 -p /general/box_resize --create -t bool -s true
         exit 0
+    """.trimIndent() + "\n"
+
+    private val MANGOHUD = """
+        fps_limit=60
+        fps
+        frametime=0
+        frame_timing=1
+        cpu_stats=0
+        gpu_stats=0
+        position=top-left
+        font_size=16
+        background_alpha=0.35
+        toggle_hud=Shift_R+F12
     """.trimIndent() + "\n"
 
     /** Changes the desktop size at once (live AirBoost), no restart needed. Arguments: width height. */
@@ -255,6 +294,12 @@ object CloudPcTools {
         // phone's other apps and data. Firefox's own Linux sandbox cannot run there, so do not warn about it.
         pref("security.sandbox.warn_unprivileged_namespaces", false);
         pref("dom.security.https_only_mode", true);
+        // Speed on a phone CPU: YouTube uses VP9 instead of the much heavier AV1, multi-core software
+        // drawing, fewer page animations, fewer session saves.
+        pref("media.av1.enabled", false);
+        pref("gfx.webrender.software", true);
+        pref("ui.prefersReducedMotion", 1);
+        pref("browser.sessionstore.interval", 60000);
     """.trimIndent() + "\n"
 
     private val FIREFOX_POLICIES = """

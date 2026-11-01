@@ -22,6 +22,12 @@ install_vscode() {
     local deb=/tmp/vscode-arm64.deb
     if wget -O "$deb" "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-arm64" &&
         apt-get install -y "$deb"; then
+        if command -v cloudpc-apps >/dev/null 2>&1; then
+            cloudpc-apps   # AirCursor PC: launcher, flags and data folder are set up there
+            ok "VS Code installed (desktop icon, Start menu, or type: code)"
+            rm -f "$deb"
+            return
+        fi
         # Electron apps need --no-sandbox inside proot
         sed -i 's|^Exec=/usr/share/code/code |Exec=/usr/local/bin/vscode |' \
             /usr/share/applications/code*.desktop 2>/dev/null || true
@@ -127,6 +133,17 @@ install_games_3d() {
     ok "3D games: Desktop → Games folder. Set graphics to LOW inside each game."
 }
 
+install_game_tools() {
+    # FPS overlay + steady FPS limit for games (AirCursor PC starts games with it), FPS test tool.
+    apt-get install -y --no-install-recommends mangohud mesa-utils >/dev/null 2>&1 || true
+}
+
+install_coding() {
+    install_apt git build-essential python3 python3-pip python3-venv curl
+    install_node || bad "Node.js could not be installed"
+    ok "Coding tools ready: git, gcc/g++, make, python3, pip, node, npm"
+}
+
 install_apt() {
     echo "Installing: $*"
     # Without "recommended" extras: much smaller downloads, much faster on a phone.
@@ -139,7 +156,8 @@ label_for() {
         blender) echo "Blender" ;; libreoffice) echo "LibreOffice" ;; gimp) echo "GIMP" ;;
         inkscape) echo "Inkscape" ;; python) echo "Python" ;; vlc) echo "VLC" ;; gdrive) echo "Google Drive" ;;
         shotcut) echo "Shotcut" ;; kdenlive) echo "Kdenlive" ;; games) echo "Games pack" ;;
-        games3d) echo "3D games" ;; luanti) echo "Luanti" ;; *) echo "$1" ;;
+        games3d) echo "3D games" ;; luanti) echo "Minetest" ;; coding) echo "Coding tools" ;;
+        trigger) echo "Trigger Rally" ;; tuxracer) echo "Extreme Tux Racer" ;; *) echo "$1" ;;
     esac
 }
 
@@ -163,12 +181,47 @@ install_id() {
         gdrive) install_gdrive ;;
         shotcut) install_apt shotcut ;;
         kdenlive) install_apt kdenlive ;;
-        games) install_games_light ;;
-        games3d) install_games_3d ;;
-        luanti) apt-get install -y luanti || apt-get install -y minetest ;;
+        coding) install_coding ;;
+        games) install_games_light; install_game_tools ;;
+        games3d) install_games_3d; install_game_tools ;;
+        luanti) { apt-get install -y --no-install-recommends luanti || install_apt minetest; }; install_game_tools ;;
+        supertuxkart|neverball|openarena|torcs) install_apt "$1"; install_game_tools ;;
+        trigger) install_apt trigger-rally; install_game_tools ;;
+        tuxracer) install_apt extremetuxracer; install_game_tools ;;
         *) install_apt "$1" ;;   # any Ubuntu package name (App Store search)
     esac
 }
+
+# Removes an App Store app (its files in the home folder stay).
+remove_id() {
+    local pkgs=""
+    case "$1" in
+        vscode) pkgs="code" ;;
+        libreoffice) pkgs=$(dpkg-query -W -f='${Package}\n' 'libreoffice*' 2>/dev/null | tr '\n' ' ') ;;
+        claude) npm uninstall -g @anthropic-ai/claude-code; return ;;
+        ollama) rm -rf /usr/local/bin/ollama /usr/local/bin/ai-chat /usr/local/lib/ollama /usr/share/ollama; return ;;
+        gdrive) pkgs="rclone"; rm -f /usr/local/bin/google-drive "$REAL_HOME/Desktop/Google-Drive.desktop" ;;
+        games) pkgs="supertux frozen-bubble pingus xmoto 2048-qt openttd openttd-opengfx aisleriot gnome-mines gnome-sudoku gnome-chess stockfish quadrapassel" ;;
+        games3d) pkgs="supertuxkart neverball extremetuxracer minetest luanti" ;;
+        luanti) pkgs="minetest luanti" ;;
+        trigger) pkgs="trigger-rally trigger-rally-data" ;;
+        tuxracer) pkgs="extremetuxracer extremetuxracer-data" ;;
+        supertuxkart|neverball|openarena|torcs) pkgs="$1 $1-data" ;;
+        python|coding|python3*|xfce4*|firefox*|zenity|tigervnc*|dbus*) bad "This is part of the PC and stays."; return ;;
+        *) pkgs="$1" ;;
+    esac
+    local p list=""
+    for p in $pkgs; do dpkg -s "$p" >/dev/null 2>&1 && list="$list $p"; done
+    [ -n "$list" ] || { ok "Nothing to remove"; return; }
+    # shellcheck disable=SC2086
+    apt-get remove -y $list && apt-get autoremove -y && ok "Removed:$list" || bad "Failed: remove$list"
+}
+
+if [ "${1:-}" = "remove" ]; then
+    shift
+    for id in "$@"; do echo "Removing $(label_for "$id")…"; remove_id "$id"; done
+    exit 0
+fi
 
 # Non-interactive mode, used by the App Store:  ubuntu-extras install <id|package> ...
 # Prints "@@PCT n" (overall percent) and "[i/n] Installing <app>" so the App Store can show progress.

@@ -50,7 +50,7 @@
     <div class="pill"><b>Start menu</b>Tap <b>Start</b> (bottom left) or press the Win key. Type to search any app.</div>
     <div class="pill"><b>Taskbar</b>Shows pinned apps and open windows. Tap a window button to switch to it.</div>
     <div class="pill"><b>Windows</b>Drag the title bar to move. Use the buttons at the top right to minimise, maximise or close.</div>
-    <div class="pill"><b>Desktop icons</b>Double-tap an icon to open it (App Store, Firefox, Terminal, AI Apps).</div>
+    <div class="pill"><b>Desktop icons</b>One tap opens an icon (App Store, Firefox, your apps, Games, AI Apps, Web Apps).</div>
   </div>
   <h3>Touch controls</h3>
   <table>
@@ -82,16 +82,19 @@
 <section id="apps">
   <h2>3. Install apps</h2>
   <ol>
-    <li>Open <b>App Store</b> (desktop icon or Start menu).</li>
-    <li>Tick the apps you want – for example LibreOffice (Word/Excel), GIMP (photos), VLC (videos), VS Code (coding) – and tap <b>Install</b>.</li>
-    <li>For anything else tap <b>Search 60,000+ apps</b>, type a word like <code>chess</code>, <code>pdf</code> or <code>music</code>.</li>
-    <li>The <b>Status</b> column shows what is already <b>Installed</b>.</li>
-    <li>New apps get an icon on the desktop and a place in the Start menu <b>Favourites</b>. Games go into the <b>Games</b> folder on the desktop.</li>
+    <li>Open <b>App Store</b> (desktop icon or Start menu). Groups on the left: Popular, AI &amp; Coding, Office, Photo &amp; Video, Games, Web apps, Installed.</li>
+    <li>Tap <b>Install</b> on an app. The card and the bar at the bottom show the progress. You can queue more apps – they install one after another.</li>
+    <li>When it is done the card shows <b>✓ Installed</b> with <b>Open</b> and <b>Remove</b> – it cannot be downloaded twice by mistake.</li>
+    <li>New apps get an icon on the desktop (games in the <b>Games</b> folder) and appear in the Start menu.</li>
+    <li>For anything else use the search box (60,000+ Ubuntu apps), for example <code>chess</code>, <code>pdf</code> or <code>music</code>.</li>
   </ol>
+  <h3>Web apps (no download)</h3>
+  <p>YouTube, Gmail, Google Docs, WhatsApp, ChatGPT, Claude, Gemini, Copilot, Perplexity, GitHub and Canva open as their own windows. Tap <b>Add</b> – the icon appears in the <b>Web Apps</b> folder on the desktop and in the Start menu.</p>
   <h3>Games</h3>
-  <p><b>Games pack</b> (light, runs well): SuperTux, X-Moto, Frozen Bubble, Pingus, 2048, OpenTTD, Solitaire, Mines, Sudoku, Chess, Quadrapassel. <b>3D games</b> (heavier): SuperTuxKart, Neverball, Tux Racer, Luanti. Choose the <b>Game</b> profile in AirBoost before playing.</p>
+  <p><b>Minetest</b> (Minecraft-like), car games <b>SuperTuxKart</b>, <b>Trigger Rally</b> and <b>TORCS</b>, plus Neverball, Tux Racer, OpenArena and the <b>Games pack</b> (SuperTux, X-Moto, 2048, Chess, Solitaire, OpenTTD…). Games show an FPS counter in the top left corner and are held at a steady 60 FPS at most. <kbd>Right Shift</kbd>+<kbd>F12</kbd> hides the counter. Choose AirBoost → <b>Game</b> and set graphics to <b>Low</b> inside 3D games.</p>
   <h3>Apps from a website (.deb)</h3>
-  <p>Download the <b>ARM64</b> (aarch64) <code>.deb</code> file in Firefox and double-tap it in the Downloads folder to install.</p>
+  <p>Download the <b>ARM64</b> (aarch64) <code>.deb</code> file in Firefox (for example VS Code from code.visualstudio.com) and tap it in the Downloads folder. It installs, gets a desktop icon and works like an App Store app.</p>
+  <div class="tip">If an app does not open, AirCursor PC tries again with safe settings and then shows what went wrong. Big apps (LibreOffice, GIMP, VS Code, Blender) need up to a minute the first time – an "Opening…" message appears.</div>
   <div class="warn">Windows programs (<code>.exe</code>) do not run here – this is Linux. Most popular programs have a Linux version in the App Store.</div>
 </section>
 
@@ -125,7 +128,8 @@
 <section id="keyboard">
   <h2>7. Keyboard and copy-paste</h2>
   <ul>
-    <li>Toolbar → keyboard button shows the phone keyboard. A Bluetooth or USB keyboard also works.</li>
+    <li>Toolbar → keyboard button shows the phone keyboard.</li>
+    <li><b>Bluetooth or USB keyboard and mouse work like on a PC</b>: all keys and shortcuts, right click, middle click and the scroll wheel.</li>
     <li><b>Ctrl</b>, <b>Alt</b> and <b>Win</b> in the toolbar stay pressed for the next key (for example Ctrl, then C).</li>
     <li>Text you copy in the PC is automatically copied to your phone.</li>
     <li>To paste text from your phone into the PC, use toolbar → <b>Paste</b>.</li>
@@ -144,6 +148,9 @@
   </table>
   <p>Change the profile any time – it applies at once: toolbar → <b>AirBoost</b> (lightning button), or AirCursor → AirCursor PC. AirBoost draws the desktop with fewer pixels and sharpens it on the phone (an FSR-style upscaler, like DLSS), so it stays clear but runs faster. <b>Boost now</b> stops background jobs; the <b>FPS</b> button shows the frame rate.</p>
   <p><b>Graphics:</b> games are drawn by a virtual graphics card that uses every CPU core of the phone (llvmpipe). Open <b>Benchmark</b> on the desktop to measure the FPS, change the profile and compare.</p>
+  <p><b>Reading the FPS meter:</b> the PC only sends the screen when something changes. A still screen therefore shows <b>Idle</b> – that is not lag. Watch the number while you scroll, play or watch a video. Videos themselves are usually 25–30 FPS.</p>
+  <h3>Storage</h3>
+  <p>AirCursor PC has no fixed size: it can use all the free space of your phone (the App Store shows it at the bottom left). For more space use <b>Google Drive</b> from the App Store (15 GB free), or move files to the phone with Toolbar → Files.</p>
 </section>
 
 <section id="help">
