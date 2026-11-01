@@ -49,6 +49,9 @@ class CloudPcDesktopActivity : ComponentActivity() {
         private const val PREFS = "cloudpc_engine"
         private const val KEY_FPS = "show_fps"
         private const val ON = 0xEE4F46E5.toInt()
+
+        /** The PC asks to open a web link in the phone's own browser (logins: fast, already signed in). */
+        private const val OPEN_ON_PHONE = "aircursor-open:"
         private const val OFF = 0xA0101828.toInt()
 
         /** Desktop size with the phone's landscape shape (even numbers for the VNC server). */
@@ -195,8 +198,12 @@ class CloudPcDesktopActivity : ComponentActivity() {
         status.post(statusTick)
         v.onStickyChanged = { updateButtons() }
         v.onDesktopClipboard = { text ->
-            getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("AirCursor PC", text))
-            Toast.makeText(this, "Copied to phone", Toast.LENGTH_SHORT).show()
+            if (text.startsWith(OPEN_ON_PHONE)) {
+                openOnPhone(text.removePrefix(OPEN_ON_PHONE).trim())
+            } else {
+                getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("AirCursor PC", text))
+                Toast.makeText(this, "Copied to phone", Toast.LENGTH_SHORT).show()
+            }
         }
         setContentView(root)
         updateButtons()
@@ -333,6 +340,18 @@ class CloudPcDesktopActivity : ComponentActivity() {
             }
             .setNegativeButton("Close", null)
             .show()
+    }
+
+    private fun openOnPhone(url: String) {
+        val uri = Uri.parse(url)
+        if (uri.scheme != "https" && uri.scheme != "http") return   // web links only, nothing else
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE))
+            Toast.makeText(this, "Opened on your phone. Sign in, then come back to AirCursor PC.", Toast.LENGTH_LONG).show()
+        } catch (_: Exception) {
+            getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("Link", url))
+            Toast.makeText(this, "Link copied – paste it in your phone's browser", Toast.LENGTH_LONG).show()
+        }
     }
 
     /** Stops a hung desktop and starts it again (the viewer keeps trying to connect meanwhile). */

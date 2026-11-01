@@ -83,7 +83,8 @@ private val TOPICS = listOf(
             "Open the AI Apps folder on the desktop.",
             "Claude, ChatGPT and Gemini open in Firefox – sign in once, Firefox remembers it.",
             "Offline AI works without internet using a small model (first start downloads about 1 GB).",
-            "Developers: install Claude Code from the App Store and type claude in Terminal.",
+            "Claude Code: install it from the App Store, open AI Apps → Claude Code. Sign-in opens in your phone's browser.",
+            "If it asks for a code: copy it on the phone, then toolbar → Paste and Enter.",
         ),
     ),
     Topic(

@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 8
+    const val VERSION = 9
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -22,7 +22,7 @@ object CloudPcTools {
         File(CloudPcEngine.rootfs(c), MARK).let { !it.exists() || it.readText().trim() != VERSION.toString() }
 
     /** Packages the tools need (App Store window, dialogs). Failures (no internet) are not fatal. */
-    private const val TOOL_PACKAGES = "zenity wget xdg-utils libnotify-bin python3-gi gir1.2-gtk-3.0"
+    private const val TOOL_PACKAGES = "zenity wget xdg-utils libnotify-bin python3-gi gir1.2-gtk-3.0 xclip"
     const val PACKAGES_SCRIPT =
         "apt-get install -y --no-install-recommends $TOOL_PACKAGES >/dev/null 2>&1 || " +
             "(apt-get update >/dev/null 2>&1 && apt-get install -y --no-install-recommends $TOOL_PACKAGES) " +
@@ -93,6 +93,13 @@ object CloudPcTools {
         put("usr/local/bin/cloudpc-security-update", SECURITY_UPDATE, exec = true)
         put("usr/local/bin/cloudpc-benchmark", BENCHMARK, exec = true)
         put("usr/local/bin/cloudpc-vscode", VSCODE, exec = true)
+        // Logins in the phone's own browser (fast, Google sign-in works): Claude Code and any tool
+        // that opens a web page through these names.
+        put("usr/local/bin/cloudpc-open-on-phone", OPEN_ON_PHONE, exec = true)
+        for (name in listOf("xdg-open", "sensible-browser", "x-www-browser", "www-browser")) {
+            put("$LIB/phone-browser/$name", "#!/bin/sh\nexec cloudpc-open-on-phone \"\$@\"\n", exec = true)
+        }
+        put("usr/local/bin/cloudpc-claude", CLAUDE, exec = true)
         // apt waits for a running background update instead of failing with "could not get lock".
         put("etc/apt/apt.conf.d/02-cloudpc-lock", "DPkg::Lock::Timeout \"600\";\n")
 
@@ -184,7 +191,11 @@ object CloudPcTools {
         AiApp("cloudpc-ai-claude", "Claude (AI)", "firefox --new-window https://claude.ai", "web-browser", "Claude AI assistant (website)"),
         AiApp("cloudpc-ai-chatgpt", "ChatGPT (AI)", "firefox --new-window https://chatgpt.com", "web-browser", "ChatGPT (website)"),
         AiApp("cloudpc-ai-gemini", "Gemini (AI)", "firefox --new-window https://gemini.google.com", "web-browser", "Google Gemini (website)"),
-        AiApp("cloudpc-ai-offline", "Offline AI (Ollama)", "cloudpc-ai-offline", "utilities-terminal", "Bina internet AI chat – chhote models, phone par dheere"),
+        AiApp("cloudpc-ai-offline", "Offline AI (Ollama)", "cloudpc-ai-offline", "utilities-terminal", "AI chat without internet – small models, slow on phones"),
+        AiApp(
+            "cloudpc-ai-claude-code", "Claude Code", "xfce4-terminal --title=\"Claude Code\" -x cloudpc-claude",
+            "utilities-terminal", "AI coding assistant in the terminal – you sign in on your phone",
+        ),
     )
 
     private val SET_WALLPAPER = """
@@ -291,6 +302,46 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         exec firefox --new-window "http://127.0.0.1:${'$'}PORT/?tkn=${'$'}TOKEN&folder=${'$'}FOLDER"
     """.trimIndent() + "\n"
 
+    /** Opens a web link in the phone's browser: the AirCursor app watches the clipboard for this marker. */
+    private val OPEN_ON_PHONE = """
+        #!/bin/sh
+        URL="${'$'}1"
+        case "${'$'}URL" in
+            http://*|https://*) ;;
+            *) exec /usr/bin/xdg-open "${'$'}@" ;;
+        esac
+        . /tmp/cloudpc-session.env 2>/dev/null
+        # The desktop hands the clipboard to the AirCursor app (it asks twice: types, then text).
+        printf '%s' "aircursor-open:${'$'}URL" | timeout 15 xclip -quiet -selection clipboard >/dev/null 2>&1 &
+        notify-send -a "AirCursor PC" -i web-browser "Opening on your phone…"             "Sign in there, then come back to AirCursor PC." >/dev/null 2>&1 &
+        echo ""
+        echo "  The page opens in your phone's browser. Sign in there, then come back here."
+        echo "  (Link: ${'$'}URL)"
+        echo ""
+        exit 0
+    """.trimIndent() + "
+"
+
+    /** Claude Code in a terminal, with sign-in in the phone's browser. */
+    private val CLAUDE = """
+        #!/bin/bash
+        export PATH="/$LIB/phone-browser:${'$'}PATH" BROWSER=cloudpc-open-on-phone
+        cd /root || exit 1
+        if ! command -v claude >/dev/null 2>&1; then
+            echo "Claude Code is not installed yet: App Store → AI & Coding → Claude Code → Install."
+            exec bash
+        fi
+        clear
+        echo "Claude Code"
+        echo "Sign-in opens in your PHONE's browser (fast, Google sign-in works)."
+        echo "After signing in, come back to AirCursor PC. If Claude Code asks for a code:"
+        echo "copy it on the phone, then AirCursor toolbar → Paste, then press Enter."
+        echo ""
+        claude "${'$'}@"
+        exec bash
+    """.trimIndent() + "
+"
+
     /** Changes the desktop size at once (live AirBoost), no restart needed. Arguments: width height. */
     private val RESIZE = """
         #!/bin/sh
@@ -351,25 +402,18 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         pref("security.sandbox.warn_unprivileged_namespaces", false);
         pref("dom.security.https_only_mode", true);
         // Fewer Firefox programs (Android allows an app only ~32): separate processes only for sites you
-        // are logged in to (like Firefox for Android), drawing/network/media/add-ons in the main one.
+        // are logged in to, like Firefox for Android. (Drawing, network and add-ons keep Firefox's normal
+        // setup: moving them into the main process made big sites such as AI chats hang.)
         pref("fission.webContentIsolationStrategy", 2);
         pref("dom.ipc.processCount", 2);
         pref("dom.ipc.processCount.webIsolated", 1);
         pref("dom.ipc.processPrelaunch.enabled", false);
-        pref("browser.tabs.remote.separatePrivilegedContentProcess", false);
-        pref("browser.tabs.remote.separatePrivilegedMozillaWebContentProcess", false);
-        pref("layers.gpu-process.enabled", false);
-        pref("network.process.enabled", false);
-        pref("media.rdd-process.enabled", false);
-        pref("media.utility-process.enabled", false);
-        pref("extensions.webextensions.remote", false);
         // Speed on a phone CPU: YouTube uses VP9 instead of the much heavier AV1, multi-core software
         // drawing, fewer page animations, fewer session saves.
         pref("media.av1.enabled", false);
         // No "Speech Dispatcher won't open" bar (there is no speech engine in the PC).
         pref("media.webspeech.synth.enabled", false);
         pref("gfx.webrender.software", true);
-        pref("ui.prefersReducedMotion", 1);
         pref("browser.sessionstore.interval", 60000);
     """.trimIndent() + "\n"
 

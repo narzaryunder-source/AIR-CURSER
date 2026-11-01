@@ -57,7 +57,7 @@ CATALOG = [
     App("vscode", "VS Code", "Code editor from Microsoft. On most phones it opens in Firefox (VS Code Server)", AI, 110,
         ["code.visualstudio.com"], ["pkg:code"], ["desk:code.desktop", "pkg:code"], "applications-development", popular=True),
     App("claude", "Claude Code", "AI coding assistant in the terminal (Claude account needed)", AI, 80,
-        ["claude.ai"], ["cmd:claude"], ["term:claude"], "utilities-terminal"),
+        ["claude.ai"], ["cmd:claude"], ["desk:cloudpc-ai-claude-code.desktop", "term:cloudpc-claude"], "utilities-terminal"),
     App("coding", "Coding tools", "Git, Python, Node.js and the C/C++ compiler in one step", AI, 200,
         ["git-scm.com"], ["cmd:git", "cmd:gcc", "cmd:node"], ["term:bash"], "applications-development",
         removable=False, check_all=True),

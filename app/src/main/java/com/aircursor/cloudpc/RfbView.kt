@@ -387,6 +387,18 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
     fun pasteFromPhone(text: String) {
         val c = client ?: return
         lastSentClipboard = text
+        // One line (a login code, a link, a password): type it – works everywhere, also in the
+        // terminal where Ctrl+V does not paste. Longer text: desktop clipboard + Ctrl+V.
+        if (text.length <= 400 && text.none { it == '\n' || it == '\r' }) {
+            sender.execute {
+                try {
+                    c.clipboard(text)
+                } catch (_: Exception) {
+                }
+            }
+            typeText(text)
+            return
+        }
         sender.execute {
             try {
                 c.clipboard(text)
