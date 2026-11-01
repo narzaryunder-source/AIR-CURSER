@@ -53,6 +53,9 @@ Termux:X11 apne aap khulega aur Ubuntu desktop dikhega.
 | `ubuntu-shell` | Sirf Ubuntu terminal (Claude Code / Ollama ke liye halka) |
 | `ubuntu-wallpaper` | Download folder ki sabse nayi photo ko wallpaper banao (pehle `termux-setup-storage`) |
 | `bash fix.sh` | Desktop me panel/dock gayab, X cursor, kaali screen – sab theek karta hai |
+| `ubuntu-boost performance` | **AirBoost**: VirGL virtual GPU + light mode (games). `balanced` / `quality` bhi |
+| `ubuntu-benchmark` | Naapo: aapke phone par GPU (VirGL) tez hai ya CPU – aur kaunsa profile lagana hai |
+| `ubuntu-desktop --cpu` | Is baar GPU ke bina chalao |
 
 > ⚠️ Yeh sab commands **Termux** me chalti hain (prompt `~ $`). Agar prompt `root@localhost` ya `user@localhost` hai to aap Ubuntu ke andar ho – pehle `exit` likho.
 

@@ -34,6 +34,10 @@ fi
 # Self-repair: after Android kills Termux, the window manager / panel sometimes do not start.
 cat > /usr/local/bin/aircursor-heal <<'HEAL'
 #!/bin/sh
+# AirBoost light mode: stop background jobs a phone does not need (thumbnails, power manager, screensaver)
+if [ "$AIRCURSOR_LIGHT" = "1" ]; then
+    (sleep 20; pkill -x tumblerd; pkill -x xfce4-power-manager; pkill -x xfce4-screensaver; pkill -x light-locker) &
+fi
 sleep 12
 pgrep -x xfwm4 >/dev/null || (xfwm4 --replace >/tmp/aircursor-xfwm4.log 2>&1 &)
 sleep 4
