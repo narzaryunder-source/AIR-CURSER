@@ -15,6 +15,11 @@ data class BoostState(
     val effectiveLevel: Float = 0f,
     val thermalReduced: Boolean = false,
     val hdrActive: Boolean = false,
+    /**
+     * Sunlight mode is active: auto-brightness stays on, so windows must NOT set their own brightness
+     * override (an override switches auto-brightness and the phone's sunlight boost off).
+     */
+    val sunlightActive: Boolean = false,
     val remainingMs: Long = 0L,
     val warned: Boolean = false,
     val lastStop: StopReason? = null,

@@ -122,4 +122,8 @@
     <string name="thermal_severe">Severe</string>
     <string name="thermal_critical">Critical</string>
     <string name="thermal_emergency">Emergency</string>
+    <string name="sunlight_title">Sunlight mode (outdoor)</string>
+    <string name="sunlight_switch">Use the phone\'s sunlight boost</string>
+    <string name="sunlight_text">Keeps auto-brightness ON while boosting. In direct sunlight many phones then go above the normal 100% maximum (their high-brightness mode). Indoors there is no difference: the phone only allows it in strong light.</string>
+    <string name="sunlight_active">Active: auto-brightness is ON and set to the top. Go into bright light, the phone decides how far above 100% it goes.</string>
 </resources>

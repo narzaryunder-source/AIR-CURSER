@@ -31,7 +31,8 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.ui
-                    .map { Triple(it.boost.active, it.boost.effectiveLevel, it.boost.hdrActive) }
+                    // No window override in Sunlight mode: it would switch auto-brightness off.
+                    .map { Triple(it.boost.active && !it.boost.sunlightActive, it.boost.effectiveLevel, it.boost.hdrActive) }
                     .distinctUntilChanged()
                     .collect { (active, level, hdr) -> applyWindow(active, level, hdr) }
             }

@@ -31,6 +31,7 @@ Phone ki language Hindi ho to app Hindi me dikhega. Android 13+ par sirf app ki 
 | **Max brightness** | `WindowManager.LayoutParams.screenBrightness` on the app window and the floating button's window, plus `Settings.System.SCREEN_BRIGHTNESS` (0–255) with adaptive brightness switched to manual. The original brightness **and** auto-brightness mode are saved to disk first and restored afterwards. |
 | **HDR Boost** (Android 14+) | `window.colorMode = ActivityInfo.COLOR_MODE_HDR`; on Android 15+ also `setDesiredHdrHeadroom()` at the API maximum (10000, the system clamps it to the panel's real limit). A 1-pixel Ultra-HDR (gain-mapped) image is kept on screen so real HDR content is present. Checks `Display.isHdr()`, `Display.getHdrCapabilities()`, supported HDR types and `isHdrSdrRatioAvailable()` first; if the display has no HDR, the app says so and uses max brightness only. |
 | **Works over other apps** | Foreground service (`specialUse` type) with a persistent notification (**OFF** action, live countdown), a draggable floating ON/OFF button, and a **Quick Settings tile**. |
+| **Sunlight mode** (optional) | Keeps adaptive brightness **on** during the boost (and sets no window brightness override, which would switch it off) and writes the level as the user's auto-brightness preference. Many phones only use their high-brightness mode (above the normal 100 %) in direct sunlight *with auto-brightness on*; the normal boost forces manual mode, which blocks that. Indoors it makes no difference, and the phone decides how far it goes. |
 | **Level slider** | 50 %–100 % in 5 % steps, plus a **MAX** button. Changes apply live while boosting. |
 | **Live status card** | Current level, HDR supported (and types), reported peak nits, live HDR headroom (×), battery temperature, battery %, time left. |
 | **English + Hindi** | `values/` and `values-hi/`, with per-app language support (`locales_config.xml`). |
@@ -162,6 +163,10 @@ adb shell cmd thermalservice reset
 **HDR (Android 14+, HDR display)**
 - [ ] HDR card says "Supported"; during boost it says "Active", the *HDR headroom now* value rises above 1.00×, and the HDR test square looks brighter than the white square.
 - [ ] HDR switch off → boost continues without HDR. On a phone that reports no HDR the card says so and the switch becomes **Try HDR anyway**.
+
+**Sunlight mode**
+- [ ] Turn on *Sunlight mode*, boost → `screen_brightness_mode` = 1 (auto) and `screen_brightness` = 255. Take the phone into direct sunlight: on phones with an outdoor boost it gets visibly brighter than the normal 100 %.
+- [ ] Boost off → the original brightness and mode come back.
 
 **Over other apps**
 - [ ] Boost on → open another app: brightness stays max; the floating button shows the level and countdown; drag it around.

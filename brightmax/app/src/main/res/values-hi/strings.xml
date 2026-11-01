@@ -114,4 +114,8 @@
     <string name="thermal_severe">गंभीर</string>
     <string name="thermal_critical">अत्यधिक (critical)</string>
     <string name="thermal_emergency">आपातकाल</string>
+    <string name="sunlight_title">सनलाइट मोड (बाहर धूप में)</string>
+    <string name="sunlight_switch">फ़ोन का सनलाइट बूस्ट उपयोग करें</string>
+    <string name="sunlight_text">बूस्ट के दौरान ऑटो-ब्राइटनेस चालू रखता है। तेज़ धूप में कई फ़ोन तब सामान्य 100% से ज़्यादा चमकते हैं (हाई-ब्राइटनेस मोड)। घर के अंदर कोई फ़र्क नहीं पड़ता: फ़ोन यह सिर्फ़ तेज़ रोशनी में करता है।</string>
+    <string name="sunlight_active">चालू: ऑटो-ब्राइटनेस ON है और सबसे ऊपर सेट है। तेज़ रोशनी में जाएँ, 100% से कितना ऊपर जाना है यह फ़ोन तय करता है।</string>
 </resources>
