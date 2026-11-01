@@ -75,6 +75,22 @@ AI
     fi
 }
 
+install_brave() {
+    # Brave: Chrome-like browser with a built-in ad blocker (lighter pages). Official repository.
+    echo "Installing Brave browser (ARM64)..."
+    apt-get install -y --no-install-recommends curl ca-certificates >/dev/null 2>&1 || true
+    mkdir -p /usr/share/keyrings
+    if curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
+            https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg &&
+        echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" \
+            > /etc/apt/sources.list.d/brave-browser-release.list &&
+        apt-get update && apt-get install -y brave-browser; then
+        ok "Brave installed (desktop icon, Start menu → Internet)"
+    else
+        bad "Failed: Brave"
+    fi
+}
+
 install_gdrive() {
     echo "Installing Google Drive support (rclone)..."
     if ! apt-get install -y rclone; then bad "rclone install failed"; return; fi
@@ -154,7 +170,7 @@ label_for() {
     case "$1" in
         vscode) echo "VS Code" ;; claude) echo "Claude Code" ;; ollama) echo "Offline AI (Ollama)" ;;
         blender) echo "Blender" ;; libreoffice) echo "LibreOffice" ;; gimp) echo "GIMP" ;;
-        inkscape) echo "Inkscape" ;; python) echo "Python" ;; vlc) echo "VLC" ;; gdrive) echo "Google Drive" ;;
+        inkscape) echo "Inkscape" ;; python) echo "Python" ;; vlc) echo "VLC" ;; gdrive) echo "Google Drive" ;; brave) echo "Brave" ;;
         shotcut) echo "Shotcut" ;; kdenlive) echo "Kdenlive" ;; games) echo "Games pack" ;;
         games3d) echo "3D games" ;; luanti) echo "Minetest" ;; coding) echo "Coding tools" ;;
         trigger) echo "Trigger Rally" ;; tuxracer) echo "Extreme Tux Racer" ;; *) echo "$1" ;;
@@ -179,6 +195,7 @@ install_id() {
         python) install_apt python3 python3-pip python3-venv ;;
         vlc) install_apt vlc ;;
         gdrive) install_gdrive ;;
+        brave) install_brave ;;
         shotcut) install_apt shotcut ;;
         kdenlive) install_apt kdenlive ;;
         coding) install_coding ;;
@@ -201,6 +218,7 @@ remove_id() {
         claude) npm uninstall -g @anthropic-ai/claude-code; return ;;
         ollama) rm -rf /usr/local/bin/ollama /usr/local/bin/ai-chat /usr/local/lib/ollama /usr/share/ollama; return ;;
         gdrive) pkgs="rclone"; rm -f /usr/local/bin/google-drive "$REAL_HOME/Desktop/Google-Drive.desktop" ;;
+        brave) pkgs="brave-browser brave-keyring" ;;
         games) pkgs="supertux frozen-bubble pingus xmoto 2048-qt openttd openttd-opengfx aisleriot gnome-mines gnome-sudoku gnome-chess stockfish quadrapassel" ;;
         games3d) pkgs="supertuxkart neverball extremetuxracer minetest luanti" ;;
         luanti) pkgs="minetest luanti" ;;
