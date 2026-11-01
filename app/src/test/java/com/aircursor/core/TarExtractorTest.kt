@@ -16,6 +16,12 @@ class TarExtractorTest {
     @get:Rule
     val tmp = TemporaryFolder()
 
+    // Files.readString/writeString are not in Android's java.nio (unit tests compile against it).
+    private fun read(p: Path) = String(Files.readAllBytes(p))
+    private fun write(p: Path, text: String) {
+        Files.write(p, text.toByteArray())
+    }
+
     /** Minimal tar writer for the tests (ustar headers, GNU long names, pax). */
     private class TarBuilder {
         val out = ByteArrayOutputStream()
@@ -88,14 +94,14 @@ class TarExtractorTest {
             .bytes()
         val x = extract(root, tar)
 
-        assertEquals("#!/bin/sh\necho hi\n", Files.readString(root.resolve("usr/bin/hello")))
+        assertEquals("#!/bin/sh\necho hi\n", read(root.resolve("usr/bin/hello")))
         assertTrue(Files.isExecutable(root.resolve("usr/bin/hello")))
         assertTrue(Files.isSymbolicLink(root.resolve("bin")))
         assertEquals("usr/bin", Files.readSymbolicLink(root.resolve("bin")).toString())
         assertTrue(Files.isSymbolicLink(root.resolve("etc/resolv.conf")))
-        assertEquals("#!/bin/sh\necho hi\n", Files.readString(root.resolve("usr/bin/hello2")))
-        assertEquals("long", Files.readString(root.resolve(longPath)))
-        assertEquals("pax", Files.readString(root.resolve("usr/share/pax-name.txt")))
+        assertEquals("#!/bin/sh\necho hi\n", read(root.resolve("usr/bin/hello2")))
+        assertEquals("long", read(root.resolve(longPath)))
+        assertEquals("pax", read(root.resolve("usr/share/pax-name.txt")))
         assertFalse(Files.exists(root.resolve("dev/null"), LinkOption.NOFOLLOW_LINKS))
         assertEquals(1, x.skipped)
     }
@@ -105,7 +111,7 @@ class TarExtractorTest {
         val base = tmp.newFolder("base").toPath()
         val root = base.resolve("rootfs")
         val outside = tmp.newFolder("phone").toPath()
-        Files.writeString(outside.resolve("photo.jpg"), "precious")
+        write(outside.resolve("photo.jpg"), "precious")
         val tar = TarBuilder()
             .file("../evil.txt", "x")
             .file("/etc/../../evil2.txt", "x")
@@ -114,7 +120,7 @@ class TarExtractorTest {
             .file("escape/new.txt", "x")
             .bytes()
         extract(root, tar)
-        assertEquals("precious", Files.readString(outside.resolve("photo.jpg")))
+        assertEquals("precious", read(outside.resolve("photo.jpg")))
         assertFalse(Files.exists(outside.resolve("new.txt")))
         assertFalse(Files.exists(base.resolve("evil.txt")))
         assertFalse(Files.exists(tmp.root.toPath().resolve("evil2.txt")))
@@ -128,7 +134,7 @@ class TarExtractorTest {
             .file("locked/inside.txt", "ok")
             .bytes()
         extract(root, tar)
-        assertEquals("ok", Files.readString(root.resolve("locked/inside.txt")))
+        assertEquals("ok", read(root.resolve("locked/inside.txt")))
     }
 
     @Test
@@ -148,15 +154,15 @@ class TarExtractorTest {
     fun safeDeleteRemovesLinksButNotWhatTheyPointTo() {
         val base = tmp.newFolder("cloudpc").toPath()
         val outside = tmp.newFolder("phone2").toPath()
-        Files.writeString(outside.resolve("keep.txt"), "keep")
+        write(outside.resolve("keep.txt"), "keep")
         val root = base.resolve("rootfs")
         Files.createDirectories(root.resolve("home"))
         Files.createSymbolicLink(root.resolve("home/phone"), outside)
         Files.createSymbolicLink(root.resolve("photo-link"), outside.resolve("keep.txt"))
-        Files.writeString(root.resolve("home/a.txt"), "a")
+        write(root.resolve("home/a.txt"), "a")
         SafeFiles.deleteTree(root, base)
         assertFalse(Files.exists(root, LinkOption.NOFOLLOW_LINKS))
-        assertEquals("keep", Files.readString(outside.resolve("keep.txt")))
+        assertEquals("keep", read(outside.resolve("keep.txt")))
     }
 
     @Test(expected = IllegalArgumentException::class)
