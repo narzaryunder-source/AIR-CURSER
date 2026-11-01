@@ -216,6 +216,18 @@ class CloudPcService : Service() {
         }
         desktopActive = true
         CloudPcBus.update { it.copy(desktopRunning = true, desktopReady = false, error = null) }
+        // Keep the CPU awake while the desktop runs (long app installs continue with the screen off);
+        // released when the desktop stops, and at the latest after 3 hours.
+        val deskWake = try {
+            getSystemService(PowerManager::class.java)
+                ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AirCursor:Desktop")
+                ?.apply {
+                    setReferenceCounted(false)
+                    acquire(3 * 60 * 60 * 1000L)
+                }
+        } catch (_: Exception) {
+            null
+        }
         Thread({
             try {
                 CloudPcDesktop.writeStartScript(this)
@@ -240,6 +252,10 @@ class CloudPcService : Service() {
                 CloudPcBus.update { it.copy(error = e.message) }
             } finally {
                 desktop = null
+                try {
+                    deskWake?.takeIf { it.isHeld }?.release()
+                } catch (_: Exception) {
+                }
                 ContextCompat.getMainExecutor(this).execute {
                     desktopActive = false
                     CloudPcBus.update { it.copy(desktopRunning = false, desktopReady = false) }

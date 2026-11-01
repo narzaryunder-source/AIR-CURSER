@@ -128,7 +128,18 @@ install_games_3d() {
 
 install_apt() {
     echo "Installing: $*"
-    if apt-get install -y "$@"; then ok "Installed: $*"; else bad "Failed: $*"; fi
+    # Without "recommended" extras: much smaller downloads, much faster on a phone.
+    if apt-get install -y --no-install-recommends "$@"; then ok "Installed: $*"; else bad "Failed: $*"; fi
+}
+
+label_for() {
+    case "$1" in
+        vscode) echo "VS Code" ;; claude) echo "Claude Code" ;; ollama) echo "Offline AI (Ollama)" ;;
+        blender) echo "Blender" ;; libreoffice) echo "LibreOffice" ;; gimp) echo "GIMP" ;;
+        inkscape) echo "Inkscape" ;; python) echo "Python" ;; vlc) echo "VLC" ;; gdrive) echo "Google Drive" ;;
+        shotcut) echo "Shotcut" ;; kdenlive) echo "Kdenlive" ;; games) echo "Games pack" ;;
+        games3d) echo "3D games" ;; luanti) echo "Luanti" ;; *) echo "$1" ;;
+    esac
 }
 
 after_install() {
@@ -159,12 +170,22 @@ install_id() {
 }
 
 # Non-interactive mode, used by the App Store:  ubuntu-extras install <id|package> ...
+# Prints "@@PCT n" (overall percent) and "[i/n] Installing <app>" so the App Store can show progress.
 if [ "${1:-}" = "install" ]; then
     shift
-    echo "Updating the app list..."
+    total=$#
+    i=0
+    echo "@@PCT 1"
+    echo "[0/$total] Updating the app list…"
     apt-get update >/dev/null 2>&1 || true
-    for id in "$@"; do install_id "$id"; done
-    after_install
+    for id in "$@"; do
+        i=$((i + 1))
+        echo "@@PCT $(( (i - 1) * 100 / total + 1 ))"
+        echo "[$i/$total] Installing $(label_for "$id")…"
+        install_id "$id"
+        after_install
+    done
+    echo "@@PCT 100"
     exit 0
 fi
 

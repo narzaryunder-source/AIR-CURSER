@@ -2,17 +2,27 @@
 # "Change Wallpaper": pick any photo from the phone and it becomes the desktop wallpaper at once.
 # Installed inside Ubuntu as /usr/local/bin/aircursor-wallpaper (runs as the desktop user).
 export GSK_RENDERER=cairo NO_AT_BRIDGE=1
+export LANG="${LANG:-C.UTF-8}"; [ "$LANG" = "C" ] || [ "$LANG" = "POSIX" ] && export LANG=C.UTF-8
+TITLE="Choose a picture"
 START="$HOME/Pictures"
-for d in /sdcard/Pictures /sdcard/Download /sdcard/DCIM /sdcard; do
-    if [ -r "$d" ] && ls "$d" >/dev/null 2>&1; then START="$d"; break; fi
-done
-if [ "$START" = "$HOME/Pictures" ]; then
-    zenity --info --width=460 --title="Change Wallpaper" \
-        --text="Phone ki photos abhi nahi dikh rahi.\n\nEk baar: phone Settings → Apps → Termux → Permissions → Files / Photos → Allow.\nPhir yeh app dobara kholo.\n\n(Abhi ke liye Ubuntu ke Pictures folder se chun sakte ho.)"
-    mkdir -p "$START"
+if [ -d /usr/local/lib/cloudpc ]; then
+    # AirCursor PC (built in): phone photos come in through the toolbar, so start where they land.
+    TITLE="Choose a picture (phone photos: menu button on the right edge → Wallpaper)"
+    mkdir -p "$HOME/Pictures/Wallpapers"
+    START="$HOME/Pictures/Wallpapers"
+else
+    # Termux: the phone's own folders, when Termux may read them.
+    for d in /sdcard/Pictures /sdcard/Download /sdcard/DCIM /sdcard; do
+        if [ -r "$d" ] && ls "$d" >/dev/null 2>&1; then START="$d"; break; fi
+    done
+    if [ "$START" = "$HOME/Pictures" ]; then
+        zenity --info --width=460 --title="Change Wallpaper" \
+            --text="Phone photos are not visible yet.\n\nOnce: phone Settings → Apps → Termux → Permissions → Photos → Allow, then open this again.\n\nFor now you can choose from the Pictures folder."
+        mkdir -p "$START"
+    fi
 fi
 
-IMG=$(zenity --file-selection --title="Wallpaper ke liye photo chuno" --filename="$START/" \
+IMG=$(zenity --file-selection --title="$TITLE" --filename="$START/" \
     --file-filter="Photos | *.jpg *.jpeg *.png *.webp *.JPG *.JPEG *.PNG *.WEBP") || exit 0
 [ -f "$IMG" ] || exit 0
 
@@ -21,7 +31,7 @@ DEST_DIR="$HOME/Pictures/Wallpapers"
 mkdir -p "$DEST_DIR"
 EXT=$(printf '%s' "${IMG##*.}" | tr 'A-Z' 'a-z')
 DEST="$DEST_DIR/wallpaper-$(date +%Y%m%d-%H%M%S).$EXT"
-cp "$IMG" "$DEST" || { zenity --error --text="Photo copy nahi hui."; exit 1; }
+cp "$IMG" "$DEST" || { zenity --error --text="Could not copy the picture."; exit 1; }
 
 # .webp photos need an extra image loader
 if [ "$EXT" = "webp" ] && ! dpkg -s webp-pixbuf-loader >/dev/null 2>&1; then

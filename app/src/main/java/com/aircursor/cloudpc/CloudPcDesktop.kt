@@ -88,7 +88,7 @@ object CloudPcDesktop {
         {
             echo "export DISPLAY=:1"
             echo "export DBUS_SESSION_BUS_ADDRESS='${'$'}DBUS_SESSION_BUS_ADDRESS'"
-            echo "export XDG_RUNTIME_DIR=${'$'}XDG_RUNTIME_DIR NO_AT_BRIDGE=1"
+            echo "export XDG_RUNTIME_DIR=${'$'}XDG_RUNTIME_DIR NO_AT_BRIDGE=1 LANG=C.UTF-8"
         } > /tmp/cloudpc-session.env
         startxfce4 &
         # Self-repair for the first minute: panel / window manager sometimes do not start under proot.

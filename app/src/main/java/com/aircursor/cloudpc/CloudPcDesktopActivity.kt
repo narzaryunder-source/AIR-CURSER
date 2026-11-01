@@ -116,8 +116,14 @@ class CloudPcDesktopActivity : ComponentActivity() {
             isVerticalScrollBarEnabled = false
             addView(tools)
         }
+        // Small, see-through handle on the edge: it opens the toolbar and stays out of the way.
         val handle = iconButton(R.drawable.ic_ui_menu, "Toolbar") {
             tools.visibility = if (tools.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+            it.alpha = if (tools.visibility == View.VISIBLE) 1f else 0.55f
+        }.apply {
+            alpha = 0.55f
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { setMargins(dp(2), dp(3), dp(2), dp(3)) }
+            setPadding(dp(8), dp(8), dp(8), dp(8))
         }
         val side = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -179,7 +185,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         cornerRadius = dp(radiusDp).toFloat()
     }
 
-    private fun iconButton(@DrawableRes icon: Int, description: String, onClick: () -> Unit) = ImageButton(this).apply {
+    private fun iconButton(@DrawableRes icon: Int, description: String, onClick: (View) -> Unit) = ImageButton(this).apply {
         setImageResource(icon)
         imageTintList = ColorStateList.valueOf(Color.WHITE)
         contentDescription = description
@@ -187,7 +193,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         setPadding(dp(11), dp(11), dp(11), dp(11))
         scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
         layoutParams = LinearLayout.LayoutParams(dp(46), dp(46)).apply { setMargins(dp(2), dp(3), dp(2), dp(3)) }
-        setOnClickListener { onClick() }
+        setOnClickListener { onClick(it) }
         setOnLongClickListener {
             Toast.makeText(context, description, Toast.LENGTH_SHORT).show()
             true
