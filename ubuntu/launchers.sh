@@ -76,16 +76,18 @@ LAUNCH_EOF
     cat > "$PREFIX/bin/ubuntu-boost" <<'BOOST_EOF'
 #!/data/data/com.termux/files/usr/bin/bash
 # AirBoost: speed profiles for the Ubuntu desktop.
-#   ubuntu-boost performance | balanced | quality | status
+#   ubuntu-boost performance | balanced | cpu | quality | status
 P="${1:-status}"
 case "$P" in
     performance) GPU=1; LIGHT=1; SCALE="150-200%" ;;
+    cpu)         GPU=0; LIGHT=1; SCALE="150%" ;;
     balanced)    GPU=1; LIGHT=1; SCALE="125-150%" ;;
     quality)     GPU=0; LIGHT=0; SCALE="100%" ;;
     status|*)
         echo "AirBoost profiles:"
         echo "  ubuntu-boost performance   VirGL GPU + light mode   (games, fastest)"
         echo "  ubuntu-boost balanced      VirGL GPU + light mode   (daily use)"
+        echo "  ubuntu-boost cpu           CPU graphics + light mode (phones where CPU is faster)"
         echo "  ubuntu-boost quality       CPU graphics, everything on"
         echo "  ubuntu-benchmark           measure: is GPU or CPU faster on THIS phone?"
         if [ -f "$HOME/.aircursor-boost" ]; then echo; echo "Current:"; cat "$HOME/.aircursor-boost"; fi
@@ -127,7 +129,7 @@ echo "  VirGL GPU    : ${GPU:-failed} FPS"
 if [ -n "$GPU" ] && [ -n "$CPU" ] && awk "BEGIN{exit !($GPU > $CPU * 1.15)}"; then
     echo "  => GPU is faster on your phone:  ubuntu-boost performance"
 elif [ -n "$CPU" ]; then
-    echo "  => CPU is as fast or faster here:  ubuntu-boost quality   (keep light mode via settings)"
+    echo "  => CPU is as fast or faster here:  ubuntu-boost cpu"
 fi
 BENCH_EOF
 
