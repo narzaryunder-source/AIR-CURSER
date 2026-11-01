@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 9
+    const val VERSION = 10
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -84,6 +84,8 @@ object CloudPcTools {
         for (name in HIDDEN_AUTOSTART) {
             put("root/.config/autostart/$name", "[Desktop Entry]\nType=Application\nName=$name\nHidden=true\n")
         }
+        // Fast settings for 3D games on phones (only settings the person has not changed).
+        addMissing(File(CloudPcEngine.rootfs(c), "root/.minetest/minetest.conf"), MINETEST_FAST, root, "root/.minetest/minetest.conf")
         // Games: FPS overlay (Right Shift + F12 hides it) and the steady FPS limit.
         put("etc/cloudpc/MangoHud.conf", AirBoost.mangoHud(AirBoost.fpsLimit(c)))
         put("usr/local/bin/aircursor-set-wallpaper", SET_WALLPAPER, exec = true)
@@ -174,6 +176,30 @@ object CloudPcTools {
         "blueman.desktop", "nm-applet.desktop", "pulseaudio.desktop", "xfce4-clipman-plugin-autostart.desktop",
         "tracker-miner-fs-3.desktop", "org.gnome.Evolution-alarm-notify.desktop",
     )
+
+    /** Minetest on a phone CPU: no shaders and effects, shorter view range, steady 45 FPS. */
+    private val MINETEST_FAST = listOf(
+        "enable_shaders" to "false", "smooth_lighting" to "false", "enable_particles" to "false",
+        "enable_clouds" to "false", "enable_3d_clouds" to "false", "enable_waving_water" to "false",
+        "enable_waving_leaves" to "false", "enable_waving_plants" to "false", "opaque_water" to "true",
+        "connected_glass" to "false", "mip_map" to "false", "fsaa" to "0", "viewing_range" to "60",
+        "fps_max" to "45", "enable_minimap" to "false",
+    )
+
+    /** Adds only the keys that are not in the file yet, so the person's own choices stay. */
+    private fun addMissing(file: File, settings: List<Pair<String, String>>, root: java.nio.file.Path, rel: String) {
+        val old = if (file.isFile) file.readText() else ""
+        val have = old.lines().mapNotNull { l -> l.substringBefore('=').trim().takeIf { it.isNotEmpty() && !it.startsWith("#") } }.toSet()
+        val add = settings.filter { it.first !in have }
+        if (add.isEmpty()) return
+        val text = buildString {
+            append(old)
+            if (old.isNotEmpty() && !old.endsWith("\n")) append('\n')
+            append("# AirCursor PC: fast settings for phones (change them in the game's settings)\n")
+            for ((k, v) in add) append("$k = $v\n")
+        }
+        CloudPcEngine.writeGuestFile(root, rel, text)
+    }
 
     const val TO_PHONE = "To phone"
     const val FROM_PHONE = "From phone"

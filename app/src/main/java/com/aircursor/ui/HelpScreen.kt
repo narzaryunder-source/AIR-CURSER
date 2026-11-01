@@ -99,8 +99,9 @@ private val TOPICS = listOf(
     Topic(
         R.drawable.ic_ui_bolt, "Speed and AirBoost", "More FPS for games and video",
         rows = listOf(
-            "Game" to "Highest FPS for games and videos",
-            "Performance" to "Smooth on slower phones",
+            "Turbo" to "Most FPS for 3D games on mid-range phones",
+            "Game" to "High FPS for games and videos",
+            "Fast" to "Smooth on slower phones",
             "Balanced" to "Recommended",
             "Quality" to "Sharpest text on fast phones",
         ),

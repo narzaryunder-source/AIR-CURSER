@@ -8,8 +8,9 @@ import android.content.Context
  * so it still looks crisp. Light mode stops background jobs a phone does not need.
  */
 enum class AirBoost(val label: String, val width: Int, val sharpen: Float, val light: Boolean, val about: String) {
+    TURBO("Turbo", 800, 1.0f, true, "Most FPS for 3D games on mid-range phones · 800 px · strongest sharpening"),
     GAME("Game", 960, 0.9f, true, "Maximum FPS for games and video · 960 px · strong sharpening"),
-    PERFORMANCE("Performance", 1120, 0.75f, true, "Fast and smooth · 1120 px · sharpening"),
+    PERFORMANCE("Fast", 1120, 0.75f, true, "Fast and smooth · 1120 px · sharpening"),
     BALANCED("Balanced", 1280, 0.55f, true, "Recommended for daily use · 1280 px"),
     QUALITY("Quality", 1600, 0.25f, false, "Sharpest text · 1600 px · all background services on"),
     ;
