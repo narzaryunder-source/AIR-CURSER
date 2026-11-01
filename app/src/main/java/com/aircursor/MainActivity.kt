@@ -1,9 +1,11 @@
 package com.aircursor
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -20,15 +22,34 @@ import com.aircursor.ui.HomeScreen
 import com.aircursor.ui.LockScreen
 import com.aircursor.ui.OnboardingScreen
 import com.aircursor.ui.PreviewScreen
+import com.aircursor.ui.ProScreen
 import com.aircursor.ui.SecurityScreen
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        /** Opens a screen directly, e.g. "pro" from the Cloud PC icon when the plan has ended. */
+        const val EXTRA_OPEN = "open"
+    }
+
+    private val requested = mutableStateOf<String?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        requested.value = intent.getStringExtra(EXTRA_OPEN)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requested.value = intent?.getStringExtra(EXTRA_OPEN)
         val needsSetup = !Permissions.camera(this) || !Permissions.accessibility(this)
         setContent {
             AirCursorTheme {
                 var screen by rememberSaveable { mutableStateOf(if (needsSetup) "setup" else "home") }
+                val want = requested.value
+                LaunchedEffect(want) {
+                    if (want != null && !needsSetup) screen = want
+                    requested.value = null
+                }
                 // Re-checked every time the app comes back to the front.
                 var lockTick by remember { mutableIntStateOf(0) }
                 LifecycleEventEffect(Lifecycle.Event.ON_START) {
@@ -47,10 +68,12 @@ class MainActivity : ComponentActivity() {
                         "setup" -> OnboardingScreen(onFinish = { screen = "home" })
                         "preview" -> PreviewScreen(onBack = { screen = "home" })
                         "security" -> SecurityScreen(onBack = { screen = "home" })
+                        "pro" -> ProScreen(onBack = { screen = "home" })
                         else -> HomeScreen(
                             onOpenSetup = { screen = "setup" },
                             onOpenPreview = { screen = "preview" },
                             onOpenSecurity = { screen = "security" },
+                            onOpenPro = { screen = "pro" },
                         )
                     }
                 }

@@ -25,6 +25,16 @@ class PcActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (!com.aircursor.pro.ProAccess.allowed(this)) {
+            android.widget.Toast.makeText(this, "PC Mode Pro plan me hai – renew karo", android.widget.Toast.LENGTH_LONG).show()
+            startActivity(
+                Intent(this, com.aircursor.MainActivity::class.java)
+                    .putExtra(com.aircursor.MainActivity.EXTRA_OPEN, "pro")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            )
+            finish()
+            return
+        }
         PcMode.setEnabled(this, true)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).apply {

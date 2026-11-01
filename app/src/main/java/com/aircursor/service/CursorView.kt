@@ -151,8 +151,9 @@ class CursorView(context: Context) : View(context) {
                 velX = 0f
                 velY = 0f
             } else {
-                velX = velX * 0.5f + ivx * 0.5f
-                velY = velY * 0.5f + ivy * 0.5f
+                // Smoothed velocity: one noisy sample must not throw the cursor sideways.
+                velX = velX * 0.65f + ivx * 0.35f
+                velY = velY * 0.65f + ivy * 0.35f
             }
         } else {
             velX = 0f
@@ -208,7 +209,8 @@ class CursorView(context: Context) : View(context) {
             val px = (tgtX + velX * lead).coerceIn(0f, maxX)
             val py = (tgtY + velY * lead).coerceIn(0f, maxY)
             // Light easing absorbs the small corrections when a new sample arrives.
-            val tau = 14f
+            // Less prediction = a bit more easing: steadier cursor, still no visible lag.
+            val tau = 14f + (1f - prediction.coerceIn(0f, 1f)) * 16f
             val a = 1f - exp(-dt / tau)
             cx += (px - cx) * a
             cy += (py - cy) * a
@@ -283,7 +285,11 @@ class CursorView(context: Context) : View(context) {
             if (kind != null && holdProgress > 0.12f) {
                 val radius = 26f * density * cursorScale
                 ringRect.set(cx - radius, cy - radius, cx + radius, cy + radius)
-                ringPaint.color = if (kind == HoldKind.FIST) 0xFFFF5252.toInt() else 0xFF4CAF50.toInt()
+                ringPaint.color = when (kind) {
+                    HoldKind.FIST -> 0xFFFF5252.toInt()
+                    HoldKind.DWELL -> 0xFF40C4FF.toInt()
+                    else -> 0xFF4CAF50.toInt()
+                }
                 canvas.drawCircle(cx, cy, radius, ringBgPaint)
                 canvas.drawArc(ringRect, -90f, 360f * holdProgress.coerceIn(0f, 1f), false, ringPaint)
             }

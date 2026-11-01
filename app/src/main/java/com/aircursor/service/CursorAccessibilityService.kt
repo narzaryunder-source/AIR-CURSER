@@ -7,6 +7,8 @@ import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.Path
 import android.graphics.PixelFormat
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -46,6 +48,8 @@ class CursorAccessibilityService : AccessibilityService() {
     private lateinit var drag: DragController
     private lateinit var scroller: ScrollController
     private lateinit var haptics: Haptics
+    private var clickSound = false
+    private var tone: ToneGenerator? = null
     private var showFps = false
     private lateinit var taskbar: TaskbarOverlay
     private val pcListener: () -> Unit = { updateTaskbar() }
@@ -96,6 +100,8 @@ class CursorAccessibilityService : AccessibilityService() {
         if (::taskbar.isInitialized) taskbar.hide()
         removeOverlay()
         if (::prefs.isInitialized) prefs.sp.unregisterOnSharedPreferenceChangeListener(prefListener)
+        tone?.release()
+        tone = null
         TrackingBus.update { it.copy(accessibilityConnected = false) }
     }
 
@@ -162,6 +168,7 @@ class CursorAccessibilityService : AccessibilityService() {
         cursorView?.cursorScale = prefs.get(AppSettings.CURSOR_SIZE)
         cursorView?.prediction = prefs.get(AppSettings.PREDICTION)
         haptics.enabled = prefs.get(AppSettings.HAPTICS)
+        clickSound = prefs.get(AppSettings.CLICK_SOUND)
         updateTaskbar()
         if (!showFps) cursorView?.debugText = null
     }
@@ -310,6 +317,7 @@ class CursorAccessibilityService : AccessibilityService() {
             is GestureEvent.Tap -> {
                 view.ripple(e.x, e.y)
                 haptics.click()
+                if (clickSound) clickTone()
                 tap(e.x, e.y)
             }
             is GestureEvent.LongPress -> {
@@ -338,6 +346,19 @@ class CursorAccessibilityService : AccessibilityService() {
                 view.showLabel(if (e.paused) "Paused" else "Resumed")
             }
             GestureEvent.Recalibrated -> view.showLabel("Recalibrated")
+            is GestureEvent.AutoTuned -> {
+                haptics.tick()
+                view.showLabel("Auto-tuned: anti-shake %.0f px".format(e.deadZonePx))
+            }
+        }
+    }
+
+    private fun clickTone() {
+        try {
+            val tg = tone ?: ToneGenerator(AudioManager.STREAM_SYSTEM, 70).also { tone = it }
+            tg.startTone(ToneGenerator.TONE_PROP_BEEP, 35)
+        } catch (_: Exception) {
+            tone = null
         }
     }
 

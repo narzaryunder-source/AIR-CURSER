@@ -13,7 +13,7 @@ import com.aircursor.service.HandTrackingService
 import com.aircursor.service.Permissions
 
 /**
- * One-tap "Ubuntu Mode": starts the Ubuntu desktop inside Termux (through Termux's
+ * One-tap "Cloud PC" (Ubuntu desktop): starts the Ubuntu desktop inside Termux (through Termux's
  * RUN_COMMAND service), opens Termux:X11 and turns on hand tracking.
  * Needs the commands installed by ubuntu/setup.sh or fix.sh (they also allow external apps).
  */
@@ -80,6 +80,18 @@ object UbuntuMode {
         if (Permissions.camera(c) && Permissions.accessibility(c)) HandTrackingService.start(c)
         Handler(Looper.getMainLooper()).postDelayed({ openX11(c) }, 2500)
         return null
+    }
+
+    private const val FIX_URL = "https://raw.githubusercontent.com/narzaryunder-source/AIR-CURSER/main/ubuntu/fix.sh"
+
+    /**
+     * Repair + update in the background (no Termux window, so the Termux session limit does not
+     * matter). Keeps the user's settings and files; starts the desktop when done.
+     */
+    fun repair(c: Context): String? {
+        PcMode.setEnabled(c, false)
+        val script = "curl -fsSL $FIX_URL -o $HOME/fix.sh && bash $HOME/fix.sh --keep > $HOME/cloudpc-repair.log 2>&1"
+        return runInTermux(c, "bash", arrayOf("-c", script))
     }
 
     fun stop(c: Context) {

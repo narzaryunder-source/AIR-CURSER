@@ -8,9 +8,10 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import com.aircursor.MainActivity
+import com.aircursor.pro.ProAccess
 
 /**
- * The "Ubuntu PC" icon on the phone's home screen: one tap starts the Ubuntu desktop, opens
+ * The "Cloud PC" icon on the phone's home screen: one tap starts the Ubuntu desktop, opens
  * Termux:X11 and turns on the hand cursor. It stays (invisible) for a few seconds because
  * Android only lets a visible app start the camera and open other apps.
  */
@@ -21,7 +22,7 @@ class UbuntuLaunchActivity : ComponentActivity() {
         if (ok) {
             go()
         } else {
-            Toast.makeText(this, "Permission ke bina Ubuntu PC nahi chalega", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Permission ke bina Cloud PC nahi chalega", Toast.LENGTH_LONG).show()
             finish()
         }
     }
@@ -41,6 +42,16 @@ class UbuntuLaunchActivity : ComponentActivity() {
             finish()
             return
         }
+        if (!ProAccess.allowed(this)) {
+            Toast.makeText(this, "Cloud PC Pro plan khatam – renew karo", Toast.LENGTH_LONG).show()
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .putExtra(MainActivity.EXTRA_OPEN, "pro")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            )
+            finish()
+            return
+        }
         if (UbuntuMode.hasPermission(this)) go() else askPermission.launch(UbuntuMode.PERMISSION)
     }
 
@@ -49,13 +60,13 @@ class UbuntuLaunchActivity : ComponentActivity() {
         if (err != null) {
             Toast.makeText(
                 this,
-                "Termux ne command nahi li. Termux me ek baar chalao: bash fix.sh --keep",
+                "Termux ne command nahi li. AirCursor app → Cloud PC → Repair dabao",
                 Toast.LENGTH_LONG,
             ).show()
             finish()
             return
         }
-        Toast.makeText(this, "Ubuntu PC start ho raha hai… (pehli baar 1-2 min)", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "☁️ Cloud PC start ho raha hai… (pehli baar 1-2 min)", Toast.LENGTH_LONG).show()
         // Stay visible until Termux:X11 has been opened (UbuntuMode opens it after 2.5 s).
         Handler(Looper.getMainLooper()).postDelayed({ finish() }, 4000)
     }

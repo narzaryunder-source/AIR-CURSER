@@ -26,13 +26,13 @@ data class BoolSetting(
 object AppSettings {
     val MARGIN = FloatSetting("margin", "Active box margin (box mode)", 0.15f, 0f, 0.35f) { "${(it * 100).roundToInt()}%" }
     val SENSITIVITY = FloatSetting("sensitivity", "Cursor speed", 1f, 0.4f, 2.5f) { "%.2fx".format(it) }
-    val MIN_CUTOFF = FloatSetting("min_cutoff2", "Smoothing (min cutoff)", 0.8f, 0.1f, 5f) { "%.2f Hz".format(it) }
+    val MIN_CUTOFF = FloatSetting("min_cutoff3", "Smoothing (min cutoff)", 0.6f, 0.1f, 5f) { "%.2f Hz".format(it) }
     val BETA = FloatSetting("beta", "Responsiveness (beta)", 0.01f, 0f, 0.05f) { "%.3f".format(it) }
-    val DEAD_ZONE = FloatSetting("dead_zone2", "Anti-shake", 6f, 0f, 20f) { "${it.roundToInt()} px" }
+    val DEAD_ZONE = FloatSetting("dead_zone3", "Anti-shake", 8f, 0f, 20f) { "${it.roundToInt()} px" }
     val PINCH = FloatSetting("pinch", "Pinch distance", 0.28f, 0.15f, 0.45f) { "%.2f".format(it) }
     val SCROLL_SPEED = FloatSetting("scroll_speed", "Scroll speed", 1.2f, 0.4f, 3f) { "%.1fx".format(it) }
     val CURSOR_SIZE = FloatSetting("cursor_size", "Cursor size", 1f, 0.6f, 2f) { "%.1fx".format(it) }
-    val PREDICTION = FloatSetting("prediction2", "Lag compensation (prediction)", 0.5f, 0f, 1f) {
+    val PREDICTION = FloatSetting("prediction3", "Lag compensation (prediction)", 0.2f, 0f, 1f) {
         "${(it * 100).roundToInt()}%"
     }
     val TARGET_FPS = FloatSetting("max_fps", "Max tracking FPS (battery saver)", 60f, 15f, 60f, steps = 8) {
@@ -75,7 +75,7 @@ object AppSettings {
     val G_HOME = BoolSetting("g_home", "Home (palm hold 1s)", true)
     val G_NOTIF = BoolSetting("g_notif", "Notifications (palm swipe down)", true)
     val G_RECENTS = BoolSetting("g_recents", "Recent apps (palm swipe up)", true)
-    val G_FIST = BoolSetting("g_fist", "Pause/Resume (fist hold 1.5s)", true)
+    val G_FIST = BoolSetting("g_fist2", "Pause/Resume (fist held still 2s)", false)
 
     val GESTURES = listOf(G_TAP, G_LONG, G_DRAG, G_SCROLL, G_BACK, G_HOME, G_NOTIF, G_RECENTS, G_FIST)
 
@@ -87,8 +87,8 @@ object AppSettings {
     val SHOW_FPS = BoolSetting("show_fps", "Debug overlay (FPS, latency)", false)
     val HAPTICS = BoolSetting("haptics", "Vibrate on click / gesture", true)
     val CLICK_ONLY = BoolSetting(
-        "click_only", "Simple mode: cursor + click only", true,
-        "Only move and pinch-to-click. Scroll, palm and fist gestures are off, so nothing stops the cursor.",
+        "click_only", "Simple mode: move, click, drag", true,
+        "Pinch = click, pinch + move = drag. Scroll, palm and fist gestures are off, so nothing stops the cursor.",
     )
     val MOUSE_MODE = BoolSetting(
         "mouse_mode", "Mouse mode (recommended)", true,
@@ -104,7 +104,17 @@ object AppSettings {
         "Only some phones support it. If the preview shows stripes or colours, turn it off.",
     )
 
-    val OPTIONS = listOf(REVERSE_SCROLL, HAPTICS, AUTO_PAUSE, SHOW_FPS)
+    val INVERT_X = BoolSetting(
+        "invert_lr", "Swap left / right", false,
+        "Turn on if the cursor goes left when your hand goes right.",
+    )
+    val DWELL = BoolSetting(
+        "dwell_click", "Dwell click (no pinch)", false,
+        "Hold the cursor still for 1.2 s to click. Good for shaky hands.",
+    )
+    val CLICK_SOUND = BoolSetting("click_sound", "Click sound", false)
+
+    val OPTIONS = listOf(INVERT_X, DWELL, CLICK_SOUND, REVERSE_SCROLL, HAPTICS, AUTO_PAUSE, SHOW_FPS)
 
     val OWNER_LOCK = BoolSetting("owner_lock", "Only my hand can control", false)
     val OWNER_STRICTNESS = FloatSetting("owner_strictness", "Hand check strictness", 1f, 0f, 2f, steps = 1) {
@@ -114,7 +124,11 @@ object AppSettings {
             else -> "Strict"
         }
     }
-    val PERFORMANCE_OPTIONS = listOf(STABLE_30, HIGH_FPS_CAMERA)
+    val SMART_SAVER = BoolSetting(
+        "smart_saver", "Smart battery saver", true,
+        "No hand for 10 s = camera checks only 8 times a second. Wakes up instantly when your hand comes back.",
+    )
+    val PERFORMANCE_OPTIONS = listOf(SMART_SAVER, STABLE_30, HIGH_FPS_CAMERA)
 }
 
 class Prefs(context: Context) {
@@ -132,6 +146,8 @@ class Prefs(context: Context) {
         screenHeight = screenHeight,
         pointerMode = if (get(AppSettings.MOUSE_MODE)) PointerMode.RELATIVE else PointerMode.ABSOLUTE,
         clickOnly = get(AppSettings.CLICK_ONLY),
+        mirrorX = !get(AppSettings.INVERT_X),
+        enableDwell = get(AppSettings.DWELL),
         margin = get(AppSettings.MARGIN),
         sensitivity = get(AppSettings.SENSITIVITY),
         minCutoff = get(AppSettings.MIN_CUTOFF).toDouble(),

@@ -64,14 +64,15 @@ APK se install kiye apps ke liye Android yeh extra step maangta hai:
 | ☝️ Haath / index finger hilao | Cursor move (**Mouse mode**: PC mouse jaisa – dheere hilao to precise, tez hilao to door tak; paas ho ya door, same feel) |
 | 🤏 Jaldi se pinch (anguutha + index milao, chhodo) | **Tap / Click** |
 | 🤏 Pinch karke 0.5s ruko (hilo mat) | **Long press** |
-| 🤏 Pinch pakad ke haath hilao | **Drag** (chhodne par release) |
+| 🤏 Pinch pakad ke haath hilao | **Drag** (chhodne par release). Drag ke beech ungliyan thodi khul jayein to bhi drag nahi tootega. Simple mode me bhi chalta hai |
+| ☝️ Cursor 1.2s still rakho (**Dwell click** ON ho to) | **Tap bina pinch** – neeli ring bharegi |
 | ✌️ Do ungli (index + middle) khadi, haath upar/neeche | **Smooth scroll** – cursor apni jagah **ruka rehta hai**, page chalta hai. Jitna door haath, utni tez scroll (PC ke auto-scroll jaisa). Haath wapas beech me lao to rukega |
 | ✌️ Do ungli, haath left/right | **Horizontal scroll** (pages / photos) |
 | ✋ Khula panja tezi se **left** swipe | **Back** |
 | ✋ Khula panja **1 second** bilkul still | **Home** (hari ring bharegi) |
 | ✋ Khula panja **neeche** swipe | **Notifications** kholo |
 | ✋ Khula panja **upar** swipe | **Recent apps** |
-| ✊ Mutthi 1.5s | **Pause / Resume** |
+| ✊ Mutthi **2s bilkul still** (setting ON ho to – default OFF) | **Pause / Resume**. Click/drag/scroll ke 0.8s baad tak koi pause/home nahi hota, aur hilti hui mutthi kabhi pause nahi karti |
 
 Har gesture ko Settings me alag se ON/OFF kar sakte ho. Gesture chalne par screen par 1 second ke liye chhota label aata hai ("Back", "Home", "Paused"...).
 
@@ -86,7 +87,11 @@ Cursor ke rang: ⚪ normal · 🟡 pinch daba hua · 🟠 drag · 🔵 scroll. H
 - **Active box margin** (default 15%): camera frame ka andar wala hissa poori screen se map hota hai, isliye haath ko kinaron tak le jaane ki zaroorat nahi.
 - **Sensitivity:** zyada = kam haath hilana padega.
 - **Smoothing (min cutoff) / Responsiveness (beta):** One Euro filter. Cursor kaanp raha ho to smoothing kam karo; late chal raha ho to beta badhao.
-- **Jitter dead zone:** chhoti hilne ko ignore karta hai.
+- **Anti-shake:** chhoti hilne ko ignore karta hai. **🎯 Auto-tune** button dabao, ungli 2 second still rakho – app aapke haath ki kaanp naap ke sahi value khud set karega.
+- **Swap left / right:** cursor ulta chale (haath right, cursor left) to ON karo.
+- **Dwell click:** pinch ke bina click – cursor 1.2s still = click.
+- **Click sound:** click par halki "beep".
+- **Smart battery saver** (default ON): 10s tak haath na dikhe to camera kam check karta hai; haath aate hi turant full speed.
 - **Pinch distance:** pinch kitna paas hone par count ho.
 - **Scroll speed, Reverse scroll, Cursor size, Tracking FPS**
 - **Debug overlay:** screen par FPS, pose, pinch value dikhata hai.
@@ -121,8 +126,18 @@ Home screen → **"🔒 Security"**:
 - **PIN bhool gaye?** Lock screen par "Forgot PIN" → phone ka fingerprint / screen lock → PIN hat jayega, naya bana lo.
 - ⚠️ Haath ki pehchaan haddiyon ke proportion se hoti hai – fingerprint jitni pakki nahi. Bilkul milta-julta haath pass ho sakta hai. Sab data sirf phone me rehta hai.
 
+### ☁️ Cloud PC (Ubuntu desktop, ek tap)
+- Phone ki home screen par **"Cloud PC"** icon, notification shade me **"Cloud PC" tile**, ya app me Cloud PC card → **▶ Start**.
+- Kuch kharab ho / update chahiye → app me **🛠 Repair / Update** – background me chalta hai, **Termux me kuch type nahi karna** (Termux session limit ka jhanjhat khatam).
+- Cloud PC aapke phone par hi chalta hai (Termux + Ubuntu). Files phone me rehti hain.
+
+### ⭐ Cloud PC Pro (₹159/month) aur updates
+- App me **"⭐ Cloud PC Pro"**: plan, UPI se payment, license key. Hand cursor **hamesha free**.
+- Naya version aaye to Home screen par **"🆕 Naya version"** card aur Download button.
+- Business / paise kamane ka poora plan: [docs/BUSINESS.md](docs/BUSINESS.md).
+
 ### 🎯 Simple mode (default ON)
-- Sirf **cursor + pinch se click**. Scroll, palm, fist wale gestures band – isliye koi pose cursor ko rokta nahi, cursor hamesha haath ke saath chalta hai.
+- **Cursor + pinch se click + pinch-move se drag**. Scroll, palm, fist wale gestures band – isliye koi pose cursor ko rokta nahi, cursor hamesha haath ke saath chalta hai.
 - Baaki gestures chahiye to Home screen par "Simple mode" OFF karo.
 - Pause/Turn off: notification buttons ya Quick Settings tile se.
 

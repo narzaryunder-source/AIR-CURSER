@@ -9,6 +9,9 @@ on:
       # BrightMax has its own workflow (brightmax.yml).
       - 'brightmax/**'
       - '.github/workflows/brightmax.yml'
+      # Live Pro plan settings and business docs: changed from the phone, no new APK needed.
+      - 'cloudpc/**'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:

@@ -83,6 +83,7 @@ class HandTrackingService : LifecycleService() {
         const val ACTION_STOP = "com.aircursor.action.STOP"
         const val ACTION_TOGGLE_PAUSE = "com.aircursor.action.TOGGLE_PAUSE"
         const val ACTION_RECALIBRATE = "com.aircursor.action.RECALIBRATE"
+        const val ACTION_AUTOTUNE = "com.aircursor.action.AUTOTUNE"
         private const val KEY_AUTO_DELEGATE = "auto_delegate"
         private const val BENCH_WARMUP = 10
         private const val BENCH_SAMPLES = 30
@@ -133,6 +134,8 @@ class HandTrackingService : LifecycleService() {
     @Volatile private var screenOff = false
     @Volatile private var targetFps = 30
     @Volatile private var lastSubmitMs = 0L
+    @Volatile private var lastHandSeenMs = 0L
+    @Volatile private var smartSaver = true
     @Volatile private var lastTimestamp = 0L
     @Volatile private var fps = 0f
     private var lastResultMs = 0L
@@ -213,12 +216,15 @@ class HandTrackingService : LifecycleService() {
                 stopTracking()
                 return START_NOT_STICKY
             }
-            ACTION_TOGGLE_PAUSE, ACTION_RECALIBRATE -> {
+            ACTION_TOGGLE_PAUSE, ACTION_RECALIBRATE, ACTION_AUTOTUNE -> {
                 if (!isRunning) {
                     // Stale notification button: nothing to control.
                     stopSelf()
                 } else if (intent?.action == ACTION_TOGGLE_PAUSE) {
                     setPaused(!engine.paused)
+                } else if (intent?.action == ACTION_AUTOTUNE) {
+                    synchronized(engine) { engine.startAutoTune(60) }
+                    CursorAccessibilityService.instance?.showLabel("Auto-tune: hold your finger still 2 s…")
                 } else {
                     synchronized(engine) { engine.requestRecalibrate() }
                     CursorAccessibilityService.instance?.showLabel("Show your finger…")
@@ -248,6 +254,7 @@ class HandTrackingService : LifecycleService() {
             return
         }
         isRunning = true
+        lastHandSeenMs = SystemClock.uptimeMillis()
         prefs.sp.registerOnSharedPreferenceChangeListener(prefListener)
         applyConfig()
         synchronized(engine) { engine.setPaused(false) }
@@ -311,6 +318,7 @@ class HandTrackingService : LifecycleService() {
         if (converter.mode != colourMode) converter.mode = colourMode
         val maxFps = prefs.get(AppSettings.TARGET_FPS)
         targetFps = if (maxFps >= 59.5f) 0 else maxFps.roundToInt().coerceIn(10, 60)
+        smartSaver = prefs.get(AppSettings.SMART_SAVER)
     }
 
     /** (Re)creates the owner check when the lock, the registered hand or the strictness changes. */
@@ -573,8 +581,11 @@ class HandTrackingService : LifecycleService() {
             val lm = landmarker
             if (lm == null || screenOff) return
             // Throttle only when paused (fist detection needs ~5 fps) or a limit is set.
+            // Smart battery saver: no hand for 10 s -> look only 8 times a second (wakes up at once).
+            val idle = smartSaver && now - lastHandSeenMs > 10_000
             val interval = when {
                 engine.paused -> 200L
+                idle -> 125L
                 targetFps > 0 -> 1000L / targetFps - 4
                 else -> 0L
             }
@@ -628,6 +639,7 @@ class HandTrackingService : LifecycleService() {
                 }
             }
         }
+        if (hand != null) lastHandSeenMs = SystemClock.uptimeMillis()
         val aspect = input.width.toFloat() / input.height.coerceAtLeast(1)
 
         val out: EngineOutput
@@ -668,6 +680,10 @@ class HandTrackingService : LifecycleService() {
             if (!isRunning) return@post
             CursorAccessibilityService.instance?.onEngineOutput(out, stats)
             out.events.filterIsInstance<GestureEvent.PauseChanged>().lastOrNull()?.let { onPauseChanged(it.paused) }
+            // Auto-tune measured the hand tremor: save it as the anti-shake setting (applies at once).
+            out.events.filterIsInstance<GestureEvent.AutoTuned>().lastOrNull()?.let {
+                prefs.set(AppSettings.DEAD_ZONE, it.deadZonePx.coerceIn(AppSettings.DEAD_ZONE.min, AppSettings.DEAD_ZONE.max))
+            }
             val s = TrackingBus.status.value
             if (s.handPresent != out.handPresent || kotlin.math.abs(s.fps - currentFps) > 1f) {
                 TrackingBus.update { it.copy(handPresent = out.handPresent, fps = currentFps) }

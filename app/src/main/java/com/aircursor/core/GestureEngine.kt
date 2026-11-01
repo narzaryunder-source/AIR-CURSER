@@ -20,7 +20,7 @@ data class GestureConfig(
     val screenWidth: Int = 1080,
     val screenHeight: Int = 2400,
     val pointerMode: PointerMode = PointerMode.RELATIVE,
-    /** Simple mode: the cursor always follows the hand and pinch = click. No other gestures. */
+    /** Simple mode: the cursor always follows the hand; pinch = click, pinch + move = drag. No other gestures. */
     val clickOnly: Boolean = false,
     // Cursor mapping and smoothing
     val margin: Float = 0.15f,
@@ -43,7 +43,7 @@ data class GestureConfig(
     val pinchEnter: Float = 0.28f,
     val pinchExitFactor: Float = 1.5f,
     val pinchFreezeMs: Long = 120,
-    val pinchLookbackMs: Long = 60,
+    val pinchLookbackMs: Long = 100,
     val longPressMs: Long = 500,
     /** Movement (fraction of the shorter screen side) needed to turn a pinch into a drag. */
     val dragStartFraction: Float = 0.035f,
@@ -65,7 +65,19 @@ data class GestureConfig(
     val palmHoldMs: Long = 1000,
     val palmStillTolerance: Float = 0.25f,
     // Fist
-    val fistHoldMs: Long = 1500,
+    val fistHoldMs: Long = 2000,
+    /** The fist must stay this still (hand sizes) while held, so a moving hand never pauses. */
+    val fistStillTolerance: Float = 0.3f,
+    /** A pinch (and its release) must be seen this many frames in a row – no accidental clicks. */
+    val pinchConfirmFrames: Int = 2,
+    /** While dragging, the fingers may open this much wider before the drag ends (sticky drag). */
+    val dragExitFactor: Float = 1.9f,
+    /** No palm / fist gestures this long after a click, drag or scroll (stops "drag -> pause"). */
+    val gestureGuardMs: Long = 800,
+    /** Dwell click: keep the cursor still to click, no pinch needed (accessibility). */
+    val enableDwell: Boolean = false,
+    val dwellMs: Long = 1200,
+    val dwellRadiusPx: Float = 18f,
     // General
     val gestureCooldownMs: Long = 800,
     val poseDebounceMs: Long = 90,
@@ -100,11 +112,13 @@ sealed class GestureEvent {
     data object Recents : GestureEvent()
     data class PauseChanged(val paused: Boolean) : GestureEvent()
     data object Recalibrated : GestureEvent()
+    /** Auto-tune finished: the measured hand tremor gives this anti-shake radius. */
+    data class AutoTuned(val deadZonePx: Float) : GestureEvent()
 }
 
 enum class CursorMode { NORMAL, PRESSING, DRAGGING, SCROLLING, PALM, PAUSED }
 
-enum class HoldKind { FIST, PALM }
+enum class HoldKind { FIST, PALM, DWELL }
 
 class HandFrame(
     val timestampMs: Long,
@@ -213,6 +227,23 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
     private var fistConsumed = false
 
     private var cooldownUntilMs = Long.MIN_VALUE
+    private var nowMs = 0L
+
+    // Debounced pinch + gesture guard
+    private var stablePinched = false
+    private var pinchFrames = 0
+    private var lastInteractionEndMs = -100_000L
+    private var fistAnchor: Point2? = null
+
+    // Dwell click
+    private var dwellAnchorX = 0f
+    private var dwellAnchorY = 0f
+    private var dwellStartMs = -1L
+    private var dwellArmed = true
+
+    // Auto-tune (measures hand tremor)
+    private var tuneTarget = 0
+    private val tuneSamples = ArrayList<Point2>()
     private var lastPose: HandPose? = null
     private var lastRatio = Float.NaN
 
@@ -259,7 +290,15 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
         endScroll(pendingEvents)
         phase = PinchPhase.IDLE
         pinch.reset()
+        stablePinched = false
+        pinchFrames = 0
         paused = value
+    }
+
+    /** Measures the tremor of a still hand over [frames] frames and reports [GestureEvent.AutoTuned]. */
+    fun startAutoTune(frames: Int = 60) {
+        tuneTarget = frames
+        tuneSamples.clear()
     }
 
     /**
@@ -287,6 +326,7 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
 
     fun process(frame: HandFrame): EngineOutput {
         val t = frame.timestampMs
+        nowMs = t
         val events = ArrayList<GestureEvent>(pendingEvents)
         pendingEvents.clear()
         holdKind = null
@@ -332,16 +372,40 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
 
         val ratio = g.pinchRatio
         lastRatio = ratio
+        if (tuneTarget > 0 && phase == PinchPhase.IDLE && isPointing(pose)) {
+            tuneSamples += Point2(smoothX, smoothY)
+            if (tuneSamples.size >= tuneTarget) {
+                val cx = tuneSamples.map { it.x }.average().toFloat()
+                val cy = tuneSamples.map { it.y }.average().toFloat()
+                val rms = sqrt(tuneSamples.map { (it.x - cx) * (it.x - cx) + (it.y - cy) * (it.y - cy) }.average()).toFloat()
+                events += GestureEvent.AutoTuned((rms * 2.5f).coerceIn(3f, 20f))
+                tuneTarget = 0
+                tuneSamples.clear()
+            }
+        }
         if (paused) {
             frozen = true
             syncPointer()
-            if (pose == HandPose.FIST && !config.clickOnly) handleFist(t, events)
+            if (pose == HandPose.FIST && !config.clickOnly) handleFist(lm, g, t, events)
             return output(t, true, pose, ratio, events)
         }
 
-        val wasPinched = pinch.isPinched
+        // Sticky drag: while dragging, the fingers may open wider before the drag ends.
+        val exitFactor = if (phase == PinchPhase.DRAGGING) config.dragExitFactor else config.pinchExitFactor
+        pinch.setThresholds(config.pinchEnter, config.pinchEnter * max(exitFactor, 1.05f))
         // A fist also brings thumb and index together: only allow a new pinch with the index out.
-        val pinched = pinch.update(if (wasPinched || g.indexAwayFromPalm) ratio else Float.POSITIVE_INFINITY)
+        val raw = pinch.update(if (pinch.isPinched || g.indexAwayFromPalm) ratio else Float.POSITIVE_INFINITY)
+        // Debounce: a change must last a few frames (no clicks from one noisy frame).
+        val wasPinched = stablePinched
+        if (raw != stablePinched) {
+            if (++pinchFrames >= max(1, config.pinchConfirmFrames)) {
+                stablePinched = raw
+                pinchFrames = 0
+            }
+        } else {
+            pinchFrames = 0
+        }
+        val pinched = stablePinched
         when {
             pinched && !wasPinched -> onPinchStart(t, events)
             !pinched && wasPinched -> onPinchEnd(t, events)
@@ -350,6 +414,7 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
 
         if (phase == PinchPhase.IDLE && config.clickOnly) {
             follow(t)
+            handleDwell(t, events)
         } else if (phase == PinchPhase.IDLE) {
             val twoFingers = config.enableScroll && pose == HandPose.TWO_FINGERS
             if (twoFingers && (scrollActive || t - twoFingersSinceMs >= config.scrollEnterMs)) {
@@ -371,14 +436,18 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
             } else {
                 when (pose) {
                     HandPose.OPEN_PALM -> handlePalm(lm, g, t, events)
-                    HandPose.FIST -> handleFist(t, events)
+                    HandPose.FIST -> handleFist(lm, g, t, events)
                     else -> Unit
                 }
                 // The raw pose freezes the cursor at once, before the debounced pose switches,
                 // so starting a scroll/palm/fist never drags the cursor along.
-                if (isPointing(rawPose) && isPointing(pose)) follow(t) else {
+                if (isPointing(rawPose) && isPointing(pose)) {
+                    follow(t)
+                    handleDwell(t, events)
+                } else {
                     frozen = true
                     syncPointer()
+                    dwellStartMs = -1L
                 }
             }
         } else if (phase == PinchPhase.IGNORED) {
@@ -601,8 +670,8 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
         val dragThreshold = config.dragStartFraction * min(config.screenWidth, config.screenHeight)
         when (phase) {
             PinchPhase.PRESSED -> when {
-                config.clickOnly -> Unit
                 config.enableDrag && t >= freezeUntilMs && moved > dragThreshold -> startDrag(false, events)
+                config.clickOnly -> Unit
                 config.enableLongPress && t - pinchStartMs >= config.longPressMs -> {
                     events += GestureEvent.LongPress(pinchX, pinchY)
                     phase = PinchPhase.LONG_PRESSED
@@ -642,6 +711,8 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
             pinchBlockedUntilMs = t + config.tapCooldownMs
             freezeUntilMs = t + config.pinchFreezeMs
         }
+        lastInteractionEndMs = t
+        dwellArmed = false
         phase = PinchPhase.IDLE
         syncPointer()
     }
@@ -683,6 +754,7 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
         if (!scrollActive) return
         scrollActive = false
         scrollLeftAtMs = -1L
+        lastInteractionEndMs = nowMs
         events += GestureEvent.ScrollEnd
     }
 
@@ -697,8 +769,9 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
         while (palmHistory.size > 1 && t - palmHistory.first().t > config.palmSwipeWindowMs) {
             palmHistory.removeFirst()
         }
-        if (t < cooldownUntilMs) {
+        if (t < cooldownUntilMs || t - lastInteractionEndMs < config.gestureGuardMs) {
             palmHoldAnchor = null
+            if (t - lastInteractionEndMs < config.gestureGuardMs) palmHistory.clear()
             return
         }
 
@@ -740,11 +813,46 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
         }
     }
 
+    // ---- Dwell click: hold the cursor still to click ----
+
+    private fun handleDwell(t: Long, events: MutableList<GestureEvent>) {
+        if (!config.enableDwell) return
+        val moved = hypot(cursorX - dwellAnchorX, cursorY - dwellAnchorY)
+        if (dwellStartMs < 0 || moved > config.dwellRadiusPx) {
+            if (dwellStartMs >= 0 && moved > config.dwellRadiusPx) dwellArmed = true // moved away: ready again
+            dwellAnchorX = cursorX
+            dwellAnchorY = cursorY
+            dwellStartMs = t
+            return
+        }
+        if (!dwellArmed) return
+        val progress = (t - dwellStartMs).toFloat() / config.dwellMs
+        if (progress >= 1f) {
+            events += GestureEvent.Tap(cursorX, cursorY)
+            dwellArmed = false
+            lastInteractionEndMs = t
+        } else if (progress > 0.15f) {
+            holdKind = HoldKind.DWELL
+            holdProgress = progress
+        }
+    }
+
     // ---- Fist: pause / resume ----
 
-    private fun handleFist(t: Long, events: MutableList<GestureEvent>) {
+    private fun handleFist(lm: List<Landmark>, g: HandGeometry, t: Long, events: MutableList<GestureEvent>) {
         if (!config.enableFistPause || fistConsumed) return
-        if (fistStartMs < 0) fistStartMs = t
+        if (t - lastInteractionEndMs < config.gestureGuardMs) {
+            fistStartMs = -1L
+            return
+        }
+        // The fist has to be held still: a hand that moves (e.g. while dragging) never pauses.
+        val c = lm[HandIdx.MIDDLE_MCP]
+        val p = Point2(mapper.userX(c.x) * g.aspect / g.handSize, c.y / g.handSize)
+        val anchor = fistAnchor
+        if (fistStartMs < 0 || anchor == null || hypot(p.x - anchor.x, p.y - anchor.y) > config.fistStillTolerance) {
+            fistStartMs = t
+            fistAnchor = p
+        }
         val progress = (t - fistStartMs).toFloat() / config.fistHoldMs
         if (progress >= 1f) {
             paused = !paused
@@ -765,6 +873,7 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
         palmConsumed = false
         fistStartMs = -1L
         fistConsumed = false
+        fistAnchor = null
         if (pose == HandPose.TWO_FINGERS && !scrollActive) {
             // Scroll speed is measured from where the two fingers first appeared.
             twoFingersSinceMs = t
@@ -778,6 +887,10 @@ class GestureEngine(config: GestureConfig = GestureConfig()) {
         phase = PinchPhase.IDLE
         handPresent = false
         pinch.reset()
+        stablePinched = false
+        pinchFrames = 0
+        dwellStartMs = -1L
+        dwellArmed = true
         poses.reset()
         history.clear()
         palmHistory.clear()

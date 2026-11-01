@@ -44,12 +44,18 @@ import com.aircursor.data.AppSettings
 import com.aircursor.data.BoolSetting
 import com.aircursor.data.FloatSetting
 import com.aircursor.data.Prefs
+import com.aircursor.pro.ProAccess
 import com.aircursor.service.HandTrackingService
 import com.aircursor.service.Permissions
 import com.aircursor.service.TrackingBus
 
 @Composable
-fun HomeScreen(onOpenSetup: () -> Unit, onOpenPreview: () -> Unit, onOpenSecurity: () -> Unit) {
+fun HomeScreen(
+    onOpenSetup: () -> Unit,
+    onOpenPreview: () -> Unit,
+    onOpenSecurity: () -> Unit,
+    onOpenPro: () -> Unit,
+) {
     val context = LocalContext.current
     val prefs = remember { Prefs(context) }
     val status by TrackingBus.status.collectAsStateWithLifecycle()
@@ -59,6 +65,10 @@ fun HomeScreen(onOpenSetup: () -> Unit, onOpenPreview: () -> Unit, onOpenSecurit
     val a11yOk = remember(tick, status.accessibilityConnected) { Permissions.accessibility(context) }
     val batteryOk = remember(tick) { Permissions.batteryUnrestricted(context) }
     var settingsVersion by remember { mutableIntStateOf(0) }
+    // Live Pro plan settings (price, on/off) – quietly, in the background.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { ProAccess.refresh(context) }
+    }
 
     Surface(Modifier.fillMaxSize()) {
         Column(
@@ -98,7 +108,7 @@ fun HomeScreen(onOpenSetup: () -> Unit, onOpenPreview: () -> Unit, onOpenSecurit
                                 "Hand detected · %.0f fps tracking".format(status.fps)
                             !on -> "Tap the switch to start"
                             status.screenOff -> "Waiting for unlock"
-                            status.paused -> "Paused – make a fist 1.5s to resume"
+                            status.paused -> "Paused – tap Resume (or hold a still fist 2 s)"
                             !status.accessibilityConnected -> "Accessibility service is off!"
                             status.handPresent -> "Hand detected · %.0f fps".format(status.fps)
                             else -> "Show your hand to the front camera"
@@ -142,6 +152,15 @@ fun HomeScreen(onOpenSetup: () -> Unit, onOpenPreview: () -> Unit, onOpenSecurit
                 ) { Text("Recalibrate") }
             }
             Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                enabled = on,
+                onClick = {
+                    HandTrackingService.send(context, HandTrackingService.ACTION_AUTOTUNE)
+                    Toast.makeText(context, "Ungli camera ke saamne 2 second bilkul still rakho", Toast.LENGTH_LONG).show()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("🎯 Auto-tune anti-shake (2 s)") }
+            Spacer(Modifier.height(8.dp))
             Button(onClick = onOpenPreview, modifier = Modifier.fillMaxWidth()) { Text("Test: live camera preview") }
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = onOpenSecurity, modifier = Modifier.fillMaxWidth()) {
@@ -156,11 +175,21 @@ fun HomeScreen(onOpenSetup: () -> Unit, onOpenPreview: () -> Unit, onOpenSecurit
             }
 
             Spacer(Modifier.height(12.dp))
-            UbuntuCard()
+            UpdateCard()
+
+            Spacer(Modifier.height(12.dp))
+            UbuntuCard(onNeedPro = onOpenPro)
+
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = onOpenPro, modifier = Modifier.fillMaxWidth()) {
+                Text("⭐ Cloud PC Pro – plan & license")
+            }
 
             Spacer(Modifier.height(12.dp))
             Button(
-                onClick = { com.aircursor.pc.PcMode.openDesktop(context) },
+                onClick = {
+                    if (ProAccess.allowed(context)) com.aircursor.pc.PcMode.openDesktop(context) else onOpenPro()
+                },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
             ) { Text("🖥️  Open PC Mode", style = MaterialTheme.typography.titleMedium) }
             Text(
@@ -192,7 +221,7 @@ fun HomeScreen(onOpenSetup: () -> Unit, onOpenPreview: () -> Unit, onOpenSecurit
             }
 
             // Settings (re-created when reset so sliders reload their values)
-            androidx.compose.runtime.key(settingsVersion) {
+            androidx.compose.runtime.key(settingsVersion, tick) {
                 Spacer(Modifier.height(16.dp))
                 SectionTitle("Gestures on/off")
                 AppSettings.GESTURES.forEach { BoolRow(prefs, it) }
@@ -227,7 +256,8 @@ fun HomeScreen(onOpenSetup: () -> Unit, onOpenPreview: () -> Unit, onOpenSecurit
 
             Spacer(Modifier.height(16.dp))
             Text(
-                "All processing happens on this phone. Nothing is sent to the internet.",
+                "Hand tracking runs only on this phone: camera images never leave it. " +
+                    "Internet is used only to check for updates and Pro plan info.",
                 style = MaterialTheme.typography.bodySmall,
             )
             Spacer(Modifier.height(24.dp))
@@ -238,6 +268,7 @@ fun HomeScreen(onOpenSetup: () -> Unit, onOpenPreview: () -> Unit, onOpenSecurit
 private val GESTURE_HELP = listOf(
     "☝️ Move index finger" to "Move cursor",
     "🤏 Quick pinch" to "Tap",
+    "☝️ Hold still 1.2s (Dwell on)" to "Tap without pinch",
     "🤏 Pinch & hold 0.5s" to "Long press",
     "🤏 Pinch & move" to "Drag",
     "✌️ Two fingers up/down" to "Scroll",
@@ -246,7 +277,7 @@ private val GESTURE_HELP = listOf(
     "✋ Palm hold still 1s" to "Home",
     "✋ Palm swipe down" to "Notifications",
     "✋ Palm swipe up" to "Recent apps",
-    "✊ Fist hold 1.5s" to "Pause / Resume",
+    "✊ Still fist 2s (if on)" to "Pause / Resume",
 )
 
 @Composable

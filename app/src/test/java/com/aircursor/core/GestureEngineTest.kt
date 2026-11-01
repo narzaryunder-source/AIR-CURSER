@@ -40,6 +40,15 @@ class GestureEngineTest {
             return this
         }
 
+        fun feedLandmarks(lms: List<Landmark>?, frames: Int = 1): Driver {
+            repeat(frames) {
+                last = engine.process(HandFrame(t, lms))
+                events += last.events
+                t += 33
+            }
+            return this
+        }
+
         inline fun <reified T : GestureEvent> count() = events.count { it is T }
     }
 
@@ -62,8 +71,8 @@ class GestureEngineTest {
         val d = Driver(GestureEngine(baseConfig))
         d.feed(Shape.POINT, frames = 10)
         val before = d.last
-        // Pinch and jerk the hand a little in the same frame: cursor must stay put.
-        d.feed(Shape.PINCH, cx = 0.52f)
+        // Pinch (confirmed on the 2nd frame) and jerk the hand a little: cursor must stay put.
+        d.feed(Shape.PINCH).feed(Shape.PINCH, cx = 0.52f)
         assertEquals(before.x, d.last.x, 0.5f)
         assertEquals(before.y, d.last.y, 0.5f)
         assertEquals(CursorMode.PRESSING, d.last.mode)
@@ -125,7 +134,7 @@ class GestureEngineTest {
         d.feed(Shape.POINT, frames = 5).feed(Shape.FIST, frames = 20)
         assertEquals(HoldKind.FIST, d.last.holdKind)
         assertTrue(d.last.holdProgress > 0.2f)
-        d.feed(Shape.FIST, frames = 40)
+        d.feed(Shape.FIST, frames = 50)
         assertEquals(listOf(GestureEvent.PauseChanged(true)), d.events.filterIsInstance<GestureEvent.PauseChanged>())
         assertTrue(d.engine.paused)
         assertEquals(CursorMode.PAUSED, d.last.mode)
@@ -135,7 +144,7 @@ class GestureEngineTest {
         assertEquals(0, d.count<GestureEvent.Tap>())
 
         // Fist again resumes.
-        d.feed(Shape.FIST, frames = 60)
+        d.feed(Shape.FIST, frames = 80)
         assertFalse(d.engine.paused)
         assertEquals(2, d.count<GestureEvent.PauseChanged>())
     }
@@ -324,6 +333,107 @@ class GestureEngineTest {
         assertEquals(HandPose.POINT, PoseClassifier.classify(HandGeometry(hand)))
     }
 
+    // ---- Cursor v5: debounce, sticky drag, gesture guard, dwell, auto-tune ----
+
+    /** A pinch whose thumb-index gap is [gap] hand sizes (0.07 = closed, 1.2 = open). */
+    private fun pinchWithGap(gap: Float, cx: Float = 0.5f, cy: Float = 0.7f, size: Float = 0.15f): List<Landmark> {
+        val h = FakeHand.build(Shape.PINCH, cx, cy, size).toMutableList()
+        val tip = h[HandIdx.INDEX_TIP]
+        val o = gap * size / kotlin.math.sqrt(2f)
+        h[HandIdx.THUMB_TIP] = Landmark(tip.x + o, tip.y + o)
+        return h
+    }
+
+    @Test
+    fun singleNoisyPinchFrameDoesNotClick() {
+        val d = Driver(GestureEngine(baseConfig))
+        d.feed(Shape.POINT, frames = 10).feed(Shape.PINCH, frames = 1).feed(Shape.POINT, frames = 6)
+        assertEquals(0, d.count<GestureEvent.Tap>())
+    }
+
+    @Test
+    fun dragSurvivesFingersOpeningABit() {
+        val d = Driver(GestureEngine(baseConfig))
+        d.feed(Shape.POINT, frames = 10).feed(Shape.PINCH, frames = 5)
+        var x = 0.5f
+        repeat(6) {
+            x += 0.02f
+            d.feed(Shape.PINCH, cx = x)
+        }
+        assertEquals(CursorMode.DRAGGING, d.last.mode)
+        // Fingers open to 0.48 hand sizes (more than a normal release) while still moving.
+        repeat(4) {
+            x += 0.01f
+            d.feedLandmarks(pinchWithGap(0.48f, cx = x))
+        }
+        assertEquals(CursorMode.DRAGGING, d.last.mode)
+        assertEquals(0, d.count<GestureEvent.DragEnd>())
+        d.feed(Shape.POINT, cx = x, frames = 2)
+        assertEquals(1, d.count<GestureEvent.DragEnd>())
+    }
+
+    @Test
+    fun noPauseProgressRightAfterDrag() {
+        val d = Driver(GestureEngine(baseConfig.copy(enableFistPause = true)))
+        d.feed(Shape.POINT, frames = 10).feed(Shape.PINCH, frames = 5)
+        var x = 0.5f
+        repeat(6) {
+            x += 0.02f
+            d.feed(Shape.PINCH, cx = x)
+        }
+        d.feed(Shape.POINT, cx = x, frames = 2)
+        assertEquals(1, d.count<GestureEvent.DragEnd>())
+        // Closing the hand right after the drag must not start the pause ring.
+        repeat(18) {
+            d.feed(Shape.FIST, cx = x)
+            assertTrue(d.last.holdKind != HoldKind.FIST)
+        }
+        assertEquals(0, d.count<GestureEvent.PauseChanged>())
+    }
+
+    @Test
+    fun movingFistNeverPauses() {
+        val d = Driver(GestureEngine(baseConfig.copy(enableFistPause = true)))
+        d.feed(Shape.POINT, frames = 5)
+        var x = 0.3f
+        repeat(120) {
+            x += 0.004f
+            d.feed(Shape.FIST, cx = x)
+        }
+        assertEquals(0, d.count<GestureEvent.PauseChanged>())
+    }
+
+    @Test
+    fun dwellClickFiresOnceThenNeedsAMove() {
+        val d = Driver(GestureEngine(baseConfig.copy(enableDwell = true)))
+        d.feed(Shape.POINT, frames = 45)
+        assertEquals(1, d.count<GestureEvent.Tap>())
+        d.feed(Shape.POINT, frames = 45)
+        assertEquals(1, d.count<GestureEvent.Tap>())
+        d.feed(Shape.POINT, cx = 0.56f, frames = 3).feed(Shape.POINT, cx = 0.56f, frames = 45)
+        assertEquals(2, d.count<GestureEvent.Tap>())
+    }
+
+    @Test
+    fun dwellIsOffByDefault() {
+        val d = Driver(GestureEngine(baseConfig))
+        d.feed(Shape.POINT, frames = 90)
+        assertEquals(0, d.count<GestureEvent.Tap>())
+    }
+
+    @Test
+    fun autoTuneReportsAnAntiShakeRadius() {
+        val rnd = java.util.Random(11)
+        val engine = GestureEngine(mouseConfig)
+        val d = Driver(engine)
+        d.feed(Shape.POINT, frames = 5)
+        engine.startAutoTune(40)
+        d.feed(Shape.POINT, frames = 60, noise = { (rnd.nextFloat() - 0.5f) * 0.002f })
+        val tuned = d.events.filterIsInstance<GestureEvent.AutoTuned>()
+        assertEquals(1, tuned.size)
+        assertTrue(tuned[0].deadZonePx in 3f..20f)
+    }
+
     // ---- Simple (click-only) mode ----
 
     @Test
@@ -347,6 +457,23 @@ class GestureEngineTest {
         assertEquals(0, d.count<GestureEvent.Home>())
         assertEquals(0, d.count<GestureEvent.PauseChanged>())
         assertEquals(0, d.count<GestureEvent.ScrollVelocity>())
+    }
+
+    @Test
+    fun simpleModeCanDragButNeverPauses() {
+        val d = Driver(GestureEngine(mouseConfig.copy(clickOnly = true, enableFistPause = true)))
+        d.feed(Shape.POINT, frames = 10).feed(Shape.PINCH, frames = 6)
+        var x = 0.5f
+        repeat(10) {
+            x += 0.01f
+            d.feed(Shape.PINCH, cx = x)
+        }
+        assertEquals(CursorMode.DRAGGING, d.last.mode)
+        d.feed(Shape.POINT, cx = x, frames = 3).feed(Shape.FIST, cx = x, frames = 120)
+        assertEquals(1, d.count<GestureEvent.DragStart>())
+        assertEquals(1, d.count<GestureEvent.DragEnd>())
+        assertEquals(0, d.count<GestureEvent.Tap>())
+        assertEquals(0, d.count<GestureEvent.PauseChanged>())
     }
 
     // ---- Mouse (relative) mode ----
