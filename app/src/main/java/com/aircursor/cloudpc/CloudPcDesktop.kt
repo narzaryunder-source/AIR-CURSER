@@ -14,7 +14,13 @@ object CloudPcDesktop {
 
     fun isInstalled(c: Context): Boolean {
         val r = CloudPcEngine.rootfs(c)
-        return File(r, MARK_DESKTOP).exists() && File(r, "usr/bin/Xvnc").exists()
+        // Ubuntu's /usr/bin/Xvnc is a link to /etc/alternatives/… – an absolute path that only makes
+        // sense inside Ubuntu, so look at the files themselves and never follow links from Android.
+        val bin = java.nio.file.Paths.get(r.absolutePath, "usr/bin")
+        val nofollow = java.nio.file.LinkOption.NOFOLLOW_LINKS
+        return File(r, MARK_DESKTOP).exists() &&
+            (java.nio.file.Files.exists(bin.resolve("Xtigervnc"), nofollow) ||
+                java.nio.file.Files.exists(bin.resolve("Xvnc"), nofollow))
     }
 
     /** Where the VNC socket appears on the Android side. */
