@@ -126,7 +126,13 @@ Home screen → **"🔒 Security"**:
 - **PIN bhool gaye?** Lock screen par "Forgot PIN" → phone ka fingerprint / screen lock → PIN hat jayega, naya bana lo.
 - ⚠️ Haath ki pehchaan haddiyon ke proportion se hoti hai – fingerprint jitni pakki nahi. Bilkul milta-julta haath pass ho sakta hai. Sab data sirf phone me rehta hai.
 
-### ☁️ Cloud PC (Ubuntu desktop, ek tap)
+### ☁️ Cloud PC built-in (BETA – Termux nahi chahiye)
+- Home screen → **"☁️ Cloud PC built-in"** → **Install** (Wi-Fi par, ~30 MB download + setup 2–5 min).
+- Ubuntu 24.04 LTS AirCursor ke andar hi chalta hai (proot engine APK me hai). Har phone ka apna alag Cloud PC – files kisi se mix nahi hoti.
+- Abhi: install, **Info**, **Update**, command chalao (jaise `apt-get install -y htop`). Desktop screen agle update me.
+- **Hatao** button sirf Cloud PC ki apni files hatata hai – phone ki photos/files ko kabhi nahi chhuta.
+
+### ☁️ Cloud PC (Termux wala, ek tap)
 - Phone ki home screen par **"Cloud PC"** icon, notification shade me **"Cloud PC" tile**, ya app me Cloud PC card → **▶ Start**.
 - Kuch kharab ho / update chahiye → app me **🛠 Repair / Update** – background me chalta hai, **Termux me kuch type nahi karna** (Termux session limit ka jhanjhat khatam).
 - Cloud PC aapke phone par hi chalta hai (Termux + Ubuntu). Files phone me rehti hain.

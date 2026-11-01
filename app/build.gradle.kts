@@ -62,6 +62,14 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            // The Cloud PC engine (proot) must exist as real files in the native library folder:
+            // that is the only place Android 10+ lets an app start programs from.
+            useLegacyPackaging = true
+            keepDebugSymbols += setOf(
+                "**/libproot.so", "**/libproot-loader.so", "**/libtalloc.so", "**/libandroid-shmem.so",
+            )
+        }
     }
 
     testOptions {

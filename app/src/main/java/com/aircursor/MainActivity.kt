@@ -18,6 +18,7 @@ import com.aircursor.data.AppLock
 import com.aircursor.data.Security
 import com.aircursor.service.Permissions
 import com.aircursor.ui.AirCursorTheme
+import com.aircursor.ui.CloudPcScreen
 import com.aircursor.ui.HomeScreen
 import com.aircursor.ui.LockScreen
 import com.aircursor.ui.OnboardingScreen
@@ -69,11 +70,13 @@ class MainActivity : ComponentActivity() {
                         "preview" -> PreviewScreen(onBack = { screen = "home" })
                         "security" -> SecurityScreen(onBack = { screen = "home" })
                         "pro" -> ProScreen(onBack = { screen = "home" })
+                        "cloudpc" -> CloudPcScreen(onBack = { screen = "home" })
                         else -> HomeScreen(
                             onOpenSetup = { screen = "setup" },
                             onOpenPreview = { screen = "preview" },
                             onOpenSecurity = { screen = "security" },
                             onOpenPro = { screen = "pro" },
+                            onOpenCloudPc = { screen = "cloudpc" },
                         )
                     }
                 }

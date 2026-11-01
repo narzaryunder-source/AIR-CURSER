@@ -55,6 +55,7 @@ fun HomeScreen(
     onOpenPreview: () -> Unit,
     onOpenSecurity: () -> Unit,
     onOpenPro: () -> Unit,
+    onOpenCloudPc: () -> Unit,
 ) {
     val context = LocalContext.current
     val prefs = remember { Prefs(context) }
@@ -176,6 +177,11 @@ fun HomeScreen(
 
             Spacer(Modifier.height(12.dp))
             UpdateCard()
+
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = onOpenCloudPc, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                Text("☁️  Cloud PC built-in (BETA, Termux nahi chahiye)")
+            }
 
             Spacer(Modifier.height(12.dp))
             UbuntuCard(onNeedPro = onOpenPro)
