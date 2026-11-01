@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 10
+    const val VERSION = 9
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -100,20 +100,6 @@ object CloudPcTools {
             put("$LIB/phone-browser/$name", "#!/bin/sh\nexec cloudpc-open-on-phone \"\$@\"\n", exec = true)
         }
         put("usr/local/bin/cloudpc-claude", CLAUDE, exec = true)
-        // The phone's own apps: Start menu group "Phone apps" (entries are written by the app).
-        put("usr/local/bin/cloudpc-phone-app", PHONE_APP, exec = true)
-        put(
-            "etc/xdg/menus/applications-merged/aircursor-phone-apps.menu",
-            "<!DOCTYPE Menu PUBLIC \"-//freedesktop//DTD Menu 1.0//EN\"\n" +
-                " \"http://www.freedesktop.org/standards/menu-spec/menu-1.0.dtd\">\n" +
-                "<Menu>\n  <Name>Xfce</Name>\n  <Menu>\n    <Name>Phone apps</Name>\n" +
-                "    <Directory>aircursor-phone-apps.directory</Directory>\n" +
-                "    <Include><Category>X-AirCursor-Phone</Category></Include>\n  </Menu>\n</Menu>\n",
-        )
-        put(
-            "usr/share/desktop-directories/aircursor-phone-apps.directory",
-            "[Desktop Entry]\nType=Directory\nName=Phone apps\nComment=Your phone's apps at full phone speed\nIcon=phone\n",
-        )
         // apt waits for a running background update instead of failing with "could not get lock".
         put("etc/apt/apt.conf.d/02-cloudpc-lock", "DPkg::Lock::Timeout \"600\";\n")
 
@@ -332,16 +318,6 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         echo "  The page opens in your phone's browser. Sign in there, then come back here."
         echo "  (Link: ${'$'}URL)"
         echo ""
-        exit 0
-    """.trimIndent() + "\n"
-
-    /** Opens one of the phone's own apps (the AirCursor app starts it natively). */
-    private val PHONE_APP = """
-        #!/bin/sh
-        PKG="${'$'}1"
-        case "${'$'}PKG" in ""|*[!A-Za-z0-9._]*) exit 1 ;; esac
-        . /tmp/cloudpc-session.env 2>/dev/null
-        printf '%s' "aircursor-app:${'$'}PKG" | timeout 15 xclip -quiet -selection clipboard >/dev/null 2>&1 &
         exit 0
     """.trimIndent() + "\n"
 

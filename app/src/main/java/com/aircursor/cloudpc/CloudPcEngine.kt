@@ -138,11 +138,7 @@ object CloudPcEngine {
     }
 
     /** Writes a file inside Ubuntu; a symlink at that place is replaced, never followed. */
-    fun writeGuestFile(root: java.nio.file.Path, rel: String, text: String, executable: Boolean = false) =
-        writeGuestBytes(root, rel, text.toByteArray(), executable)
-
-    /** Same as [writeGuestFile] for binary files (icons). */
-    fun writeGuestBytes(root: java.nio.file.Path, rel: String, bytes: ByteArray, executable: Boolean = false) {
+    fun writeGuestFile(root: java.nio.file.Path, rel: String, text: String, executable: Boolean = false) {
         val target = root.resolve(rel)
         var cur = root
         for (part in rel.split('/').dropLast(1)) {
@@ -151,7 +147,7 @@ object CloudPcEngine {
             if (!Files.exists(cur, LinkOption.NOFOLLOW_LINKS)) Files.createDirectory(cur)
         }
         Files.deleteIfExists(target)
-        Files.write(target, bytes)
+        Files.write(target, text.toByteArray())
         if (executable) target.toFile().setExecutable(true, false)
     }
 
