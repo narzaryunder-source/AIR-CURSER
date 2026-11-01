@@ -240,6 +240,13 @@ class CloudPcService : Service() {
                 }
                 CloudPcEngine.writeGuestFile(CloudPcEngine.rootfs(this).toPath(), "etc/cloudpc/child-limit", "$limit\n")
                 AirBoost.writeGameConfig(this)
+                // The phone's own apps in the PC's Start menu (they run natively, at full phone speed).
+                try {
+                    val n = PhoneApps.export(this)
+                    CloudPcBus.line("==> Phone apps in the Start menu: $n", force = true)
+                } catch (e: Exception) {
+                    Log.w(TAG, "phone apps", e)
+                }
                 if (CloudPcTools.needsSetup(this)) {
                     CloudPcBus.line("==> Updating desktop tools (App Store, layout, AI apps)…", force = true)
                     CloudPcEngine.run(this, CloudPcTools.PACKAGES_SCRIPT, onProcess = { desktop = it }) { CloudPcBus.line(it) }

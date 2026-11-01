@@ -200,6 +200,10 @@ class CloudPcDesktopActivity : ComponentActivity() {
         v.onDesktopClipboard = { text ->
             if (text.startsWith(OPEN_ON_PHONE)) {
                 openOnPhone(text.removePrefix(OPEN_ON_PHONE).trim())
+            } else if (text.startsWith(PhoneApps.MARKER)) {
+                if (!PhoneApps.open(this, text.removePrefix(PhoneApps.MARKER).trim())) {
+                    Toast.makeText(this, "This phone app could not be opened", Toast.LENGTH_SHORT).show()
+                }
             } else {
                 getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("AirCursor PC", text))
                 Toast.makeText(this, "Copied to phone", Toast.LENGTH_SHORT).show()

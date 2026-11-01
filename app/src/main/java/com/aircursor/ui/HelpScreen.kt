@@ -62,6 +62,7 @@ private val TOPICS = listOf(
             "Tap = click, press and hold = right click, two fingers = scroll.",
             "The button on the right edge opens the toolbar: keyboard, hand control, paste, files, wallpaper, boost and FPS.",
             "One tap opens a desktop icon. Tap Getting Started on the desktop for a full guide.",
+            "Start → Phone apps (or the Phone Apps folder) opens your phone's own apps at full phone speed and FPS.",
             "A Bluetooth or USB keyboard and mouse work like on a PC (shortcuts, right click, scroll wheel).",
         ),
     ),
