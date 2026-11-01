@@ -191,7 +191,7 @@ fun CloudPcScreen(onBack: () -> Unit, onNeedPro: () -> Unit = {}) {
                     for (b in AirBoost.entries) {
                         SegmentOption(b.label, b == boost) {
                             boost = b
-                            AirBoost.set(context, b)
+                            AirBoost.applyNow(context, b)
                         }
                     }
                 }
@@ -199,7 +199,7 @@ fun CloudPcScreen(onBack: () -> Unit, onNeedPro: () -> Unit = {}) {
                 Text(boost.about, style = MaterialTheme.typography.bodyMedium)
                 Text(
                     "AirBoost draws the desktop with fewer pixels and sharpens it on the phone – more FPS, still clear. " +
-                        "A new profile applies the next time the desktop starts.",
+                        "A new profile applies at once, even while the desktop is open.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

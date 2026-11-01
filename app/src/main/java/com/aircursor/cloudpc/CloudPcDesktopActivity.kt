@@ -142,7 +142,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         tools.addView(iconButton(R.drawable.ic_ui_image, "Wallpaper") {
             pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
         })
-        tools.addView(iconButton(R.drawable.ic_ui_bolt, "Boost") { boostNow() })
+        tools.addView(iconButton(R.drawable.ic_ui_bolt, "AirBoost") { boostMenu() })
         fpsButton = iconButton(R.drawable.ic_ui_speed, "FPS meter") {
             v.showFps = !v.showFps
             prefs.edit().putBoolean(KEY_FPS, v.showFps).apply()
@@ -279,6 +279,27 @@ class CloudPcDesktopActivity : ComponentActivity() {
         }.start()
     }
 
+    /** AirBoost profiles, applied live (desktop size + sharpening + light mode), plus "Boost now". */
+    private fun boostMenu() {
+        val profiles = AirBoost.entries
+        val now = AirBoost.current(this)
+        val labels = profiles.map { "${it.label} – ${it.about}" }.toTypedArray() + "Boost now – stop background jobs, free memory"
+        AlertDialog.Builder(this)
+            .setTitle("AirBoost (now: ${now.label})")
+            .setItems(labels) { _, i ->
+                if (i >= profiles.size) {
+                    boostNow()
+                    return@setItems
+                }
+                val b = profiles[i]
+                AirBoost.applyNow(this, b)
+                view?.sharpness = b.sharpen
+                Toast.makeText(this, "AirBoost: ${b.label}", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
     /** AirBoost now: stop background jobs inside the desktop and free memory. */
     private fun boostNow() {
         CloudPcService.send(this, CloudPcService.ACTION_RUN, CloudPcDesktop.inSession("cloudpc-light 0; free -h | head -n 2"))
@@ -408,6 +429,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         DesktopInput.target = view
+        view?.sharpness = AirBoost.current(this).sharpen
         updateButtons()
     }
 

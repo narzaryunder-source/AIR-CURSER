@@ -69,6 +69,8 @@ private val TOPICS = listOf(
         steps = listOf(
             "Open App Store on the desktop.",
             "Tick apps such as LibreOffice, GIMP, VLC or VS Code and tap Install.",
+            "The Status column shows which apps are already installed.",
+            "New apps appear on the desktop and in Start menu Favourites. Games go into the Games folder.",
             "Search 60,000+ more apps with the search button.",
             "Website downloads: choose the ARM64 .deb file and double-tap it.",
             "Windows .exe programs do not run – use the Linux version from the App Store.",
@@ -101,8 +103,9 @@ private val TOPICS = listOf(
             "Quality" to "Sharpest text on fast phones",
         ),
         steps = listOf(
-            "Choose the profile in AirCursor → AirCursor PC → AirBoost.",
-            "Toolbar → Boost stops background jobs at once. Toolbar → FPS shows the frame rate.",
+            "Change the profile any time, it applies at once: desktop toolbar → AirBoost, or AirCursor PC → AirBoost.",
+            "AirBoost → Boost now stops background jobs. Toolbar → FPS shows the frame rate.",
+            "Open Benchmark on the desktop to measure graphics FPS and compare profiles.",
         ),
     ),
     Topic(
@@ -110,6 +113,8 @@ private val TOPICS = listOf(
         steps = listOf(
             "Hand tracking runs only on this phone. Camera images are never saved or sent.",
             "AirCursor PC and its files live inside the AirCursor app on this phone.",
+            "Android keeps AirCursor PC in its own sandbox: it cannot reach your other apps, photos or messages.",
+            "Firefox in the PC uses HTTPS only, blocks trackers and updates itself for security.",
             "App updates keep everything. Signing out keeps everything.",
             "Uninstalling AirCursor deletes AirCursor PC – save important files to your phone first.",
         ),
@@ -121,7 +126,8 @@ private val TOPICS = listOf(
             "Clicks are hard" to "Turn on Dwell click in Settings",
             "Pointer moves the wrong way" to "Settings → Swap left / right",
             "Desktop black or frozen" to "Toolbar → Close → Stop the desktop, then open it again",
-            "Desktop slow" to "Choose Game or Performance in AirBoost",
+            "Desktop slow" to "Toolbar → AirBoost → Game",
+            "New app not on the desktop" to "Start menu → All apps or search its name",
             "Taskbar missing" to "Terminal: aircursor-windows-layout --force",
         ),
     ),

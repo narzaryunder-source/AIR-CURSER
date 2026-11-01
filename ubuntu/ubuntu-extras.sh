@@ -111,19 +111,20 @@ install_each() {
 }
 
 install_games_light() {
-    echo "Installing light offline games (2D, smooth on phones)..."
-    install_each supertux frozen-bubble pingus openttd openttd-opengfx \
+    echo "Installing games that run smoothly on phones (2D, offline)..."
+    install_each supertux frozen-bubble pingus xmoto 2048-qt openttd openttd-opengfx \
         aisleriot gnome-mines gnome-sudoku gnome-chess stockfish quadrapassel
-    ok "Games: Applications -> Games. (SuperTux = Mario jaisa, OpenTTD = train/transport tycoon,"
-    ok "Frozen Bubble, Pingus, Solitaire, Mines, Sudoku, Chess, Quadrapassel = Tetris)"
+    ok "Games: Desktop → Games folder, or Start → Games."
+    ok "SuperTux (platformer), Frozen Bubble, Pingus, X-Moto (bike), 2048, OpenTTD (transport tycoon),"
+    ok "Solitaire, Mines, Sudoku, Chess, Quadrapassel (falling blocks)."
 }
 
 install_games_3d() {
-    echo "Installing 3D games (heavier – start the desktop with: ubuntu-desktop --gpu)..."
-    install_each supertuxkart
-    apt-get install -y --no-install-recommends luanti >/dev/null 2>&1 && ok "  + luanti (Minecraft jaisa)" \
+    echo "Installing 3D games (use the Game profile in AirBoost for the best FPS)..."
+    install_each supertuxkart neverball extremetuxracer
+    apt-get install -y --no-install-recommends luanti >/dev/null 2>&1 && ok "  + luanti (block building)" \
         || install_each minetest
-    ok "3D games: Applications -> Games. Settings me graphics LOW rakho. SuperTuxKart data bada hai (~600 MB)."
+    ok "3D games: Desktop → Games folder. Set graphics to LOW inside each game."
 }
 
 install_apt() {

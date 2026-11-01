@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 4
+    const val VERSION = 5
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf("app-store.sh", "ubuntu-extras.sh", "install-deb.sh", "windows-layout.sh", "wallpaper-gui.sh")
@@ -22,7 +22,7 @@ object CloudPcTools {
     const val PACKAGES_SCRIPT =
         "apt-get install -y --no-install-recommends zenity wget xdg-utils libnotify-bin >/dev/null 2>&1 || " +
             "(apt-get update >/dev/null 2>&1 && apt-get install -y --no-install-recommends zenity wget xdg-utils libnotify-bin) " +
-            "|| echo 'Tools packages: internet nahi mila, baad me dobara try hoga'"
+            "|| echo 'Tools packages: no internet, will retry later'"
 
     fun writeFiles(c: Context) {
         val root = CloudPcEngine.rootfs(c).toPath()
@@ -64,6 +64,11 @@ object CloudPcTools {
         put("usr/local/bin/aircursor-set-wallpaper", SET_WALLPAPER, exec = true)
         put("usr/local/bin/cloudpc-ai-offline", AI_OFFLINE, exec = true)
         put("usr/local/bin/cloudpc-light", LIGHT_MODE, exec = true)
+        put("usr/local/bin/cloudpc-resize", RESIZE, exec = true)
+        put("usr/local/bin/cloudpc-security-update", SECURITY_UPDATE, exec = true)
+        put("usr/local/bin/cloudpc-benchmark", BENCHMARK, exec = true)
+        // apt waits for a running background update instead of failing with "could not get lock".
+        put("etc/apt/apt.conf.d/02-cloudpc-lock", "DPkg::Lock::Timeout \"600\";\n")
 
         // "Getting Started" guide (opens in the browser)
         put("usr/share/aircursor/guide.html", c.assets.open("cloudpc/guide.html").bufferedReader().use { it.readText() })
@@ -77,8 +82,8 @@ object CloudPcTools {
         )
 
         // Menu entries
-        put("usr/share/applications/aircursor-store.desktop", entry("App Store", "aircursor-store", "system-software-install", "System;", "Apps install karo – tick karo aur Install"))
-        put("usr/share/applications/aircursor-wallpaper.desktop", entry("Change Wallpaper", "aircursor-wallpaper", "preferences-desktop-wallpaper", "Settings;DesktopSettings;", "Wallpaper badlo"))
+        put("usr/share/applications/aircursor-store.desktop", entry("App Store", "aircursor-store", "system-software-install", "System;", "Install apps – tick them and press Install"))
+        put("usr/share/applications/aircursor-wallpaper.desktop", entry("Change Wallpaper", "aircursor-wallpaper", "preferences-desktop-wallpaper", "Settings;DesktopSettings;", "Change the desktop picture"))
         put(
             "usr/share/applications/aircursor-install-deb.desktop",
             "[Desktop Entry]\nType=Application\nName=Install app package\nExec=aircursor-install-deb %f\n" +
@@ -94,11 +99,17 @@ object CloudPcTools {
         )
         // Firefox: fewer background processes (less RAM on a phone), no first-run pages.
         put("etc/firefox/policies/policies.json", FIREFOX_POLICIES)
+        put("usr/lib/firefox/defaults/pref/aircursor-pc.js", FIREFOX_PREFS)
+        put(
+            "usr/share/applications/cloudpc-benchmark.desktop",
+            entry("Benchmark", "cloudpc-benchmark", "utilities-system-monitor", "System;", "Test graphics speed (FPS) with your AirBoost profile"),
+        )
 
         // Desktop icons (only added once, so the user can delete them).
         val desk = "root/Desktop"
         val icons = listOf(
             "Getting-Started.desktop" to "usr/share/applications/aircursor-guide.desktop",
+            "Benchmark.desktop" to "usr/share/applications/cloudpc-benchmark.desktop",
             "App-Store.desktop" to "usr/share/applications/aircursor-store.desktop",
             "Firefox.desktop" to "usr/share/applications/firefox.desktop",
             "Terminal.desktop" to "usr/share/applications/xfce4-terminal.desktop",
@@ -185,12 +196,75 @@ object CloudPcTools {
         exit 0
     """.trimIndent() + "\n"
 
+    /** Changes the desktop size at once (live AirBoost), no restart needed. Arguments: width height. */
+    private val RESIZE = """
+        #!/bin/sh
+        W="${'$'}1"; H="${'$'}2"
+        [ -n "${'$'}W" ] && [ -n "${'$'}H" ] || exit 1
+        . /tmp/cloudpc-session.env 2>/dev/null
+        M="${'$'}{W}x${'$'}{H}"
+        xfconf-query -c displays -p /Notify --create -t int -s 0 >/dev/null 2>&1
+        OUT=${'$'}(xrandr 2>/dev/null | awk '/ (dis)?connected/ {print ${'$'}1; exit}')
+        OUT=${'$'}{OUT:-VNC-0}
+        xrandr --newmode "${'$'}M" 60 ${'$'}W ${'$'}W ${'$'}W ${'$'}W ${'$'}H ${'$'}H ${'$'}H ${'$'}H >/dev/null 2>&1
+        xrandr --addmode "${'$'}OUT" "${'$'}M" >/dev/null 2>&1
+        xrandr --output "${'$'}OUT" --mode "${'$'}M"
+        sleep 1
+        pkill -f '^xfce4-display-settings' 2>/dev/null
+        exit 0
+    """.trimIndent() + "\n"
+
+    /** Keeps Firefox (its security fixes) up to date – quietly, at most every 3 days. */
+    private val SECURITY_UPDATE = """
+        #!/bin/sh
+        STAMP=/var/lib/cloudpc/security-update
+        mkdir -p /var/lib/cloudpc
+        if [ -f "${'$'}STAMP" ] && [ ${'$'}(( ${'$'}(date +%s) - ${'$'}(stat -c %Y "${'$'}STAMP") )) -lt 259200 ]; then exit 0; fi
+        dpkg -s firefox >/dev/null 2>&1 || exit 0
+        apt-get update -qq >/dev/null 2>&1 || exit 0
+        # Never swap Firefox under a running browser; try again next start.
+        pgrep -x firefox >/dev/null 2>&1 && exit 0
+        apt-get install -y -qq --only-upgrade firefox >/dev/null 2>&1 && touch "${'$'}STAMP"
+        exit 0
+    """.trimIndent() + "\n"
+
+    /** Graphics speed test (glxgears) so people can compare AirBoost profiles. */
+    private val BENCHMARK = """
+        #!/bin/bash
+        export LANG=C.UTF-8 GSK_RENDERER=cairo NO_AT_BRIDGE=1 vblank_mode=0
+        export LP_NUM_THREADS="${'$'}{LP_NUM_THREADS:-${'$'}(nproc)}"
+        if ! command -v glxgears >/dev/null 2>&1; then
+            ( apt-get install -y --no-install-recommends mesa-utils 2>&1 | sed -u 's/^/# /' ) \
+                | zenity --progress --pulsate --auto-close --no-cancel --width=480 --title="Benchmark" --text="Preparing the test…"
+        fi
+        command -v glxgears >/dev/null 2>&1 || { zenity --error --text="The test could not be installed. Check the internet and try again."; exit 1; }
+        RES=${'$'}(xrandr 2>/dev/null | awk '/current/ {print ${'$'}8"x"${'$'}10}' | tr -d ,)
+        glxgears -geometry 640x360 > /tmp/glxgears.out 2>&1 &
+        PID=${'$'}!
+        for i in ${'$'}(seq 1 12); do echo ${'$'}((i * 100 / 12)); echo "# Measuring graphics speed… ${'$'}((12 - i)) s"; sleep 1; done \
+            | zenity --progress --auto-close --no-cancel --width=420 --title="Benchmark" --text="Measuring graphics speed…"
+        kill ${'$'}PID 2>/dev/null
+        FPS=${'$'}(grep -o '[0-9.]* FPS' /tmp/glxgears.out | tail -n 1 | cut -d' ' -f1 | cut -d. -f1)
+        zenity --info --width=440 --title="Benchmark" \
+            --text="Graphics: ${'$'}{FPS:-?} FPS\nDesktop size: ${'$'}{RES:-?}\nCPU cores drawing graphics: ${'$'}LP_NUM_THREADS\n\nFor more FPS: toolbar → AirBoost (lightning button) → Game. Then run this test again."
+    """.trimIndent() + "\n"
+
+    /** Firefox defaults: no warning about the Linux sandbox that cannot exist inside the Android app. */
+    private val FIREFOX_PREFS = """
+        // AirCursor PC: Firefox runs inside Android's app sandbox, which keeps the whole PC away from the
+        // phone's other apps and data. Firefox's own Linux sandbox cannot run there, so do not warn about it.
+        pref("security.sandbox.warn_unprivileged_namespaces", false);
+        pref("dom.security.https_only_mode", true);
+    """.trimIndent() + "\n"
+
     private val FIREFOX_POLICIES = """
         {
           "policies": {
             "DisableAppUpdate": true,
             "DontCheckDefaultBrowser": true,
             "OverrideFirstRunPage": "",
+            "HttpsOnlyMode": "enabled",
+            "EnableTrackingProtection": { "Value": true, "Cryptomining": true, "Fingerprinting": true },
             "Preferences": {
               "dom.ipc.processCount": { "Value": 2, "Status": "default" },
               "browser.tabs.unloadOnLowMemory": { "Value": true, "Status": "default" }

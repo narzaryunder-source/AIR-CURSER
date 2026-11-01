@@ -85,8 +85,11 @@
     <li>Open <b>App Store</b> (desktop icon or Start menu).</li>
     <li>Tick the apps you want – for example LibreOffice (Word/Excel), GIMP (photos), VLC (videos), VS Code (coding) – and tap <b>Install</b>.</li>
     <li>For anything else tap <b>Search 60,000+ apps</b>, type a word like <code>chess</code>, <code>pdf</code> or <code>music</code>.</li>
-    <li>Installed apps appear in the Start menu.</li>
+    <li>The <b>Status</b> column shows what is already <b>Installed</b>.</li>
+    <li>New apps get an icon on the desktop and a place in the Start menu <b>Favourites</b>. Games go into the <b>Games</b> folder on the desktop.</li>
   </ol>
+  <h3>Games</h3>
+  <p><b>Games pack</b> (light, runs well): SuperTux, X-Moto, Frozen Bubble, Pingus, 2048, OpenTTD, Solitaire, Mines, Sudoku, Chess, Quadrapassel. <b>3D games</b> (heavier): SuperTuxKart, Neverball, Tux Racer, Luanti. Choose the <b>Game</b> profile in AirBoost before playing.</p>
   <h3>Apps from a website (.deb)</h3>
   <p>Download the <b>ARM64</b> (aarch64) <code>.deb</code> file in Firefox and double-tap it in the Downloads folder to install.</p>
   <div class="warn">Windows programs (<code>.exe</code>) do not run here – this is Linux. Most popular programs have a Linux version in the App Store.</div>
@@ -115,6 +118,8 @@
 <section id="internet">
   <h2>6. Internet</h2>
   <p>Open <b>Firefox</b> from the taskbar. Bookmarks, passwords and logins stay saved between sessions. Downloads go to the Downloads folder.</p>
+  <h3>Security</h3>
+  <p>The whole PC runs inside the AirCursor app's own sandbox from Android: it cannot see your phone's other apps, photos or messages. Because of that, Firefox's extra Linux sandbox is not needed (and cannot run inside an Android app). Firefox here opens websites with HTTPS only, blocks trackers and gets security updates automatically in the background.</p>
 </section>
 
 <section id="keyboard">
@@ -137,7 +142,8 @@
     <tr><td><b>Balanced</b></td><td>Recommended for most phones</td></tr>
     <tr><td><b>Quality</b></td><td>Sharpest text on fast phones</td></tr>
   </table>
-  <p>Change the profile in AirCursor → AirCursor PC. AirBoost draws the desktop with fewer pixels and sharpens it on the phone, so it stays clear but runs faster. The <b>Boost</b> button in the toolbar stops background jobs at once; the <b>FPS</b> button shows the frame rate.</p>
+  <p>Change the profile any time – it applies at once: toolbar → <b>AirBoost</b> (lightning button), or AirCursor → AirCursor PC. AirBoost draws the desktop with fewer pixels and sharpens it on the phone (an FSR-style upscaler, like DLSS), so it stays clear but runs faster. <b>Boost now</b> stops background jobs; the <b>FPS</b> button shows the frame rate.</p>
+  <p><b>Graphics:</b> games are drawn by a virtual graphics card that uses every CPU core of the phone (llvmpipe). Open <b>Benchmark</b> on the desktop to measure the FPS, change the profile and compare.</p>
 </section>
 
 <section id="help">
@@ -145,7 +151,8 @@
   <table>
     <tr><th>Problem</th><th>Fix</th></tr>
     <tr><td>Black or frozen screen</td><td>Toolbar → close → "Stop desktop", then open it again.</td></tr>
-    <tr><td>Slow</td><td>Choose the <b>Game</b> or <b>Performance</b> profile and tap <b>Boost</b>.</td></tr>
+    <tr><td>Slow</td><td>Toolbar → <b>AirBoost</b> → <b>Game</b>, then <b>Boost now</b>.</td></tr>
+    <tr><td>New app not on the desktop</td><td>Start menu → All apps, or search by its name in the Start menu.</td></tr>
     <tr><td>Taskbar missing</td><td>Open Terminal and type <code>aircursor-windows-layout --force</code></td></tr>
     <tr><td>An app will not install</td><td>Check the internet connection and try again in the App Store.</td></tr>
     <tr><td>Pointer shakes or clicks are hard</td><td>AirCursor → Auto-tune. Or turn on Dwell click in Settings.</td></tr>

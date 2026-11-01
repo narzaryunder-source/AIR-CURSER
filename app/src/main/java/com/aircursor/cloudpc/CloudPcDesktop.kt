@@ -80,8 +80,10 @@ object CloudPcDesktop {
         export DISPLAY=:1 XDG_CURRENT_DESKTOP=XFCE NO_AT_BRIDGE=1
         # Speed: software OpenGL (llvmpipe) on every CPU core, no vsync waits, no GL error checks.
         export LP_NUM_THREADS="${'$'}(nproc 2>/dev/null || echo 4)" GALLIUM_DRIVER=llvmpipe vblank_mode=0 MESA_NO_ERROR=1
-        # Firefox/Electron sandboxes cannot work inside proot (Android already isolates the app).
-        export MOZ_FAKE_NO_SANDBOX=1 MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1 \
+        # Firefox's own Linux sandbox cannot work inside proot; the whole PC already runs inside
+        # Android's app sandbox. "Fake no sandbox" = Firefox treats it like a kernel without
+        # sandbox support (no crashes, no scary banner), unlike forcing it off.
+        export MOZ_FAKE_NO_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1 \
             MOZ_DISABLE_RDD_SANDBOX=1 MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1 MOZ_DISABLE_UTILITY_SANDBOX=1
         # One session bus, saved so AirCursor can send commands into the desktop (wallpaper, apps).
         eval "${'$'}(dbus-launch --sh-syntax)"
@@ -94,6 +96,8 @@ object CloudPcDesktop {
         # Self-repair for the first minute: panel / window manager sometimes do not start under proot.
         (
             sleep 15
+            # Live AirBoost resizes must not pop up the display settings window.
+            xfconf-query -c displays -p /Notify --create -t int -s 0 >/dev/null 2>&1
             for i in 1 2 3 4 5; do
                 pgrep -x xfwm4 >/dev/null || (xfwm4 --replace >/dev/null 2>&1 &)
                 pgrep -x xfce4-panel >/dev/null || (xfce4-panel >/dev/null 2>&1 &)
@@ -101,6 +105,8 @@ object CloudPcDesktop {
             done
         ) &
         [ "${'$'}LIGHT" = "1" ] && command -v cloudpc-light >/dev/null && (cloudpc-light 25 &)
+        # Security updates for the browser, quietly in the background (at most every 3 days).
+        command -v cloudpc-security-update >/dev/null && (sleep 90; nice -n 19 cloudpc-security-update) &
         wait ${'$'}XPID
     """.trimIndent() + "\n"
 

@@ -25,5 +25,18 @@ enum class AirBoost(val label: String, val width: Int, val sharpen: Float, val l
 
         fun set(c: Context, b: AirBoost) =
             c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, b.name).apply()
+
+        /**
+         * Saves the profile and, when the desktop is running, applies it at once: new desktop size
+         * (no restart) and light mode. Sharpening follows when the desktop screen is shown again.
+         */
+        fun applyNow(c: Context, b: AirBoost): Boolean {
+            set(c, b)
+            if (!CloudPcBus.state.value.desktopRunning) return false
+            val (w, h) = CloudPcDesktopActivity.desktopSize(c)
+            val light = if (b.light) "cloudpc-light 0; " else ""
+            CloudPcService.send(c, CloudPcService.ACTION_RUN, CloudPcDesktop.inSession("${light}cloudpc-resize $w $h"))
+            return true
+        }
     }
 }
