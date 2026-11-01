@@ -171,6 +171,12 @@ fun BrightMaxScreen(viewModel: MainViewModel) {
                     onToggle = viewModel::setHdrSwitch,
                 )
 
+                SunlightCard(
+                    enabled = state.settings.sunlightMode,
+                    active = state.boost.sunlightActive,
+                    onToggle = viewModel::setSunlightMode,
+                )
+
                 TimerCard(
                     selected = state.settings.timerMinutes,
                     onSelect = viewModel::setTimer,
@@ -413,6 +419,27 @@ private fun HdrCard(state: UiState, onToggle: (Boolean) -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun SunlightCard(enabled: Boolean, active: Boolean, onToggle: (Boolean) -> Unit) {
+    SectionCard(stringResource(R.string.sunlight_title)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.sunlight_switch),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    stringResource(if (active) R.string.sunlight_active else R.string.sunlight_text),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = enabled, onCheckedChange = onToggle)
         }
     }
 }

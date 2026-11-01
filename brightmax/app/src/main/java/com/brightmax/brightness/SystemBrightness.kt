@@ -20,9 +20,15 @@ class SystemBrightness(context: Context) {
 
     fun canWrite(): Boolean = Settings.System.canWrite(app)
 
-    /** Sets the system brightness to [level] (0..1). Returns false if not allowed. */
+    /**
+     * Sets the system brightness to [level] (0..1). Returns false if not allowed.
+     *
+     * [keepAutoBrightness] (Sunlight mode): adaptive brightness stays ON. Writing the level then tells the
+     * auto-brightness curve "the user wants this much here", and the phone's own sunlight boost (high
+     * brightness mode, which only works with auto-brightness) can still go above the normal maximum outdoors.
+     */
     @Synchronized
-    fun apply(level: Float): Boolean {
+    fun apply(level: Float, keepAutoBrightness: Boolean = false): Boolean {
         if (!canWrite()) return false
         return runCatching {
             if (prefs.brightnessBackup() == null) {
@@ -37,11 +43,16 @@ class SystemBrightness(context: Context) {
                     ),
                 )
             }
-            // Adaptive brightness would fight the boost: switch to manual while boosting.
+            // Normal boost: adaptive brightness would fight it, so it is switched to manual.
+            // Sunlight mode: adaptive brightness stays on so the phone can use its outdoor boost.
             Settings.System.putInt(
                 resolver,
                 Settings.System.SCREEN_BRIGHTNESS_MODE,
-                Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL,
+                if (keepAutoBrightness) {
+                    Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
+                } else {
+                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+                },
             )
             Settings.System.putInt(resolver, Settings.System.SCREEN_BRIGHTNESS, SafetyPolicy.toSystemBrightness(level))
         }.onFailure { Log.w(TAG, "apply failed", it) }.getOrDefault(false)

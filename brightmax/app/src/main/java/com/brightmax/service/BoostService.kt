@@ -99,7 +99,10 @@ class BoostService : Service() {
             var previous = settings
             prefs.settings.collect { now ->
                 if (state.active &&
-                    (now.level != previous.level || now.hdrEnabled != previous.hdrEnabled || now.hdrTryAnyway != previous.hdrTryAnyway)
+                    (
+                        now.level != previous.level || now.hdrEnabled != previous.hdrEnabled ||
+                            now.hdrTryAnyway != previous.hdrTryAnyway || now.sunlightMode != previous.sunlightMode
+                        )
                 ) {
                     applyBoost()
                 }
@@ -206,13 +209,14 @@ class BoostService : Service() {
     private fun applyBoost() {
         val reduced = state.thermalReduced
         val level = SafetyPolicy.effectiveLevel(settings.level, reduced)
-        if (!brightness.apply(level)) {
+        val sunlight = settings.sunlightMode
+        if (!brightness.apply(level, keepAutoBrightness = sunlight)) {
             stopBoost(StopReason.PERMISSION_MISSING)
             return
         }
         // HDR is the heaviest part, so it is paused while the boost is thermally reduced.
         val hdr = settings.hdrEnabled && hdrInfo.usable(settings.hdrTryAnyway) && !reduced
-        BoostRepository.update { it.copy(effectiveLevel = level, hdrActive = hdr) }
+        BoostRepository.update { it.copy(effectiveLevel = level, hdrActive = hdr, sunlightActive = sunlight) }
         refreshUi()
     }
 
@@ -229,6 +233,7 @@ class BoostService : Service() {
                 effectiveLevel = 0f,
                 thermalReduced = false,
                 hdrActive = false,
+                sunlightActive = false,
                 remainingMs = 0L,
                 warned = false,
                 lastStop = if (wasActive) reason else it.lastStop,
@@ -358,6 +363,7 @@ class BoostService : Service() {
                 effectiveLevel = 0f,
                 thermalReduced = false,
                 hdrActive = false,
+                sunlightActive = false,
                 remainingMs = 0L,
                 warned = false,
                 lastStop = if (wasActive) StopReason.SERVICE_STOPPED else it.lastStop,

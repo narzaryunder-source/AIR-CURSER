@@ -15,6 +15,8 @@ data class UserSettings(
     val hdrEnabled: Boolean = true,
     /** Use HDR mode even though the display reports no HDR (Android 14+). */
     val hdrTryAnyway: Boolean = false,
+    /** Sunlight mode: keep auto-brightness on during the boost so the phone's outdoor boost can engage. */
+    val sunlightMode: Boolean = false,
     val overlayEnabled: Boolean = true,
     val disclaimerAccepted: Boolean = false,
 )
@@ -34,6 +36,7 @@ class AppPrefs private constructor(context: Context) {
         timerMinutes = sp.getInt(K_TIMER, SafetyPolicy.DEFAULT_TIMER_MIN),
         hdrEnabled = sp.getBoolean(K_HDR, true),
         hdrTryAnyway = sp.getBoolean(K_HDR_TRY, false),
+        sunlightMode = sp.getBoolean(K_SUNLIGHT, false),
         overlayEnabled = sp.getBoolean(K_OVERLAY, true),
         disclaimerAccepted = sp.getBoolean(K_DISCLAIMER, false),
     )
@@ -47,6 +50,7 @@ class AppPrefs private constructor(context: Context) {
     fun setTimerMinutes(minutes: Int) = update { putInt(K_TIMER, minutes) }
     fun setHdrEnabled(enabled: Boolean) = update { putBoolean(K_HDR, enabled) }
     fun setHdrTryAnyway(enabled: Boolean) = update { putBoolean(K_HDR_TRY, enabled) }
+    fun setSunlightMode(enabled: Boolean) = update { putBoolean(K_SUNLIGHT, enabled) }
     fun setOverlayEnabled(enabled: Boolean) = update { putBoolean(K_OVERLAY, enabled) }
     fun acceptDisclaimer() = update { putBoolean(K_DISCLAIMER, true) }
 
@@ -72,6 +76,7 @@ class AppPrefs private constructor(context: Context) {
         private const val K_TIMER = "timer_minutes"
         private const val K_HDR = "hdr_enabled"
         private const val K_HDR_TRY = "hdr_try_anyway"
+        private const val K_SUNLIGHT = "sunlight_mode"
         private const val K_OVERLAY = "overlay_enabled"
         private const val K_DISCLAIMER = "disclaimer_accepted"
         private const val K_HAS_BACKUP = "has_backup"

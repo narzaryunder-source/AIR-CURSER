@@ -186,7 +186,13 @@ class FloatingOverlay(
         hdrPixel.visibility = if (state.hdrActive) View.VISIBLE else View.GONE
 
         // Window attributes only change when the level / HDR state changes (not on every countdown tick).
-        val brightness = if (on) state.effectiveLevel else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        // In Sunlight mode the window must not override brightness, or auto-brightness (and the phone's
+        // outdoor boost) would be switched off while this window is on screen.
+        val brightness = if (on && !state.sunlightActive) {
+            state.effectiveLevel
+        } else {
+            WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        }
         if (brightness != lp.screenBrightness || state.hdrActive != appliedHdr) {
             lp.screenBrightness = brightness
             HdrController.applyToParams(lp, state.hdrActive)

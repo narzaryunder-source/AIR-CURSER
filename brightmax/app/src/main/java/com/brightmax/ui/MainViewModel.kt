@@ -130,6 +130,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setLevel(level: Float) = prefs.setLevel(level)
     fun setMax() = prefs.setLevel(SafetyPolicy.MAX_LEVEL)
     fun setTimer(minutes: Int) = prefs.setTimerMinutes(minutes)
+    fun setSunlightMode(enabled: Boolean) = prefs.setSunlightMode(enabled)
     /** The HDR switch: on a display that reports HDR it is the normal on/off, otherwise "try anyway". */
     fun setHdrSwitch(on: Boolean) {
         if (hdrInfo.isHdr) {
