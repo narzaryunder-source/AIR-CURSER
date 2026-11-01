@@ -129,7 +129,11 @@ Home screen → **"🔒 Security"**:
 ### ☁️ Cloud PC built-in (BETA – Termux nahi chahiye)
 - Home screen → **"☁️ Cloud PC built-in"** → **Install** (Wi-Fi par, ~30 MB download + setup 2–5 min).
 - Ubuntu 24.04 LTS AirCursor ke andar hi chalta hai (proot engine APK me hai). Har phone ka apna alag Cloud PC – files kisi se mix nahi hoti.
-- Abhi: install, **Info**, **Update**, command chalao (jaise `apt-get install -y htop`). Desktop screen agle update me.
+- **🖥 Desktop install karo** (XFCE + Firefox, ~400 MB) → **🖥 Desktop kholo**. Desktop AirCursor ke andar hi dikhta hai (Termux:X11 nahi chahiye).
+- Desktop me **haath ka cursor = asli mouse**: hover, pinch = click, pinch hold = right click, pinch + move = drag, do ungli = scroll.
+- Touch se: tap = click, daba ke rakho = right click, khiskao = drag, do ungli = scroll. Right side **☰** = keyboard, Esc, Tab, Ctrl, Alt, Win, arrows.
+- Desktop ek private socket par chalta hai (koi network port nahi) – phone ka koi doosra app use dekh/chala nahi sakta.
+- Install, **Info**, **Update**, command chalao (jaise `apt-get install -y htop`).
 - **Hatao** button sirf Cloud PC ki apni files hatata hai – phone ki photos/files ko kabhi nahi chhuta.
 
 ### ☁️ Cloud PC (Termux wala, ek tap)

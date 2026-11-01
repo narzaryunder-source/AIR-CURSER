@@ -23,6 +23,9 @@ import com.aircursor.core.GestureEvent
 import com.aircursor.data.AppSettings
 import com.aircursor.data.Prefs
 import com.aircursor.core.CursorMode
+import com.aircursor.core.RfbClient
+import com.aircursor.cloudpc.DesktopInput
+import com.aircursor.cloudpc.DesktopTarget
 import com.aircursor.core.KeyMouse
 import com.aircursor.pc.PcMode
 import com.aircursor.pc.TaskbarOverlay
@@ -296,6 +299,12 @@ class CursorAccessibilityService : AccessibilityService() {
             cursorY = out.y
         }
         view.update(out.x, out.y, out.timestampMs, out.mode, out.handPresent, out.holdKind, out.holdProgress)
+        // Cloud PC desktop on screen: the hand cursor is its mouse (hover highlights menus).
+        DesktopInput.target?.let { desk ->
+            if (out.handPresent && !out.paused && (out.mode == CursorMode.NORMAL || out.mode == CursorMode.PRESSING)) {
+                desk.hover(out.x, out.y)
+            }
+        }
         if (showFps) {
             view.debugText = ("Tracking: %.1f fps\nCamera: %.0f fps (%s)\nInference: %.0f ms (%s)\n" +
                 "Hand: %s  Pose: %s\nPinch: %.2f").format(
@@ -312,7 +321,37 @@ class CursorAccessibilityService : AccessibilityService() {
         for (e in out.events) handleEvent(e, view)
     }
 
+    /** Mouse input for the Cloud PC desktop instead of Android touch gestures. True when handled. */
+    private fun routeToDesktop(e: GestureEvent, desk: DesktopTarget, view: CursorView): Boolean {
+        when (e) {
+            is GestureEvent.Tap -> {
+                view.ripple(e.x, e.y)
+                haptics.click()
+                if (clickSound) clickTone()
+                desk.click(e.x, e.y, RfbClient.BUTTON_LEFT)
+            }
+            is GestureEvent.LongPress -> {
+                view.ripple(e.x, e.y, 0xFFFFC107.toInt())
+                view.showLabel("Right click")
+                haptics.heavy()
+                desk.click(e.x, e.y, RfbClient.BUTTON_RIGHT)
+            }
+            is GestureEvent.DragStart -> {
+                view.showLabel("Drag")
+                haptics.tick()
+                desk.press(e.x, e.y)
+            }
+            is GestureEvent.DragMove -> desk.moveTo(e.x, e.y)
+            is GestureEvent.DragEnd -> desk.release(e.x, e.y)
+            is GestureEvent.ScrollVelocity -> desk.scroll(e.vx, e.vy)
+            GestureEvent.ScrollEnd -> desk.scrollEnd()
+            else -> return false
+        }
+        return true
+    }
+
     private fun handleEvent(e: GestureEvent, view: CursorView) {
+        DesktopInput.target?.let { if (routeToDesktop(e, it, view)) return }
         when (e) {
             is GestureEvent.Tap -> {
                 view.ripple(e.x, e.y)

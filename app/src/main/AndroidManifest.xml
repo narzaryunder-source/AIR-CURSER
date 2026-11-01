@@ -118,6 +118,17 @@
                 android:value="true" />
         </service>
 
+        <activity
+            android:name=".cloudpc.CloudPcDesktopActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
+            android:exported="false"
+            android:label="Cloud PC"
+            android:launchMode="singleTask"
+            android:screenOrientation="sensorLandscape"
+            android:taskAffinity="com.aircursor.cloudpc"
+            android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+
         <service
             android:name=".cloudpc.CloudPcService"
             android:exported="false"

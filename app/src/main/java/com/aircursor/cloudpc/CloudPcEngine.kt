@@ -137,6 +137,20 @@ object CloudPcEngine {
         return p.waitFor()
     }
 
+    /** Writes a file inside Ubuntu; a symlink at that place is replaced, never followed. */
+    fun writeGuestFile(root: java.nio.file.Path, rel: String, text: String, executable: Boolean = false) {
+        val target = root.resolve(rel)
+        var cur = root
+        for (part in rel.split('/').dropLast(1)) {
+            cur = cur.resolve(part)
+            if (Files.isSymbolicLink(cur)) throw java.io.IOException("Unsafe path $rel")
+            if (!Files.exists(cur, LinkOption.NOFOLLOW_LINKS)) Files.createDirectory(cur)
+        }
+        Files.deleteIfExists(target)
+        Files.write(target, text.toByteArray())
+        if (executable) target.toFile().setExecutable(true, false)
+    }
+
     /** Deletes the built-in Ubuntu (only the app's own Cloud PC folder; phone files are never touched). */
     fun remove(c: Context) {
         val b = base(c).toPath()
@@ -153,6 +167,9 @@ data class EngineState(
     val progress: Float = -1f,
     val error: String? = null,
     val version: Int = 0,
+    /** The desktop (Xvnc + XFCE) process is running / its screen socket is ready. */
+    val desktopRunning: Boolean = false,
+    val desktopReady: Boolean = false,
 )
 
 object CloudPcBus {

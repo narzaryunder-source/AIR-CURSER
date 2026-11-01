@@ -32,12 +32,25 @@ class CloudPcService : Service() {
         const val ACTION_RUN = "com.aircursor.cloudpc.RUN"
         const val ACTION_STOP = "com.aircursor.cloudpc.STOP"
         const val ACTION_REMOVE = "com.aircursor.cloudpc.REMOVE"
+        const val ACTION_DESKTOP_INSTALL = "com.aircursor.cloudpc.DESKTOP_INSTALL"
+        const val ACTION_DESKTOP_START = "com.aircursor.cloudpc.DESKTOP_START"
+        const val ACTION_DESKTOP_STOP = "com.aircursor.cloudpc.DESKTOP_STOP"
         const val EXTRA_COMMAND = "command"
+        const val EXTRA_WIDTH = "width"
+        const val EXTRA_HEIGHT = "height"
+
+        fun startDesktop(c: Context, width: Int, height: Int) {
+            ContextCompat.startForegroundService(
+                c,
+                Intent(c, CloudPcService::class.java).setAction(ACTION_DESKTOP_START)
+                    .putExtra(EXTRA_WIDTH, width).putExtra(EXTRA_HEIGHT, height),
+            )
+        }
 
         fun send(c: Context, action: String, command: String? = null) {
             val i = Intent(c, CloudPcService::class.java).setAction(action)
             if (command != null) i.putExtra(EXTRA_COMMAND, command)
-            if (action == ACTION_STOP) {
+            if (action == ACTION_STOP || action == ACTION_DESKTOP_STOP) {
                 c.startService(i)
             } else {
                 ContextCompat.startForegroundService(c, i)
@@ -47,12 +60,23 @@ class CloudPcService : Service() {
 
     private val executor = Executors.newSingleThreadExecutor()
     private var jobs = 0
+    private var desktopActive = false
+
+    private fun stopIfIdle() {
+        if (jobs == 0 && !desktopActive) {
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
 
     @Volatile
     private var installer: CloudPcInstaller? = null
 
     @Volatile
     private var running: Process? = null
+
+    @Volatile
+    private var desktop: Process? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -61,7 +85,12 @@ class CloudPcService : Service() {
         val action = intent?.action
         if (action == ACTION_STOP) {
             stopCurrent()
-            if (jobs == 0) stopSelf()
+            if (jobs == 0 && !desktopActive) stopSelf()
+            return START_NOT_STICKY
+        }
+        if (action == ACTION_DESKTOP_STOP) {
+            stopDesktop()
+            if (jobs == 0 && !desktopActive) stopSelf()
             return START_NOT_STICKY
         }
         goForeground()
@@ -71,8 +100,16 @@ class CloudPcService : Service() {
                 val cmd = intent.getStringExtra(EXTRA_COMMAND).orEmpty()
                 if (cmd.isNotBlank()) submit(cmd.take(40)) { runCommand(cmd) }
             }
-            ACTION_REMOVE -> submit("Removing") { remove() }
-            else -> if (jobs == 0) stopSelf()
+            ACTION_REMOVE -> {
+                stopDesktop()
+                submit("Removing") { remove() }
+            }
+            ACTION_DESKTOP_INSTALL -> submit("Desktop install") { installDesktop() }
+            ACTION_DESKTOP_START -> startDesktop(
+                intent.getIntExtra(EXTRA_WIDTH, 1280),
+                intent.getIntExtra(EXTRA_HEIGHT, 720),
+            )
+            else -> stopIfIdle()
         }
         return START_NOT_STICKY
     }
@@ -97,10 +134,7 @@ class CloudPcService : Service() {
                 ContextCompat.getMainExecutor(this).execute {
                     jobs--
                     CloudPcBus.update { it.copy(busy = jobs > 0, version = it.version + 1) }
-                    if (jobs == 0) {
-                        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-                        stopSelf()
-                    }
+                    stopIfIdle()
                 }
             }
         }
@@ -124,6 +158,70 @@ class CloudPcService : Service() {
         running = null
         CloudPcBus.line("[exit $code]", force = true)
         CloudPcBus.update { it.copy(title = if (code == 0) "Ho gaya ✅" else "Khatam (code $code)") }
+    }
+
+    private fun installDesktop() {
+        if (!CloudPcEngine.isReady(this)) throw IllegalStateException("Pehle Cloud PC install karo.")
+        CloudPcBus.update { it.copy(title = "Desktop install ho raha hai (5-15 min, ~400 MB)…", progress = -1f) }
+        var ok = false
+        val code = CloudPcEngine.run(this, CloudPcDesktop.INSTALL_SCRIPT, onProcess = { running = it }) { line ->
+            if (line.contains("CLOUDPC_DESKTOP_OK")) ok = true
+            CloudPcBus.line(line)
+        }
+        running = null
+        if (code != 0 || !ok) throw java.io.IOException("Desktop install ruk gaya (code $code). Internet check karke dobara dabao.")
+        java.io.File(CloudPcEngine.rootfs(this), CloudPcDesktop.MARK_DESKTOP).writeText("1\n")
+        CloudPcBus.line("==> Desktop ready ✅", force = true)
+        CloudPcBus.update { it.copy(title = "Desktop ready ✅", progress = 1f) }
+    }
+
+    /** Starts Xvnc + XFCE as a long-running process; the viewer connects to its private socket. */
+    private fun startDesktop(width: Int, height: Int) {
+        if (desktopActive) return
+        if (!CloudPcDesktop.isInstalled(this)) {
+            CloudPcBus.update { it.copy(error = "Pehle 'Desktop install' karo.") }
+            stopIfIdle()
+            return
+        }
+        desktopActive = true
+        CloudPcBus.update { it.copy(desktopRunning = true, desktopReady = false, error = null) }
+        Thread({
+            try {
+                CloudPcDesktop.writeStartScript(this)
+                CloudPcBus.line("==> Desktop start ${width}x$height", force = true)
+                val code = CloudPcEngine.run(
+                    this, CloudPcDesktop.startCommand(width, height), onProcess = { desktop = it },
+                ) { line ->
+                    if (line.contains("CLOUDPC_VNC_READY")) CloudPcBus.update { it.copy(desktopReady = true) }
+                    // XFCE prints a lot of harmless warnings: keep only the important ones in the log.
+                    if (line.contains("CLOUDPC") || line.contains("rror") || line.contains("Xvnc")) CloudPcBus.line(line)
+                }
+                CloudPcBus.line("==> Desktop band (code $code)", force = true)
+            } catch (e: Throwable) {
+                Log.w(TAG, "desktop failed", e)
+                CloudPcBus.line("Desktop ERROR: ${e.message}", force = true)
+                CloudPcBus.update { it.copy(error = e.message) }
+            } finally {
+                desktop = null
+                ContextCompat.getMainExecutor(this).execute {
+                    desktopActive = false
+                    CloudPcBus.update { it.copy(desktopRunning = false, desktopReady = false) }
+                    stopIfIdle()
+                }
+            }
+        }, "cloudpc-desktop").start()
+    }
+
+    private fun stopDesktop() {
+        desktop?.let { p ->
+            p.destroy()
+            Thread {
+                try {
+                    if (!p.waitFor(3, TimeUnit.SECONDS)) p.destroyForcibly()
+                } catch (_: Exception) {
+                }
+            }.start()
+        }
     }
 
     private fun remove() {
@@ -203,6 +301,7 @@ class CloudPcService : Service() {
 
     override fun onDestroy() {
         stopCurrent()
+        stopDesktop()
         executor.shutdown()
         releaseWake()
         super.onDestroy()

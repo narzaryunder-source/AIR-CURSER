@@ -35,7 +35,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.content.Intent
 import com.aircursor.cloudpc.CloudPcBus
+import com.aircursor.cloudpc.CloudPcDesktop
+import com.aircursor.cloudpc.CloudPcDesktopActivity
 import com.aircursor.cloudpc.CloudPcEngine
 import com.aircursor.cloudpc.CloudPcService
 import kotlinx.coroutines.Dispatchers
@@ -53,6 +56,8 @@ fun CloudPcScreen(onBack: () -> Unit) {
     val ram = remember { CloudPcEngine.totalRam(context) }
     val extracted = remember(state.version, state.busy) { CloudPcEngine.isExtracted(context) }
     val ready = remember(state.version, state.busy) { CloudPcEngine.isReady(context) }
+    val desktopInstalled = remember(state.version, state.busy) { CloudPcDesktop.isInstalled(context) }
+    var deskWidth by remember { mutableStateOf(CloudPcDesktopActivity.desktopWidth(context)) }
     var free by remember { mutableStateOf(0L) }
     var used by remember { mutableStateOf(0L) }
     var command by remember { mutableStateOf("") }
@@ -137,6 +142,63 @@ fun CloudPcScreen(onBack: () -> Unit) {
 
             if (ready && !state.busy) {
                 Spacer(Modifier.height(12.dp))
+                Card(
+                    Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("🖥 Desktop", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                        if (!desktopInstalled) {
+                            Text(
+                                "XFCE desktop + Firefox (~400 MB download, 5-15 min). Wi-Fi par karo.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Button(
+                                onClick = {
+                                    CloudPcBus.clearLog()
+                                    CloudPcService.send(context, CloudPcService.ACTION_DESKTOP_INSTALL)
+                                },
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                            ) { Text("⬇ Desktop install karo") }
+                        } else {
+                            Button(
+                                onClick = {
+                                    context.startActivity(Intent(context, CloudPcDesktopActivity::class.java))
+                                },
+                                modifier = Modifier.fillMaxWidth().height(56.dp),
+                            ) { Text(if (state.desktopRunning) "🖥 Desktop kholo (chal raha hai)" else "🖥 Desktop kholo") }
+                            if (state.desktopRunning) {
+                                OutlinedButton(
+                                    onClick = { CloudPcService.send(context, CloudPcService.ACTION_DESKTOP_STOP) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) { Text("■ Desktop band karo") }
+                            }
+                            Text("Screen size (bada = saaf, chhota = tez + bade akshar):", style = MaterialTheme.typography.bodySmall)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                for (w in CloudPcDesktopActivity.WIDTHS) {
+                                    val selected = w == deskWidth
+                                    OutlinedButton(
+                                        onClick = {
+                                            deskWidth = w
+                                            CloudPcDesktopActivity.setDesktopWidth(context, w)
+                                            if (state.desktopRunning) {
+                                                CloudPcService.send(context, CloudPcService.ACTION_DESKTOP_STOP)
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(2.dp),
+                                    ) { Text(if (selected) "✓$w" else "$w", style = MaterialTheme.typography.labelSmall) }
+                                }
+                            }
+                            Text(
+                                "Haath ka cursor desktop me asli mouse hai: pinch = click, pinch hold = right click, " +
+                                    "pinch + move = drag, do ungli = scroll. Touch: tap = click, daba ke rakho = right click.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
                 Text("Test & tools", fontWeight = FontWeight.Bold)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
@@ -160,10 +222,6 @@ fun CloudPcScreen(onBack: () -> Unit) {
                     onClick = { run(command) },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("▶ Run") }
-                Text(
-                    "Desktop screen (XFCE + haath ka cursor) agle update me aayega.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
             }
 
             if (log.isNotEmpty()) {

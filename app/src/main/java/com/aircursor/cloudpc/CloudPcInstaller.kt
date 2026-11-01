@@ -124,34 +124,21 @@ class CloudPcInstaller(private val c: Context) {
 
     /** Basic Ubuntu settings for running under proot on Android. */
     private fun configure(root: Path) {
-        writeGuest(root, "etc/resolv.conf", "nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
-        writeGuest(root, "etc/hosts", "127.0.0.1 localhost cloudpc\n::1 localhost ip6-localhost ip6-loopback\n")
-        writeGuest(root, "etc/hostname", "cloudpc\n")
+        CloudPcEngine.writeGuestFile(root, "etc/resolv.conf", "nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
+        CloudPcEngine.writeGuestFile(root, "etc/hosts", "127.0.0.1 localhost cloudpc\n::1 localhost ip6-localhost ip6-loopback\n")
+        CloudPcEngine.writeGuestFile(root, "etc/hostname", "cloudpc\n")
         // apt cannot switch to its "_apt" user inside proot; retry flaky mobile downloads.
-        writeGuest(root, "etc/apt/apt.conf.d/01-cloudpc", "APT::Sandbox::User \"root\";\nAcquire::Retries \"3\";\n")
+        CloudPcEngine.writeGuestFile(root, "etc/apt/apt.conf.d/01-cloudpc", "APT::Sandbox::User \"root\";\nAcquire::Retries \"3\";\n")
         // Phones: skip slow fsync calls while installing packages.
-        writeGuest(root, "etc/dpkg/dpkg.cfg.d/01-cloudpc", "force-unsafe-io\n")
+        CloudPcEngine.writeGuestFile(root, "etc/dpkg/dpkg.cfg.d/01-cloudpc", "force-unsafe-io\n")
         // Android network groups, so "id" and apt do not complain about unknown groups.
         val group = root.resolve("etc/group")
         if (Files.isRegularFile(group, LinkOption.NOFOLLOW_LINKS)) {
             val text = String(Files.readAllBytes(group))
             if (!text.contains("aid_inet")) {
-                writeGuest(root, "etc/group", text + "aid_inet:x:3003:root\naid_net_raw:x:3004:root\naid_everybody:x:9997:root\n")
+                CloudPcEngine.writeGuestFile(root, "etc/group", text + "aid_inet:x:3003:root\naid_net_raw:x:3004:root\naid_everybody:x:9997:root\n")
             }
         }
-    }
-
-    /** Writes a file inside Ubuntu; a symlink at that place is replaced, never followed. */
-    private fun writeGuest(root: Path, rel: String, text: String) {
-        val target = root.resolve(rel)
-        var cur = root
-        for (part in rel.split('/').dropLast(1)) {
-            cur = cur.resolve(part)
-            if (Files.isSymbolicLink(cur)) throw IOException("Unsafe path $rel")
-            if (!Files.exists(cur, LinkOption.NOFOLLOW_LINKS)) Files.createDirectory(cur)
-        }
-        Files.deleteIfExists(target)
-        Files.write(target, text.toByteArray())
     }
 
     private fun download(url: String, dest: File, expected: Long, onProgress: (Float) -> Unit) {
