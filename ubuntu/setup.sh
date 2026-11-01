@@ -200,7 +200,7 @@ rm -f "$SHARED_TMP/aircursor-inner-setup.sh" "$SHARED_TMP/aircursor-ubuntu-extra
 step 10 96 "Creating commands: ubuntu-desktop, ubuntu-stop, ubuntu-shell, ubuntu-wallpaper"
 ac_hb_stop
 BASE="https://raw.githubusercontent.com/narzaryunder-source/AIR-CURSER/main/ubuntu"
-for f in launchers.sh inner-repair.sh app-store.sh install-deb.sh windows-layout.sh VERSION; do
+for f in launchers.sh inner-repair.sh app-store.sh install-deb.sh windows-layout.sh wallpaper-gui.sh VERSION; do
     if [ -f "$SCRIPT_DIR/$f" ]; then cp "$SCRIPT_DIR/$f" "$SHARED_TMP/aircursor-$f"
     else wget -qO "$SHARED_TMP/aircursor-$f" "$BASE/$f"; fi
 done

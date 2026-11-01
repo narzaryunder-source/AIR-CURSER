@@ -4,6 +4,7 @@
 1. Phone ki home screen par **"Ubuntu PC"** icon dabao (AirCursor app ke saath aata hai).
 2. Ubuntu khul jayega: neeche **taskbar + Start button**, Windows jaisa.
 3. Apps: desktop par **App Store** → app tick karo → **Install**. Ya Firefox se ARM64 wali **.deb** file download karke **double-click** karo.
+4. Wallpaper: desktop par **Change Wallpaper** → phone ki koi bhi photo chuno → turant lag jayega.
 
 Termux me kuch type nahi karna. Tools khud update aur repair hote hain (internet ho to).
 ⚠️ Windows ke **.exe** apps nahi chalte – yeh Linux hai; zyada tar apps ke Linux version App Store me hain.

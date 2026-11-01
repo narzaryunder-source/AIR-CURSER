@@ -70,6 +70,16 @@ grep -q '/usr/games' /etc/profile.d/aircursor-path.sh 2>/dev/null || \
 [ -f /tmp/aircursor-app-store.sh ] && install -m 0755 /tmp/aircursor-app-store.sh /usr/local/bin/aircursor-store
 [ -f /tmp/aircursor-install-deb.sh ] && install -m 0755 /tmp/aircursor-install-deb.sh /usr/local/bin/aircursor-install-deb
 [ -f /tmp/aircursor-windows-layout.sh ] && install -m 0755 /tmp/aircursor-windows-layout.sh /usr/local/bin/aircursor-windows-layout
+[ -f /tmp/aircursor-wallpaper-gui.sh ] && install -m 0755 /tmp/aircursor-wallpaper-gui.sh /usr/local/bin/aircursor-wallpaper
+cat > /usr/share/applications/aircursor-wallpaper.desktop <<'WALLD'
+[Desktop Entry]
+Type=Application
+Name=Change Wallpaper
+Comment=Use any photo from your phone as the desktop wallpaper
+Exec=aircursor-wallpaper
+Icon=preferences-desktop-wallpaper
+Categories=Settings;DesktopSettings;
+WALLD
 mkdir -p /usr/share/applications
 cat > /usr/share/applications/aircursor-store.desktop <<'STORE'
 [Desktop Entry]
@@ -113,6 +123,10 @@ if id "$U" >/dev/null 2>&1; then
     if [ ! -f "$H/Desktop/App-Store.desktop" ]; then
         cp /usr/share/applications/aircursor-store.desktop "$H/Desktop/App-Store.desktop"
         chmod +x "$H/Desktop/App-Store.desktop"
+    fi
+    if [ ! -f "$H/Desktop/Change-Wallpaper.desktop" ]; then
+        cp /usr/share/applications/aircursor-wallpaper.desktop "$H/Desktop/Change-Wallpaper.desktop"
+        chmod +x "$H/Desktop/Change-Wallpaper.desktop"
     fi
     chown -R "$U:$U" "$H" 2>/dev/null
 fi

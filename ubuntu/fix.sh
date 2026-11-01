@@ -24,7 +24,7 @@ pkill -9 -f "proot" 2>/dev/null
 rm -rf "$TMPDIR/.X11-unix" "$TMPDIR/.X0-lock" "$TMPDIR/.ICE-unix" 2>/dev/null
 
 echo "==> [2/4] Downloading the latest repair files"
-for f in launchers.sh inner-repair.sh ubuntu-extras.sh app-store.sh install-deb.sh windows-layout.sh VERSION; do
+for f in launchers.sh inner-repair.sh ubuntu-extras.sh app-store.sh install-deb.sh windows-layout.sh wallpaper-gui.sh VERSION; do
     curl -fsSL "$BASE/$f" -o "$TMPDIR/aircursor-$f" || { echo "Download failed: $f (internet?)"; exit 1; }
 done
 
