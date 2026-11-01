@@ -17,6 +17,42 @@ enum class AirBoost(val label: String, val width: Int, val sharpen: Float, val l
     companion object {
         private const val PREFS = "cloudpc_engine"
         private const val KEY = "airboost"
+        private const val KEY_FPS = "fps_limit"
+
+        /** Steady-FPS choices; 0 = no limit. */
+        val FPS_CHOICES = listOf(30, 45, 60, 0)
+
+        fun fpsLabel(n: Int) = if (n <= 0) "No limit" else "$n FPS"
+
+        /** FPS cap for games and the desktop picture: a steady 30/45/60 feels smoother than 15–90. */
+        fun fpsLimit(c: Context): Int = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(KEY_FPS, 60)
+
+        fun setFpsLimit(c: Context, n: Int) {
+            c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(KEY_FPS, n).apply()
+            writeGameConfig(c)
+        }
+
+        /** Game settings (MangoHud): FPS counter + steady FPS limit. Read by every game at start. */
+        fun mangoHud(limit: Int) = listOf(
+            "fps_limit=${if (limit > 0) limit else 0}",
+            "fps_limit_method=early",
+            "fps",
+            "frametime=0",
+            "frame_timing=1",
+            "cpu_stats=0",
+            "gpu_stats=0",
+            "position=top-left",
+            "font_size=16",
+            "background_alpha=0.35",
+            "toggle_hud=Shift_R+F12",
+        ).joinToString("\n", postfix = "\n")
+
+        fun writeGameConfig(c: Context) {
+            try {
+                CloudPcEngine.writeGuestFile(CloudPcEngine.rootfs(c).toPath(), "etc/cloudpc/MangoHud.conf", mangoHud(fpsLimit(c)))
+            } catch (_: Exception) {
+            }
+        }
 
         fun current(c: Context): AirBoost {
             val name = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, BALANCED.name)

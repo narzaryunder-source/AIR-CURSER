@@ -25,9 +25,10 @@ if [ -x /usr/share/code/code ]; then
         chmod +x /usr/local/bin/$w
     done
     mkdir -p "$H/.vscode"
-    [ -f "$H/.vscode/argv.json" ] || cat > "$H/.vscode/argv.json" <<'JSON'
+    grep -qs '"disable-chromium-sandbox"' "$H/.vscode/argv.json" || cat > "$H/.vscode/argv.json" <<'JSON'
 {
     "disable-hardware-acceleration": true,
+    "disable-chromium-sandbox": true,
     "password-store": "basic",
     "enable-crash-reporter": false
 }

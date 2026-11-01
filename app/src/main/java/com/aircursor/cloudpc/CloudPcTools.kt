@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 6
+    const val VERSION = 7
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -80,8 +80,12 @@ object CloudPcTools {
             "etc/apt/apt.conf.d/80-cloudpc-apps",
             "DPkg::Post-Invoke { \"if [ -x /usr/local/bin/cloudpc-apps ]; then /usr/local/bin/cloudpc-apps >/dev/null 2>&1 || true; fi\"; };\n",
         )
-        // Games: FPS overlay (Right Shift + F12 hides it) and a steady 60 FPS limit.
-        put("etc/cloudpc/MangoHud.conf", MANGOHUD)
+        // Desktop helpers a phone does not need: each would count against Android's 32-program limit.
+        for (name in HIDDEN_AUTOSTART) {
+            put("root/.config/autostart/$name", "[Desktop Entry]\nType=Application\nName=$name\nHidden=true\n")
+        }
+        // Games: FPS overlay (Right Shift + F12 hides it) and the steady FPS limit.
+        put("etc/cloudpc/MangoHud.conf", AirBoost.mangoHud(AirBoost.fpsLimit(c)))
         put("usr/local/bin/aircursor-set-wallpaper", SET_WALLPAPER, exec = true)
         put("usr/local/bin/cloudpc-ai-offline", AI_OFFLINE, exec = true)
         put("usr/local/bin/cloudpc-light", LIGHT_MODE, exec = true)
@@ -154,6 +158,15 @@ object CloudPcTools {
         put(MARK, "$VERSION\n")
     }
 
+    private val HIDDEN_AUTOSTART = listOf(
+        "at-spi-dbus-bus.desktop", "xscreensaver.desktop", "xfce4-screensaver.desktop", "light-locker.desktop",
+        "xfce4-power-manager.desktop", "print-applet.desktop", "polkit-gnome-authentication-agent-1.desktop",
+        "xfce-polkit.desktop", "gnome-keyring-pkcs11.desktop", "gnome-keyring-secrets.desktop",
+        "gnome-keyring-ssh.desktop", "geoclue-demo-agent.desktop", "update-notifier.desktop", "xiccd.desktop",
+        "blueman.desktop", "nm-applet.desktop", "pulseaudio.desktop", "xfce4-clipman-plugin-autostart.desktop",
+        "tracker-miner-fs-3.desktop", "org.gnome.Evolution-alarm-notify.desktop",
+    )
+
     const val TO_PHONE = "To phone"
     const val FROM_PHONE = "From phone"
 
@@ -222,19 +235,6 @@ object CloudPcTools {
         exit 0
     """.trimIndent() + "\n"
 
-    private val MANGOHUD = """
-        fps_limit=60
-        fps
-        frametime=0
-        frame_timing=1
-        cpu_stats=0
-        gpu_stats=0
-        position=top-left
-        font_size=16
-        background_alpha=0.35
-        toggle_hud=Shift_R+F12
-    """.trimIndent() + "\n"
-
     /** Changes the desktop size at once (live AirBoost), no restart needed. Arguments: width height. */
     private val RESIZE = """
         #!/bin/sh
@@ -294,6 +294,19 @@ object CloudPcTools {
         // phone's other apps and data. Firefox's own Linux sandbox cannot run there, so do not warn about it.
         pref("security.sandbox.warn_unprivileged_namespaces", false);
         pref("dom.security.https_only_mode", true);
+        // Fewer Firefox programs (Android allows an app only ~32): separate processes only for sites you
+        // are logged in to (like Firefox for Android), drawing/network/media/add-ons in the main one.
+        pref("fission.webContentIsolationStrategy", 2);
+        pref("dom.ipc.processCount", 2);
+        pref("dom.ipc.processCount.webIsolated", 1);
+        pref("dom.ipc.processPrelaunch.enabled", false);
+        pref("browser.tabs.remote.separatePrivilegedContentProcess", false);
+        pref("browser.tabs.remote.separatePrivilegedMozillaWebContentProcess", false);
+        pref("layers.gpu-process.enabled", false);
+        pref("network.process.enabled", false);
+        pref("media.rdd-process.enabled", false);
+        pref("media.utility-process.enabled", false);
+        pref("extensions.webextensions.remote", false);
         // Speed on a phone CPU: YouTube uses VP9 instead of the much heavier AV1, multi-core software
         // drawing, fewer page animations, fewer session saves.
         pref("media.av1.enabled", false);

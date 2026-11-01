@@ -231,6 +231,15 @@ class CloudPcService : Service() {
         Thread({
             try {
                 CloudPcDesktop.writeStartScript(this)
+                // Tell the PC whether Android's 32-program limit is lifted (the app launcher explains it),
+                // and keep the game settings (steady FPS) in step with the app.
+                val limit = when (ChildLimit.limitOff(this)) {
+                    true -> "off"
+                    false -> "on"
+                    null -> "unknown"
+                }
+                CloudPcEngine.writeGuestFile(CloudPcEngine.rootfs(this).toPath(), "etc/cloudpc/child-limit", "$limit\n")
+                AirBoost.writeGameConfig(this)
                 if (CloudPcTools.needsSetup(this)) {
                     CloudPcBus.line("==> Updating desktop tools (App Store, layout, AI apps)…", force = true)
                     CloudPcEngine.run(this, CloudPcTools.PACKAGES_SCRIPT, onProcess = { desktop = it }) { CloudPcBus.line(it) }

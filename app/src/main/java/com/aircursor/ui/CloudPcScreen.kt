@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aircursor.R
 import com.aircursor.cloudpc.AirBoost
+import com.aircursor.cloudpc.ChildLimit
 import com.aircursor.cloudpc.CloudPcBus
 import com.aircursor.cloudpc.CloudPcDesktop
 import com.aircursor.cloudpc.CloudPcDesktopActivity
@@ -64,16 +65,21 @@ fun CloudPcScreen(onBack: () -> Unit, onNeedPro: () -> Unit = {}) {
     var free by remember { mutableLongStateOf(0L) }
     var used by remember { mutableLongStateOf(0L) }
     var boost by remember { mutableStateOf(AirBoost.current(context)) }
+    var fpsLimit by remember { mutableStateOf(AirBoost.fpsLimit(context)) }
+    var showLimitCard by remember { mutableStateOf(false) }
+    var programs by remember { mutableStateOf(0) }
     var command by remember { mutableStateOf("") }
     var showCommand by remember { mutableStateOf(false) }
     var showLog by remember { mutableStateOf(false) }
     var showTermux by remember { mutableStateOf(false) }
     var confirmRemove by remember { mutableStateOf(false) }
 
-    LaunchedEffect(state.version, state.busy) {
+    LaunchedEffect(state.version, state.busy, state.desktopRunning) {
         withContext(Dispatchers.IO) {
             free = CloudPcEngine.freeBytes(context)
             used = CloudPcEngine.usedBytes(context)
+            showLimitCard = ChildLimit.shouldShow(context)
+            programs = ChildLimit.runningPrograms()
         }
     }
 
@@ -185,6 +191,41 @@ fun CloudPcScreen(onBack: () -> Unit, onNeedPro: () -> Unit = {}) {
             }
         }
 
+        if (installed && showLimitCard) {
+            SectionCard(title = "Let big apps run (VS Code, games)") {
+                Text(
+                    "Android 12 and newer close an app's programs when it runs more than ${ChildLimit.LIMIT} of them. " +
+                        "The desktop needs about 20; VS Code, Firefox with tabs or a 3D game push it over, and Android " +
+                        "closes them at once. Lift this limit once:",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(8.dp))
+                ChildLimit.steps().forEachIndexed { i, step ->
+                    Text(
+                        "${i + 1}. $step",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(vertical = 2.dp),
+                    )
+                }
+                if (state.desktopRunning && programs > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Programs running now: $programs (Android limit ${ChildLimit.LIMIT})",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (programs >= ChildLimit.LIMIT - 4) Brand.Warning else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PrimaryButton("Open settings", { ChildLimit.openSettings(context) }, Modifier.weight(1f))
+                    SecondaryButton("Done", {
+                        ChildLimit.hide(context)
+                        showLimitCard = false
+                    }, Modifier.weight(1f))
+                }
+            }
+        }
+
         if (installed) {
             SectionCard(title = "AirBoost") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -200,6 +241,24 @@ fun CloudPcScreen(onBack: () -> Unit, onNeedPro: () -> Unit = {}) {
                 Text(
                     "AirBoost draws the desktop with fewer pixels and sharpens it on the phone – more FPS, still clear. " +
                         "A new profile applies at once, even while the desktop is open.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text("Steady FPS", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (n in AirBoost.FPS_CHOICES) {
+                        SegmentOption(if (n > 0) "$n" else "Max", n == fpsLimit) {
+                            fpsLimit = n
+                            AirBoost.setFpsLimit(context, n)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Games and the desktop are held at this rate. A steady 30 or 45 feels smoother than jumping " +
+                        "between 15 and 90, and the phone stays cooler, so it does not slow down after a few minutes.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

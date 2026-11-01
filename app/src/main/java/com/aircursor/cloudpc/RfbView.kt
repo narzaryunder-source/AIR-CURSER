@@ -122,6 +122,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
                 c.onClipboard = { text ->
                     if (text.isNotEmpty() && text != lastSentClipboard) post { onDesktopClipboard?.invoke(text) }
                 }
+                c.minFrameIntervalMs = frameIntervalMs()
                 c.handshake()
                 client = c
                 resizePending = true
@@ -158,6 +159,15 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
             }
         }
     }
+
+    /** Steady FPS for the desktop picture (0 = no limit). */
+    var fpsLimit = 0
+        set(value) {
+            field = value
+            client?.minFrameIntervalMs = frameIntervalMs()
+        }
+
+    private fun frameIntervalMs(): Long = if (fpsLimit > 0) 1000L / fpsLimit else 0L
 
     // Frames per second actually shown (AirBoost FPS meter).
     var showFps = false

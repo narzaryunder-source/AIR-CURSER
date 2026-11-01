@@ -95,7 +95,8 @@ object CloudPcDesktop {
             echo "export XDG_RUNTIME_DIR=${'$'}XDG_RUNTIME_DIR NO_AT_BRIDGE=1 LANG=C.UTF-8"
         } > /tmp/cloudpc-session.env
         startxfce4 &
-        # Self-repair for the first minute: panel / window manager sometimes do not start under proot.
+        # One helper (Android allows an app only ~32 programs, so no extra background shells):
+        # first-start settings, app fixes, light mode, self-repair for the first minute, browser updates.
         (
             sleep 15
             # Live AirBoost resizes must not pop up the display settings window.
@@ -111,12 +112,12 @@ object CloudPcDesktop {
             for i in 1 2 3 4 5; do
                 pgrep -x xfwm4 >/dev/null || (xfwm4 --replace >/dev/null 2>&1 &)
                 pgrep -x xfce4-panel >/dev/null || (xfce4-panel >/dev/null 2>&1 &)
+                [ "${'$'}i" = 1 ] && [ "${'$'}LIGHT" = "1" ] && command -v cloudpc-light >/dev/null && cloudpc-light 0 >/dev/null 2>&1
                 sleep 10
             done
+            # Security updates for the browser, quietly (at most every 3 days).
+            command -v cloudpc-security-update >/dev/null && nice -n 19 cloudpc-security-update
         ) &
-        [ "${'$'}LIGHT" = "1" ] && command -v cloudpc-light >/dev/null && (cloudpc-light 25 &)
-        # Security updates for the browser, quietly in the background (at most every 3 days).
-        command -v cloudpc-security-update >/dev/null && (sleep 90; nice -n 19 cloudpc-security-update) &
         wait ${'$'}XPID
     """.trimIndent() + "\n"
 

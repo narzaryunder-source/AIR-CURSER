@@ -182,6 +182,23 @@ class RfbClient(input: InputStream, output: OutputStream) {
         return null
     }
 
+    /**
+     * Steady frame pacing: at most one screen update per this many milliseconds (0 = as fast as the
+     * server sends). Even spacing feels smoother than bursts, and leaves CPU time for the apps.
+     */
+    @Volatile var minFrameIntervalMs = 0L
+    private var lastRequestNs = 0L
+
+    private fun requestNext() {
+        val gap = minFrameIntervalMs
+        if (gap > 0) {
+            val waitMs = (lastRequestNs + gap * 1_000_000 - System.nanoTime()) / 1_000_000
+            if (waitMs in 1..1000) Thread.sleep(waitMs)
+        }
+        lastRequestNs = System.nanoTime()
+        requestUpdate(incremental = true)
+    }
+
     private fun readUpdate(): RfbDirty {
         din.readUnsignedByte()
         val n = din.readUnsignedShort()
@@ -219,7 +236,7 @@ class RfbClient(input: InputStream, output: OutputStream) {
             x1 = maxOf(x1, x + w)
             y1 = maxOf(y1, y + h)
         }
-        requestUpdate(incremental = true)
+        requestNext()
         return if (resized) {
             RfbDirty(0, 0, width, height, true)
         } else if (x0 == Int.MAX_VALUE) {

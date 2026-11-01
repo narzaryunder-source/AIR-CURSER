@@ -91,6 +91,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
         val v = RfbView(this, CloudPcDesktop.socketPath(this))
         v.sharpness = AirBoost.current(this).sharpen
+        v.fpsLimit = AirBoost.fpsLimit(this)
         v.showFps = prefs.getBoolean(KEY_FPS, false)
         view = v
         val root = FrameLayout(this)
@@ -283,11 +284,18 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private fun boostMenu() {
         val profiles = AirBoost.entries
         val now = AirBoost.current(this)
-        val labels = profiles.map { "${it.label} – ${it.about}" }.toTypedArray() + "Boost now – stop background jobs, free memory"
+        val fps = AirBoost.fpsLimit(this)
+        val labels = profiles.map { "${it.label} – ${it.about}" }.toTypedArray() +
+            "Steady FPS: ${AirBoost.fpsLabel(fps)} – tap to change" +
+            "Boost now – stop background jobs, free memory"
         AlertDialog.Builder(this)
             .setTitle("AirBoost (now: ${now.label})")
             .setItems(labels) { _, i ->
-                if (i >= profiles.size) {
+                if (i == profiles.size) {
+                    fpsMenu()
+                    return@setItems
+                }
+                if (i > profiles.size) {
                     boostNow()
                     return@setItems
                 }
@@ -295,6 +303,31 @@ class CloudPcDesktopActivity : ComponentActivity() {
                 AirBoost.applyNow(this, b)
                 view?.sharpness = b.sharpen
                 Toast.makeText(this, "AirBoost: ${b.label}", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    /** Steady FPS: games and the desktop picture are held at this rate (smoother than ups and downs). */
+    private fun fpsMenu() {
+        val choices = AirBoost.FPS_CHOICES
+        val cur = choices.indexOf(AirBoost.fpsLimit(this)).coerceAtLeast(0)
+        val labels = choices.map {
+            when (it) {
+                30 -> "30 FPS – steadiest, coolest phone (3D games)"
+                45 -> "45 FPS – steady and smooth"
+                60 -> "60 FPS – smoothest when the phone can keep up"
+                else -> "No limit – highest numbers, more ups and downs"
+            }
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Steady FPS")
+            .setSingleChoiceItems(labels, cur) { d, i ->
+                val n = choices[i]
+                AirBoost.setFpsLimit(this, n)
+                view?.fpsLimit = n
+                Toast.makeText(this, "Steady FPS: ${AirBoost.fpsLabel(n)} (games use it from their next start)", Toast.LENGTH_LONG).show()
+                d.dismiss()
             }
             .setNegativeButton("Close", null)
             .show()
@@ -430,6 +463,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         super.onResume()
         DesktopInput.target = view
         view?.sharpness = AirBoost.current(this).sharpen
+        view?.fpsLimit = AirBoost.fpsLimit(this)
         // Steady speed instead of short bursts followed by heat slow-downs (phones that support it).
         if (android.os.Build.VERSION.SDK_INT >= 24) {
             try {
