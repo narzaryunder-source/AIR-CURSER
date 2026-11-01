@@ -156,6 +156,9 @@ fun HomeScreen(onOpenSetup: () -> Unit, onOpenPreview: () -> Unit, onOpenSecurit
             }
 
             Spacer(Modifier.height(12.dp))
+            UbuntuCard()
+
+            Spacer(Modifier.height(12.dp))
             Button(
                 onClick = { com.aircursor.pc.PcMode.openDesktop(context) },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
