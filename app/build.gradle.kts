@@ -99,6 +99,17 @@ tasks.named("preBuild") {
     dependsOn(downloadHandModel)
 }
 
+// The built-in Cloud PC uses the same desktop tools as the Termux setup (App Store, Windows layout…):
+// copy them from ubuntu/ into the APK's assets.
+val copyCloudPcTools by tasks.registering(Copy::class) {
+    from(rootProject.file("ubuntu")) {
+        include("app-store.sh", "ubuntu-extras.sh", "install-deb.sh", "windows-layout.sh", "wallpaper-gui.sh")
+    }
+    into(layout.buildDirectory.dir("generated/cloudpc-assets/cloudpc"))
+}
+android.sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/cloudpc-assets"))
+tasks.named("preBuild") { dependsOn(copyCloudPcTools) }
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.09.03")
     implementation(composeBom)

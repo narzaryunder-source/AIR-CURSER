@@ -35,7 +35,8 @@ object CloudPcDesktop {
         apt-get install -y --no-install-recommends \
             xfce4 xfce4-terminal xfce4-whiskermenu-plugin xfce4-notifyd xfce4-taskmanager mousepad ristretto \
             tigervnc-standalone-server dbus-x11 x11-xserver-utils at-spi2-core librsvg2-common \
-            fonts-dejavu-core fonts-noto-color-emoji adwaita-icon-theme elementary-xfce-icon-theme greybird-gtk-theme
+            fonts-dejavu-core fonts-noto-color-emoji adwaita-icon-theme elementary-xfce-icon-theme greybird-gtk-theme \
+            zenity wget xdg-utils libnotify-bin
         echo "==> Firefox (from Mozilla, Ubuntu's own is a snap that cannot run here)"
         (
             set -e
@@ -55,7 +56,8 @@ object CloudPcDesktop {
     private val START_SCRIPT = """
         #!/bin/bash
         # Cloud PC desktop: XFCE on a private VNC unix socket (no network port).
-        W="${'$'}{1:-1280}"; H="${'$'}{2:-720}"
+        # Arguments: width height light(0/1)
+        W="${'$'}{1:-1280}"; H="${'$'}{2:-720}"; LIGHT="${'$'}{3:-0}"
         SOCK=$GUEST_SOCKET
         export HOME=/root USER=root LANG=C.UTF-8
         export XDG_RUNTIME_DIR=/tmp/runtime-root
@@ -75,9 +77,28 @@ object CloudPcDesktop {
         XPID=${'$'}!
         for i in ${'$'}(seq 1 150); do [ -S "${'$'}SOCK" ] && break; sleep 0.2; done
         echo CLOUDPC_VNC_READY
-        export DISPLAY=:1
-        export GTK_THEME=Greybird
-        dbus-launch --exit-with-session startxfce4 &
+        export DISPLAY=:1 XDG_CURRENT_DESKTOP=XFCE NO_AT_BRIDGE=1
+        # Firefox/Electron sandboxes cannot work inside proot (Android already isolates the app).
+        export MOZ_FAKE_NO_SANDBOX=1 MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1 \
+            MOZ_DISABLE_RDD_SANDBOX=1 MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1 MOZ_DISABLE_UTILITY_SANDBOX=1
+        # One session bus, saved so AirCursor can send commands into the desktop (wallpaper, apps).
+        eval "${'$'}(dbus-launch --sh-syntax)"
+        {
+            echo "export DISPLAY=:1"
+            echo "export DBUS_SESSION_BUS_ADDRESS='${'$'}DBUS_SESSION_BUS_ADDRESS'"
+            echo "export XDG_RUNTIME_DIR=${'$'}XDG_RUNTIME_DIR NO_AT_BRIDGE=1"
+        } > /tmp/cloudpc-session.env
+        startxfce4 &
+        # Self-repair for the first minute: panel / window manager sometimes do not start under proot.
+        (
+            sleep 15
+            for i in 1 2 3 4 5; do
+                pgrep -x xfwm4 >/dev/null || (xfwm4 --replace >/dev/null 2>&1 &)
+                pgrep -x xfce4-panel >/dev/null || (xfce4-panel >/dev/null 2>&1 &)
+                sleep 10
+            done
+        ) &
+        [ "${'$'}LIGHT" = "1" ] && command -v cloudpc-light >/dev/null && (cloudpc-light 25 &)
         wait ${'$'}XPID
     """.trimIndent() + "\n"
 
@@ -86,5 +107,8 @@ object CloudPcDesktop {
         CloudPcEngine.writeGuestFile(CloudPcEngine.rootfs(c).toPath(), SCRIPT, START_SCRIPT, executable = true)
     }
 
-    fun startCommand(width: Int, height: Int) = "bash /$SCRIPT $width $height"
+    fun startCommand(width: Int, height: Int, light: Boolean) = "bash /$SCRIPT $width $height ${if (light) 1 else 0}"
+
+    /** A shell command that runs inside the running desktop session (DISPLAY + session bus). */
+    fun inSession(command: String) = ". /tmp/cloudpc-session.env 2>/dev/null; $command"
 }

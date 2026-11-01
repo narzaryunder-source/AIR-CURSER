@@ -7,6 +7,9 @@ if [ "$(id -u)" != "0" ]; then
     exec sudo "$0" "$@"
 fi
 REAL_USER="${SUDO_USER:-user}"
+# Home folder of the desktop user ("/root" on the AirCursor built-in Cloud PC, "/home/user" in Termux).
+REAL_HOME=$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6)
+REAL_HOME=${REAL_HOME:-/home/$REAL_USER}
 # An install that was interrupted (e.g. Android killed Termux) is finished first.
 dpkg --configure -a >/dev/null 2>&1
 apt-get -f install -y >/dev/null 2>&1
@@ -20,9 +23,10 @@ install_vscode() {
     if wget -O "$deb" "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-arm64" &&
         apt-get install -y "$deb"; then
         # Electron apps need --no-sandbox inside proot
-        sed -i 's|^Exec=/usr/share/code/code |Exec=/usr/share/code/code --no-sandbox |' \
+        sed -i 's|^Exec=/usr/share/code/code |Exec=/usr/local/bin/vscode |' \
             /usr/share/applications/code*.desktop 2>/dev/null || true
-        printf '#!/bin/sh\nexec /usr/share/code/code --no-sandbox "$@"\n' > /usr/local/bin/vscode
+        # As root (built-in Cloud PC) VS Code also needs its own data folder.
+        printf '#!/bin/sh\nif [ "$(id -u)" = 0 ]; then exec /usr/share/code/code --no-sandbox --user-data-dir=/root/.vscode-root "$@"; fi\nexec /usr/share/code/code --no-sandbox "$@"\n' > /usr/local/bin/vscode
         chmod +x /usr/local/bin/vscode
         ok "VS Code installed (menu: Development > Visual Studio Code, or run: vscode)"
     else
@@ -84,8 +88,8 @@ echo "Is window ko khula rakho. Band karne par Drive bhi band."
 exec rclone rcd --rc-web-gui --rc-no-auth --rc-addr 127.0.0.1:5572
 GD
     chmod +x /usr/local/bin/google-drive
-    mkdir -p "/home/$REAL_USER/Desktop"
-    cat > "/home/$REAL_USER/Desktop/Google-Drive.desktop" <<'GDD'
+    mkdir -p "$REAL_HOME/Desktop"
+    cat > "$REAL_HOME/Desktop/Google-Drive.desktop" <<'GDD'
 [Desktop Entry]
 Type=Application
 Name=Google Drive
@@ -93,7 +97,7 @@ Exec=xfce4-terminal --hold -e google-drive
 Icon=folder-remote
 Terminal=false
 GDD
-    chmod +x "/home/$REAL_USER/Desktop/Google-Drive.desktop"
+    chmod +x "$REAL_HOME/Desktop/Google-Drive.desktop"
     ok "Google Drive ready. Desktop par 'Google Drive' icon, ya terminal me:  google-drive"
     ok "Commands bhi: rclone ls gdrive:   |   rclone copy ~/Documents gdrive:Backup"
 }
@@ -130,7 +134,7 @@ install_apt() {
 after_install() {
     # Games go to /usr/games (not on the PATH here): make them start from terminal and menu
     for f in /usr/games/*; do [ -f "$f" ] && ln -sf "$f" /usr/local/bin/; done
-    chown -R "$REAL_USER:$REAL_USER" "/home/$REAL_USER" 2>/dev/null || true
+    chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME" 2>/dev/null || true
 }
 
 install_id() {

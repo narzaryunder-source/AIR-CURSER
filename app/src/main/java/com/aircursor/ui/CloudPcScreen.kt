@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.content.Intent
+import com.aircursor.cloudpc.AirBoost
 import com.aircursor.cloudpc.CloudPcBus
 import com.aircursor.cloudpc.CloudPcDesktop
 import com.aircursor.cloudpc.CloudPcDesktopActivity
@@ -57,7 +58,7 @@ fun CloudPcScreen(onBack: () -> Unit) {
     val extracted = remember(state.version, state.busy) { CloudPcEngine.isExtracted(context) }
     val ready = remember(state.version, state.busy) { CloudPcEngine.isReady(context) }
     val desktopInstalled = remember(state.version, state.busy) { CloudPcDesktop.isInstalled(context) }
-    var deskWidth by remember { mutableStateOf(CloudPcDesktopActivity.desktopWidth(context)) }
+    var boost by remember { mutableStateOf(AirBoost.current(context)) }
     var free by remember { mutableStateOf(0L) }
     var used by remember { mutableStateOf(0L) }
     var command by remember { mutableStateOf("") }
@@ -173,23 +174,31 @@ fun CloudPcScreen(onBack: () -> Unit) {
                                     modifier = Modifier.fillMaxWidth(),
                                 ) { Text("■ Desktop band karo") }
                             }
-                            Text("Screen size (bada = saaf, chhota = tez + bade akshar):", style = MaterialTheme.typography.bodySmall)
+                            Spacer(Modifier.height(8.dp))
+                            Text("🚀 AirBoost (DLSS jaisa: kam pixels + sharp upscaling)", fontWeight = FontWeight.SemiBold)
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                for (w in CloudPcDesktopActivity.WIDTHS) {
-                                    val selected = w == deskWidth
-                                    OutlinedButton(
-                                        onClick = {
-                                            deskWidth = w
-                                            CloudPcDesktopActivity.setDesktopWidth(context, w)
-                                            if (state.desktopRunning) {
-                                                CloudPcService.send(context, CloudPcService.ACTION_DESKTOP_STOP)
-                                            }
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(2.dp),
-                                    ) { Text(if (selected) "✓$w" else "$w", style = MaterialTheme.typography.labelSmall) }
+                                for (b in AirBoost.entries) {
+                                    val selected = b == boost
+                                    val pick = {
+                                        boost = b
+                                        AirBoost.set(context, b)
+                                        // New size / light mode apply on the next desktop start.
+                                        if (state.desktopRunning) {
+                                            CloudPcService.send(context, CloudPcService.ACTION_DESKTOP_STOP)
+                                        }
+                                    }
+                                    if (selected) {
+                                        Button(onClick = pick, modifier = Modifier.weight(1f),
+                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(2.dp),
+                                        ) { Text(b.label, style = MaterialTheme.typography.labelSmall) }
+                                    } else {
+                                        OutlinedButton(onClick = pick, modifier = Modifier.weight(1f),
+                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(2.dp),
+                                        ) { Text(b.label, style = MaterialTheme.typography.labelSmall) }
+                                    }
                                 }
                             }
+                            Text(boost.about, style = MaterialTheme.typography.bodySmall)
                             Text(
                                 "Haath ka cursor desktop me asli mouse hai: pinch = click, pinch hold = right click, " +
                                     "pinch + move = drag, do ungli = scroll. Touch: tap = click, daba ke rakho = right click.",

@@ -19,6 +19,8 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -32,20 +34,12 @@ import kotlin.math.roundToInt
 /** Full-screen Cloud PC desktop. The hand cursor works here as a real mouse. */
 class CloudPcDesktopActivity : ComponentActivity() {
     companion object {
-        private const val PREFS = "cloudpc_engine"
-        private const val KEY_WIDTH = "desktop_width"
-        val WIDTHS = listOf(1024, 1280, 1600, 1920)
-
-        fun desktopWidth(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(KEY_WIDTH, 1280)
-        fun setDesktopWidth(c: Context, w: Int) =
-            c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(KEY_WIDTH, w).apply()
-
         /** Desktop size with the phone's landscape shape (even numbers for the VNC server). */
         fun desktopSize(c: Context): Pair<Int, Int> {
             val s = ScreenUtils.realSize(c)
             val long = max(s.x, s.y).toFloat()
             val short = min(s.x, s.y).toFloat()
-            val w = desktopWidth(c)
+            val w = AirBoost.current(c).width
             val h = ((w * short / long) / 2f).roundToInt() * 2
             return w to h.coerceAtLeast(480)
         }
@@ -55,6 +49,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private lateinit var status: TextView
     private lateinit var tools: LinearLayout
     private val stickyButtons = HashMap<Int, Button>()
+    private var handButton: Button? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,6 +70,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         CloudPcService.startDesktop(this, w, h)
 
         val v = RfbView(this, CloudPcDesktop.socketPath(this))
+        v.sharpness = AirBoost.current(this).sharpen
         view = v
         val root = FrameLayout(this)
         root.setBackgroundColor(Color.BLACK)
@@ -110,6 +106,13 @@ class CloudPcDesktopActivity : ComponentActivity() {
         root.addView(side, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
 
         tools.addView(toolButton("⌨") { toggleKeyboard() })
+        handButton = toolButton("✋") { toggleHand() }
+        tools.addView(handButton)
+        tools.addView(toolButton("📋") { pasteFromPhone() })
+        tools.addView(toolButton("🖼") {
+            pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        })
+        tools.addView(toolButton("⚡") { boostNow() })
         tools.addView(toolButton("Esc") { v.sendKey(Keysyms.ESCAPE) })
         tools.addView(toolButton("Tab") { v.sendKey(Keysyms.TAB) })
         for ((label, sym) in listOf("Ctrl" to Keysyms.CONTROL_L, "Alt" to Keysyms.ALT_L, "Win" to Keysyms.SUPER_L)) {
@@ -126,6 +129,11 @@ class CloudPcDesktopActivity : ComponentActivity() {
         v.onStatus = { msg ->
             status.text = msg ?: ""
             status.visibility = if (msg == null) View.GONE else View.VISIBLE
+        }
+        v.onDesktopClipboard = { text ->
+            val cm = getSystemService(android.content.ClipboardManager::class.java)
+            cm?.setPrimaryClip(android.content.ClipData.newPlainText("Cloud PC", text))
+            Toast.makeText(this, "📋 Desktop se copy → phone clipboard", Toast.LENGTH_SHORT).show()
         }
         v.onStickyChanged = {
             for ((sym, b) in stickyButtons) {
@@ -159,6 +167,72 @@ class CloudPcDesktopActivity : ComponentActivity() {
         setOnClickListener { onClick() }
     }
 
+    /** Phone photo -> Cloud PC wallpaper (the photo is copied; the phone's file is never changed). */
+    private val pickPhoto = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) setWallpaper(uri)
+    }
+
+    private fun setWallpaper(uri: android.net.Uri) {
+        Toast.makeText(this, "🖼 Wallpaper lag raha hai…", Toast.LENGTH_SHORT).show()
+        Thread {
+            try {
+                val ext = when (contentResolver.getType(uri)) {
+                    "image/png" -> "png"
+                    "image/webp" -> "webp"
+                    else -> "jpg"
+                }
+                val dir = java.io.File(CloudPcEngine.rootfs(this), "root/Pictures/Wallpapers").apply { mkdirs() }
+                val name = "phone-${System.currentTimeMillis()}.$ext"
+                contentResolver.openInputStream(uri)?.use { input ->
+                    java.io.File(dir, name).outputStream().use { input.copyTo(it) }
+                }
+                CloudPcService.send(
+                    this, CloudPcService.ACTION_RUN,
+                    CloudPcDesktop.inSession("aircursor-set-wallpaper /root/Pictures/Wallpapers/$name"),
+                )
+            } catch (e: Exception) {
+                runOnUiThread { Toast.makeText(this, "Photo copy nahi hui: ${e.message}", Toast.LENGTH_LONG).show() }
+            }
+        }.start()
+    }
+
+    /** AirBoost now: stop background jobs inside the desktop and free RAM. */
+    private fun boostNow() {
+        CloudPcService.send(this, CloudPcService.ACTION_RUN, CloudPcDesktop.inSession("cloudpc-light 0; free -h | head -n 2"))
+        Toast.makeText(this, "⚡ Boost: background kaam band, RAM free", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun updateHandButton() {
+        val on = com.aircursor.service.HandTrackingService.isRunning
+        (handButton?.background as? GradientDrawable)?.setColor(if (on) 0xEE2E7D32.toInt() else 0x99000000.toInt())
+    }
+
+    /** Hand cursor on/off right from the desktop (camera service may only start while we are visible). */
+    private fun toggleHand() {
+        val svc = com.aircursor.service.HandTrackingService
+        if (svc.isRunning) {
+            svc.stop(this)
+            Toast.makeText(this, "Haath ka cursor OFF", Toast.LENGTH_SHORT).show()
+        } else if (!com.aircursor.service.Permissions.camera(this) || !com.aircursor.service.Permissions.accessibility(this)) {
+            Toast.makeText(this, "AirCursor app me pehle setup poora karo (camera + accessibility)", Toast.LENGTH_LONG).show()
+        } else {
+            svc.start(this)
+            Toast.makeText(this, "Haath ka cursor ON – ungli camera ke saamne", Toast.LENGTH_SHORT).show()
+        }
+        tools.postDelayed({ updateHandButton() }, 800)
+    }
+
+    private fun pasteFromPhone() {
+        val cm = getSystemService(android.content.ClipboardManager::class.java)
+        val text = cm?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+        if (text.isNullOrEmpty()) {
+            Toast.makeText(this, "Phone clipboard khali hai", Toast.LENGTH_SHORT).show()
+            return
+        }
+        view?.pasteFromPhone(text)
+        Toast.makeText(this, "📋 Phone ka text desktop me paste", Toast.LENGTH_SHORT).show()
+    }
+
     private fun toggleKeyboard() {
         val v = view ?: return
         val imm = getSystemService(InputMethodManager::class.java) ?: return
@@ -189,6 +263,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         DesktopInput.target = view
+        updateHandButton()
     }
 
     override fun onPause() {

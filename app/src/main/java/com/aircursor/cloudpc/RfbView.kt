@@ -53,6 +53,10 @@ object DesktopInput {
 class RfbView(context: Context, private val socketPath: String) : View(context), DesktopTarget {
     var onStatus: ((String?) -> Unit)? = null
 
+    /** Text copied inside the desktop (UI thread). */
+    var onDesktopClipboard: ((String) -> Unit)? = null
+    @Volatile private var lastSentClipboard: String? = null
+
     @Volatile private var client: RfbClient? = null
     @Volatile private var socket: LocalSocket? = null
     @Volatile private var running = false
@@ -111,6 +115,9 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
                 s.connect(LocalSocketAddress(socketPath, LocalSocketAddress.Namespace.FILESYSTEM))
                 socket = s
                 val c = RfbClient(s.inputStream, s.outputStream)
+                c.onClipboard = { text ->
+                    if (text.isNotEmpty() && text != lastSentClipboard) post { onDesktopClipboard?.invoke(text) }
+                }
                 c.handshake()
                 client = c
                 resizePending = true
@@ -174,14 +181,58 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
         invalidate()
     }
 
+    /** AirBoost sharpening strength 0..1 (FSR-style, Android 13+; 0 = plain smooth scaling). */
+    var sharpness = 0f
+        set(value) {
+            field = value.coerceIn(0f, 1f)
+            invalidate()
+        }
+    private var sharpen: Any? = null // RuntimeShader (API 33+), kept as Any so older phones never load it
+    private var sharpenSource: Bitmap? = null
+    private var sharpenChild: android.graphics.BitmapShader? = null
+    private val sharpenPaint = Paint()
+    private val sharpenMatrix = android.graphics.Matrix()
+    private val srcRectF = RectF()
+
     override fun onDraw(canvas: Canvas) {
         val b = bitmap ?: return
         val scale = min(width.toFloat() / b.width, height.toFloat() / b.height)
         val w = b.width * scale
         val h = b.height * scale
         dst.set((width - w) / 2f, (height - h) / 2f, (width + w) / 2f, (height + h) / 2f)
+        if (sharpness > 0f && android.os.Build.VERSION.SDK_INT >= 33 && canvas.isHardwareAccelerated &&
+            drawSharpened(canvas, b)
+        ) {
+            return
+        }
         src.set(0, 0, b.width, b.height)
         canvas.drawBitmap(b, src, dst, paint)
+    }
+
+    @android.annotation.TargetApi(33)
+    private fun drawSharpened(canvas: Canvas, b: Bitmap): Boolean {
+        return try {
+            val rs = (sharpen as? android.graphics.RuntimeShader)
+                ?: android.graphics.RuntimeShader(Sharpen.AGSL).also { sharpen = it }
+            if (sharpenSource !== b) {
+                sharpenChild = android.graphics.BitmapShader(
+                    b, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP,
+                ).apply { filterMode = android.graphics.BitmapShader.FILTER_MODE_LINEAR }
+                sharpenSource = b
+            }
+            rs.setInputShader("img", sharpenChild!!)
+            rs.setFloatUniform("sharp", sharpness)
+            srcRectF.set(0f, 0f, b.width.toFloat(), b.height.toFloat())
+            sharpenMatrix.setRectToRect(srcRectF, dst, android.graphics.Matrix.ScaleToFit.FILL)
+            rs.setLocalMatrix(sharpenMatrix)
+            sharpenPaint.shader = rs
+            canvas.drawRect(dst, sharpenPaint)
+            true
+        } catch (e: Throwable) {
+            Log.w("RfbView", "sharpening off: ${e.message}")
+            sharpness = 0f
+            false
+        }
     }
 
     // ---- Coordinates ----
@@ -262,6 +313,23 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
         sender.execute {
             try {
                 c.key(keysym, down)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** Phone clipboard -> desktop clipboard, then Ctrl+V (Ctrl+Shift+V in terminals is up to the user). */
+    fun pasteFromPhone(text: String) {
+        val c = client ?: return
+        lastSentClipboard = text
+        sender.execute {
+            try {
+                c.clipboard(text)
+                Thread.sleep(80)
+                c.key(Keysyms.CONTROL_L, true)
+                c.key('v'.code, true)
+                c.key('v'.code, false)
+                c.key(Keysyms.CONTROL_L, false)
             } catch (_: Exception) {
             }
         }
@@ -521,4 +589,30 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
         const val WHEEL_LEFT = 32
         const val WHEEL_RIGHT = 64
     }
+}
+
+/**
+ * FSR-style "robust contrast adaptive sharpening" (RCAS idea, AMD FidelityFX): sharpens the
+ * upscaled desktop without halos – the sharpening is limited by the local min/max contrast.
+ * Coordinates are desktop pixels (the shader's local matrix maps them onto the screen).
+ */
+private object Sharpen {
+    const val AGSL = """
+        uniform shader img;
+        uniform float sharp;
+        half4 main(float2 p) {
+            half3 c = img.eval(p).rgb;
+            half3 n = img.eval(p + float2(0.0, -1.0)).rgb;
+            half3 s = img.eval(p + float2(0.0, 1.0)).rgb;
+            half3 e = img.eval(p + float2(1.0, 0.0)).rgb;
+            half3 w = img.eval(p + float2(-1.0, 0.0)).rgb;
+            half3 mn = min(c, min(min(n, s), min(e, w)));
+            half3 mx = max(c, max(max(n, s), max(e, w)));
+            half3 amp = clamp(min(mn, half3(1.0) - mx) / max(mx, half3(0.0001)), half3(0.0), half3(1.0));
+            half peak = -1.0 / mix(8.0, 4.5, half(sharp));
+            half3 wgt = sqrt(amp) * peak;
+            half3 r = (c + (n + s + e + w) * wgt) / (half3(1.0) + 4.0 * wgt);
+            return half4(clamp(r, half3(0.0), half3(1.0)), 1.0);
+        }
+    """
 }

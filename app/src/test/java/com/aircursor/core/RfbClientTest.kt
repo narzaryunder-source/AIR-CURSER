@@ -130,6 +130,29 @@ class RfbClientTest {
         assertEquals(0xE9, Keysyms.forChar(0xE9)) // é
     }
 
+    @Test
+    fun clipboardBothWays() {
+        val data = server(2, 2) {
+            writeByte(3); write(ByteArray(3)); writeInt(5); write("hello".toByteArray())
+        }
+        val out = ByteArrayOutputStream()
+        val c = RfbClient(ByteArrayInputStream(data), out)
+        var got: String? = null
+        c.onClipboard = { got = it }
+        c.handshake()
+        assertEquals(null, c.readMessage())
+        assertEquals("hello", got)
+        val before = out.size()
+        c.clipboard("phone")
+        val d = DataInputStream(ByteArrayInputStream(out.toByteArray(), before, out.size() - before))
+        assertEquals(6, d.readUnsignedByte())
+        d.skipBytes(3)
+        assertEquals(5, d.readInt())
+        val b = ByteArray(5)
+        d.readFully(b)
+        assertEquals("phone", String(b))
+    }
+
     @Test(expected = IOException::class)
     fun passwordOnlyServerIsReported() {
         RfbClient(ByteArrayInputStream(server(2, 2, security = listOf(2)) {}), ByteArrayOutputStream()).handshake()

@@ -188,9 +188,15 @@ class CloudPcService : Service() {
         Thread({
             try {
                 CloudPcDesktop.writeStartScript(this)
-                CloudPcBus.line("==> Desktop start ${width}x$height", force = true)
+                if (CloudPcTools.needsSetup(this)) {
+                    CloudPcBus.line("==> Cloud PC tools (App Store, Windows look, AI apps)…", force = true)
+                    CloudPcEngine.run(this, CloudPcTools.PACKAGES_SCRIPT, onProcess = { desktop = it }) { CloudPcBus.line(it) }
+                    CloudPcTools.writeFiles(this)
+                }
+                val light = AirBoost.current(this).light
+                CloudPcBus.line("==> Desktop start ${width}x$height (AirBoost: ${AirBoost.current(this).label})", force = true)
                 val code = CloudPcEngine.run(
-                    this, CloudPcDesktop.startCommand(width, height), onProcess = { desktop = it },
+                    this, CloudPcDesktop.startCommand(width, height, light), onProcess = { desktop = it },
                 ) { line ->
                     if (line.contains("CLOUDPC_VNC_READY")) CloudPcBus.update { it.copy(desktopReady = true) }
                     // XFCE prints a lot of harmless warnings: keep only the important ones in the log.

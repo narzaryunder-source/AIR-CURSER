@@ -64,5 +64,7 @@ q -c xfce4-keyboard-shortcuts -p /commands/custom/Super_L --create -t string -s 
 xdg-mime default aircursor-install-deb.desktop application/vnd.debian.binary-package 2>/dev/null
 
 xfce4-panel -r >/dev/null 2>&1 &
+# Some sessions do not bring the panel back after the restart: start it again if needed.
+( sleep 5; pgrep -x xfce4-panel >/dev/null || xfce4-panel >/dev/null 2>&1 & ) &
 xfdesktop --reload >/dev/null 2>&1 &
 mkdir -p "$(dirname "$MARK")" && touch "$MARK"

@@ -81,7 +81,9 @@ class RfbClient(input: InputStream, output: OutputStream) {
             writeByte(16); writeByte(8); writeByte(0)
             write(ByteArray(3))
         }
-        val encodings = intArrayOf(ENC_COPYRECT, ENC_RAW, ENC_DESKTOP_SIZE, ENC_CURSOR)
+        // No cursor pseudo-encoding: the desktop draws its own pointer into the picture,
+        // so it is always visible (touch users) and shows where clicks really land.
+        val encodings = intArrayOf(ENC_COPYRECT, ENC_RAW, ENC_DESKTOP_SIZE)
         send {
             writeByte(2)
             writeByte(0)
@@ -123,6 +125,20 @@ class RfbClient(input: InputStream, output: OutputStream) {
         writeShort(y.coerceIn(0, maxOf(0, height - 1)))
     }
 
+    /** Called (on the reading thread) when text is copied inside the desktop. */
+    var onClipboard: ((String) -> Unit)? = null
+
+    /** Puts text on the desktop's clipboard (RFB clipboard is Latin-1; other characters become '?'). */
+    fun clipboard(text: String) {
+        val b = text.toByteArray(Charsets.ISO_8859_1)
+        send {
+            writeByte(6)
+            write(ByteArray(3))
+            writeInt(b.size)
+            write(b)
+        }
+    }
+
     fun key(keysym: Int, down: Boolean) = send {
         writeByte(4)
         writeByte(if (down) 1 else 0)
@@ -144,11 +160,17 @@ class RfbClient(input: InputStream, output: OutputStream) {
                 din.skipBytes(n * 6)
             }
             2 -> Unit // bell
-            3 -> {
+            3 -> { // clipboard text copied inside the desktop
                 din.readFully(ByteArray(3))
                 val len = din.readInt()
                 if (len < 0) throw IOException("Bad clipboard size")
-                skipFully(len.toLong())
+                if (len <= MAX_CLIPBOARD) {
+                    val b = ByteArray(len)
+                    din.readFully(b)
+                    onClipboard?.invoke(String(b, Charsets.ISO_8859_1))
+                } else {
+                    skipFully(len.toLong())
+                }
             }
             else -> throw IOException("Unknown VNC message $type")
         }
@@ -257,6 +279,7 @@ class RfbClient(input: InputStream, output: OutputStream) {
 
     companion object {
         const val SEC_NONE = 1
+        const val MAX_CLIPBOARD = 1 shl 20
         const val ENC_RAW = 0
         const val ENC_COPYRECT = 1
         const val ENC_DESKTOP_SIZE = -223

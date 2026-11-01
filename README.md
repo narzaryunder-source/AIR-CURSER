@@ -133,6 +133,10 @@ Home screen → **"🔒 Security"**:
 - Desktop me **haath ka cursor = asli mouse**: hover, pinch = click, pinch hold = right click, pinch + move = drag, do ungli = scroll.
 - Touch se: tap = click, daba ke rakho = right click, khiskao = drag, do ungli = scroll. Right side **☰** = keyboard, Esc, Tab, Ctrl, Alt, Win, arrows.
 - Desktop ek private socket par chalta hai (koi network port nahi) – phone ka koi doosra app use dekh/chala nahi sakta.
+- **Windows jaisa look** (pehli baar apne aap): neeche taskbar + **Start** button, pinned apps, dark theme, Win key = Start.
+- **App Store** (desktop icon): apps tick karo → Install. **AI Apps** folder: Claude, ChatGPT, Gemini, Offline AI (Ollama).
+- **🚀 AirBoost** (Cloud PC screen par): Performance / Balanced / Quality – kam pixels par chalakar FSR-style sharpening se saaf dikhata hai (DLSS jaisa idea), light mode background kaam band karta hai.
+- Desktop toolbar (☰): ⌨ keyboard · ✋ haath ka cursor ON/OFF · 📋 phone ka copy kiya text paste · 🖼 phone ki photo wallpaper · ⚡ turant boost. Desktop me copy kiya text apne aap phone clipboard me aata hai.
 - Install, **Info**, **Update**, command chalao (jaise `apt-get install -y htop`).
 - **Hatao** button sirf Cloud PC ki apni files hatata hai – phone ki photos/files ko kabhi nahi chhuta.
 
