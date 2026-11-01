@@ -21,6 +21,12 @@ if [ -n "$need" ]; then
     apt-get install -y --no-install-recommends $need
 fi
 
+# Windows-like extras (each optional): GUI dialogs for the App Store, Start menu, dark theme
+for p in zenity xfce4-whiskermenu-plugin greybird-gtk-theme; do
+    dpkg -s "$p" >/dev/null 2>&1 || apt-get install -y --no-install-recommends "$p" >/dev/null 2>&1 \
+        || echo "  (optional $p not installed)"
+done
+
 # The default XFCE wallpaper on Ubuntu points to a file that is not installed: use an XFCE one
 mkdir -p /usr/share/xfce4/backdrops
 if [ ! -e /usr/share/xfce4/backdrops/xubuntu-wallpaper.png ]; then
@@ -59,8 +65,39 @@ grep -q '/usr/games' /etc/profile.d/aircursor-path.sh 2>/dev/null || \
     echo 'case ":$PATH:" in *:/usr/games:*) ;; *) export PATH="$PATH:/usr/local/games:/usr/games" ;; esac' \
     > /etc/profile.d/aircursor-path.sh
 
-# Extra apps menu
+# Extra apps menu, App Store, .deb installer, Windows-style layout
 [ -f /tmp/aircursor-ubuntu-extras.sh ] && install -m 0755 /tmp/aircursor-ubuntu-extras.sh /usr/local/bin/ubuntu-extras
+[ -f /tmp/aircursor-app-store.sh ] && install -m 0755 /tmp/aircursor-app-store.sh /usr/local/bin/aircursor-store
+[ -f /tmp/aircursor-install-deb.sh ] && install -m 0755 /tmp/aircursor-install-deb.sh /usr/local/bin/aircursor-install-deb
+[ -f /tmp/aircursor-windows-layout.sh ] && install -m 0755 /tmp/aircursor-windows-layout.sh /usr/local/bin/aircursor-windows-layout
+mkdir -p /usr/share/applications
+cat > /usr/share/applications/aircursor-store.desktop <<'STORE'
+[Desktop Entry]
+Type=Application
+Name=App Store
+Comment=Install apps with one click
+Exec=aircursor-store
+Icon=system-software-install
+Categories=System;Settings;
+STORE
+cat > /usr/share/applications/aircursor-install-deb.desktop <<'DEBH'
+[Desktop Entry]
+Type=Application
+Name=Install app package
+Exec=aircursor-install-deb %f
+Icon=system-software-install
+NoDisplay=true
+MimeType=application/vnd.debian.binary-package;
+DEBH
+if [ -x /usr/local/bin/aircursor-windows-layout ]; then
+    cat > /etc/xdg/autostart/aircursor-windows-layout.desktop <<'WINA'
+[Desktop Entry]
+Type=Application
+Name=AirCursor Windows-style layout (first login only)
+Exec=/usr/local/bin/aircursor-windows-layout
+NoDisplay=true
+WINA
+fi
 
 # The user's desktop
 if id "$U" >/dev/null 2>&1; then
@@ -71,16 +108,11 @@ if id "$U" >/dev/null 2>&1; then
     fi
     rm -rf "$H/.cache/sessions"
     mkdir -p "$H/Desktop"
-    if [ ! -f "$H/Desktop/Install-Apps.desktop" ]; then
-        cat > "$H/Desktop/Install-Apps.desktop" <<'DESK'
-[Desktop Entry]
-Type=Application
-Name=Install Apps (VS Code, Claude Code, Ollama, Blender...)
-Exec=xfce4-terminal --hold -e "sudo ubuntu-extras"
-Icon=system-software-install
-Terminal=false
-DESK
-        chmod +x "$H/Desktop/Install-Apps.desktop"
+    # Desktop icon: the App Store (replaces the old terminal "Install Apps" shortcut)
+    rm -f "$H/Desktop/Install-Apps.desktop"
+    if [ ! -f "$H/Desktop/App-Store.desktop" ]; then
+        cp /usr/share/applications/aircursor-store.desktop "$H/Desktop/App-Store.desktop"
+        chmod +x "$H/Desktop/App-Store.desktop"
     fi
     chown -R "$U:$U" "$H" 2>/dev/null
 fi

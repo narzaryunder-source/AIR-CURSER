@@ -24,7 +24,7 @@ pkill -9 -f "proot" 2>/dev/null
 rm -rf "$TMPDIR/.X11-unix" "$TMPDIR/.X0-lock" "$TMPDIR/.ICE-unix" 2>/dev/null
 
 echo "==> [2/4] Downloading the latest repair files"
-for f in launchers.sh inner-repair.sh ubuntu-extras.sh; do
+for f in launchers.sh inner-repair.sh ubuntu-extras.sh app-store.sh install-deb.sh windows-layout.sh VERSION; do
     curl -fsSL "$BASE/$f" -o "$TMPDIR/aircursor-$f" || { echo "Download failed: $f (internet?)"; exit 1; }
 done
 
@@ -35,7 +35,8 @@ proot-distro login ubuntu --shared-tmp -- bash /tmp/aircursor-inner-repair.sh "$
 # shellcheck source=/dev/null
 . "$TMPDIR/aircursor-launchers.sh"
 install_launchers "$U"
-rm -f "$TMPDIR/aircursor-launchers.sh" "$TMPDIR/aircursor-inner-repair.sh" "$TMPDIR/aircursor-ubuntu-extras.sh"
+tr -dc '0-9' < "$TMPDIR/aircursor-VERSION" > "$HOME/.aircursor-ubuntu-version"
+rm -f "$TMPDIR"/aircursor-*.sh "$TMPDIR/aircursor-VERSION"
 
 echo "==> [4/4] Starting the desktop"
-exec ubuntu-desktop
+AIRCURSOR_NO_UPDATE=1 exec ubuntu-desktop

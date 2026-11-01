@@ -26,6 +26,18 @@ if [ "$(id -u)" = "0" ]; then
     echo "Aap Ubuntu ke andar ho (root@localhost). Pehle 'exit' likho jab tak prompt '~ \$' na ho, phir ubuntu-desktop chalao."
     exit 1
 fi
+# Auto-update + repair: when a newer version of these tools exists, run the repair once
+# (keeps your settings), which then starts the desktop. No internet = just start.
+if [ -z "${AIRCURSOR_NO_UPDATE:-}" ]; then
+    BASE="https://raw.githubusercontent.com/narzaryunder-source/AIR-CURSER/main/ubuntu"
+    REMOTE=$(curl -fsS --max-time 4 "$BASE/VERSION" 2>/dev/null | tr -dc '0-9')
+    LOCAL=$(tr -dc '0-9' < "$HOME/.aircursor-ubuntu-version" 2>/dev/null)
+    if [ -n "$REMOTE" ] && [ "$REMOTE" != "${LOCAL:-0}" ] &&
+        curl -fsSL --max-time 30 "$BASE/fix.sh" -o "$TMPDIR/aircursor-fix.sh"; then
+        echo "  Updating AirCursor Ubuntu tools (v${LOCAL:-0} -> v$REMOTE)..."
+        exec bash "$TMPDIR/aircursor-fix.sh" --keep
+    fi
+fi
 ubuntu-stop >/dev/null 2>&1
 # Keep Termux awake so Android does not kill it while you are in the Termux:X11 app.
 termux-wake-lock 2>/dev/null

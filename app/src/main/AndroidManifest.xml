@@ -59,6 +59,21 @@
         </activity>
 
         <activity
+            android:name=".ubuntu.UbuntuLaunchActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_ubuntu_pc"
+            android:label="@string/ubuntu_pc_label"
+            android:roundIcon="@mipmap/ic_ubuntu_pc"
+            android:taskAffinity="com.aircursor.ubuntu"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
             android:name=".service.StartTrackingActivity"
             android:excludeFromRecents="true"
             android:exported="false"

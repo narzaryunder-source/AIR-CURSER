@@ -127,6 +127,43 @@ install_apt() {
     if apt-get install -y "$@"; then ok "Installed: $*"; else bad "Failed: $*"; fi
 }
 
+after_install() {
+    # Games go to /usr/games (not on the PATH here): make them start from terminal and menu
+    for f in /usr/games/*; do [ -f "$f" ] && ln -sf "$f" /usr/local/bin/; done
+    chown -R "$REAL_USER:$REAL_USER" "/home/$REAL_USER" 2>/dev/null || true
+}
+
+install_id() {
+    case "$1" in
+        vscode) install_vscode ;;
+        claude) install_claude_code ;;
+        ollama) install_ollama ;;
+        blender) install_apt blender ;;
+        libreoffice) install_apt libreoffice ;;
+        gimp) install_apt gimp ;;
+        inkscape) install_apt inkscape ;;
+        python) install_apt python3 python3-pip python3-venv ;;
+        vlc) install_apt vlc ;;
+        gdrive) install_gdrive ;;
+        shotcut) install_apt shotcut ;;
+        kdenlive) install_apt kdenlive ;;
+        games) install_games_light ;;
+        games3d) install_games_3d ;;
+        luanti) apt-get install -y luanti || apt-get install -y minetest ;;
+        *) install_apt "$1" ;;   # any Ubuntu package name (App Store search)
+    esac
+}
+
+# Non-interactive mode, used by the App Store:  ubuntu-extras install <id|package> ...
+if [ "${1:-}" = "install" ]; then
+    shift
+    echo "Updating the app list..."
+    apt-get update >/dev/null 2>&1 || true
+    for id in "$@"; do install_id "$id"; done
+    after_install
+    exit 0
+fi
+
 while true; do
     cat <<MENU
 
@@ -169,7 +206,5 @@ MENU
         0) exit 0 ;;
         *) echo "Unknown choice" ;;
     esac
-    # Games go to /usr/games (not on the PATH here): make them start from terminal and menu
-    for f in /usr/games/*; do [ -f "$f" ] && ln -sf "$f" /usr/local/bin/; done
-    chown -R "$REAL_USER:$REAL_USER" "/home/$REAL_USER" 2>/dev/null || true
+    after_install
 done

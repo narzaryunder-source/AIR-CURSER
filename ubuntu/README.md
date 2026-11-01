@@ -1,5 +1,14 @@
 # 🐧 Ubuntu Desktop on Android (Termux + Termux:X11)
 
+## ⭐ Roz ka use – sirf 1 tap
+1. Phone ki home screen par **"Ubuntu PC"** icon dabao (AirCursor app ke saath aata hai).
+2. Ubuntu khul jayega: neeche **taskbar + Start button**, Windows jaisa.
+3. Apps: desktop par **App Store** → app tick karo → **Install**. Ya Firefox se ARM64 wali **.deb** file download karke **double-click** karo.
+
+Termux me kuch type nahi karna. Tools khud update aur repair hote hain (internet ho to).
+⚠️ Windows ke **.exe** apps nahi chalte – yeh Linux hai; zyada tar apps ke Linux version App Store me hain.
+
+
 Phone par asli **Ubuntu Linux + XFCE4 desktop** – bina root ke. Ek command se setup.
 
 ## ✅ Kya chalega, kya nahi (seedhi baat)

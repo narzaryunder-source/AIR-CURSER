@@ -83,8 +83,9 @@ fun UbuntuCard() {
                 ) { Text("■ Stop") }
             }
             Text(
-                "Pehli baar: Termux me 'bash fix.sh --keep' chalao. Termux:X11 → settings → Input → " +
-                    "Touchscreen mode = Direct touch (taaki haath ka click sahi jagah lage).",
+                "Phone ki home screen par \"Ubuntu PC\" icon se bhi seedha khulta hai. " +
+                    "Pehli baar ek hi baar: Termux me 'bash fix.sh --keep'. " +
+                    "Termux:X11 → settings → Input → Touchscreen mode = Direct touch.",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 6.dp),
             )

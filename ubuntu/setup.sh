@@ -200,7 +200,7 @@ rm -f "$SHARED_TMP/aircursor-inner-setup.sh" "$SHARED_TMP/aircursor-ubuntu-extra
 step 10 96 "Creating commands: ubuntu-desktop, ubuntu-stop, ubuntu-shell, ubuntu-wallpaper"
 ac_hb_stop
 BASE="https://raw.githubusercontent.com/narzaryunder-source/AIR-CURSER/main/ubuntu"
-for f in launchers.sh inner-repair.sh; do
+for f in launchers.sh inner-repair.sh app-store.sh install-deb.sh windows-layout.sh VERSION; do
     if [ -f "$SCRIPT_DIR/$f" ]; then cp "$SCRIPT_DIR/$f" "$SHARED_TMP/aircursor-$f"
     else wget -qO "$SHARED_TMP/aircursor-$f" "$BASE/$f"; fi
 done
@@ -209,7 +209,8 @@ proot-distro login "$DISTRO" --shared-tmp -- bash /tmp/aircursor-inner-repair.sh
 . "$SHARED_TMP/aircursor-launchers.sh"
 install_launchers "$UBU_USER"
 echo "$UBU_USER" > "$HOME/.aircursor-ubuntu-user"
-rm -f "$SHARED_TMP/aircursor-launchers.sh" "$SHARED_TMP/aircursor-inner-repair.sh"
+tr -dc '0-9' < "$SHARED_TMP/aircursor-VERSION" > "$HOME/.aircursor-ubuntu-version" 2>/dev/null
+rm -f "$SHARED_TMP"/aircursor-*.sh "$SHARED_TMP/aircursor-VERSION"
 
 ac_hb_stop
 EL=$(( $(date +%s) - AC_START ))
