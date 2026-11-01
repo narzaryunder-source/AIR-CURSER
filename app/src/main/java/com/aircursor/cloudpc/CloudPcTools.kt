@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 10
+    const val VERSION = 11
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -398,7 +398,7 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         exit 0
     """.trimIndent() + "\n"
 
-    /** Graphics speed test (glxgears) so people can compare AirBoost profiles. */
+    /** Graphics speed test (glxgears): CPU, and the phone GPU (VirGL) when it is switched on. */
     private val BENCHMARK = """
         #!/bin/bash
         export LANG=C.UTF-8 GSK_RENDERER=cairo NO_AT_BRIDGE=1 vblank_mode=0
@@ -409,14 +409,26 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         fi
         command -v glxgears >/dev/null 2>&1 || { zenity --error --text="The test could not be installed. Check the internet and try again."; exit 1; }
         RES=${'$'}(xrandr 2>/dev/null | awk '/current/ {print ${'$'}8"x"${'$'}10}' | tr -d ,)
-        glxgears -geometry 640x360 > /tmp/glxgears.out 2>&1 &
-        PID=${'$'}!
-        for i in ${'$'}(seq 1 12); do echo ${'$'}((i * 100 / 12)); echo "# Measuring graphics speed… ${'$'}((12 - i)) s"; sleep 1; done \
-            | zenity --progress --auto-close --no-cancel --width=420 --title="Benchmark" --text="Measuring graphics speed…"
-        kill ${'$'}PID 2>/dev/null
-        FPS=${'$'}(grep -o '[0-9.]* FPS' /tmp/glxgears.out | tail -n 1 | cut -d' ' -f1 | cut -d. -f1)
-        zenity --info --width=440 --title="Benchmark" \
-            --text="Graphics: ${'$'}{FPS:-?} FPS\nDesktop size: ${'$'}{RES:-?}\nCPU cores drawing graphics: ${'$'}LP_NUM_THREADS\n\nFor more FPS: toolbar → AirBoost (lightning button) → Game. Then run this test again."
+        measure() {   # ${'$'}1 = title, rest = environment for the test
+            local title="${'$'}1"; shift
+            env "${'$'}@" glxgears -geometry 640x360 > /tmp/glxgears.out 2>&1 &
+            local pid=${'$'}!
+            for i in ${'$'}(seq 1 12); do echo ${'$'}((i * 100 / 12)); echo "# ${'$'}title… ${'$'}((12 - i)) s"; sleep 1; done \
+                | zenity --progress --auto-close --no-cancel --width=420 --title="Benchmark" --text="${'$'}title…"
+            kill ${'$'}pid 2>/dev/null
+            wait ${'$'}pid 2>/dev/null
+            grep -o '[0-9.]* FPS' /tmp/glxgears.out | tail -n 1 | cut -d' ' -f1 | cut -d. -f1
+        }
+        CPU=${'$'}(measure "Testing the CPU (llvmpipe)" GALLIUM_DRIVER=llvmpipe)
+        TEXT="CPU graphics: ${'$'}{CPU:-?} FPS  (${'$'}LP_NUM_THREADS cores)"
+        if [ "${'$'}(cat /etc/cloudpc/gpu-mode 2>/dev/null)" = virgl ] && [ -S /tmp/.virgl_test ]; then
+            GPU=${'$'}(measure "Testing the phone GPU (VirGL)" GALLIUM_DRIVER=virpipe MESA_GL_VERSION_OVERRIDE=4.0)
+            TEXT="${'$'}TEXT\nPhone GPU (VirGL): ${'$'}{GPU:-did not run} FPS\n\nGames use the phone GPU now. If a game is slower or looks wrong, switch Graphics back to CPU in AirBoost."
+        else
+            TEXT="${'$'}TEXT\nPhone GPU (VirGL): off\n\nTo compare: toolbar → AirBoost → Graphics → Phone GPU, then run this test again."
+        fi
+        zenity --info --width=460 --title="Benchmark" \
+            --text="${'$'}TEXT\n\nDesktop size: ${'$'}{RES:-?}\nFor more FPS: AirBoost → Turbo or Game, Steady FPS 30/45."
     """.trimIndent() + "\n"
 
     /** Firefox defaults: no warning about the Linux sandbox that cannot exist inside the Android app. */

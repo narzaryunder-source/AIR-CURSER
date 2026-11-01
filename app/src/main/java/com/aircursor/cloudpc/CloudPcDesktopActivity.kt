@@ -319,9 +319,11 @@ class CloudPcDesktopActivity : ComponentActivity() {
         val profiles = AirBoost.entries
         val now = AirBoost.current(this)
         val fps = AirBoost.fpsLimit(this)
+        val gpu = AirBoost.phoneGpu(this)
         val labels = profiles.map { "${it.label} – ${it.about}" }.toTypedArray() +
             "Steady FPS: ${AirBoost.fpsLabel(fps)} – tap to change" +
-            "Boost now – stop background jobs, free memory"
+            "Boost now – stop background jobs, free memory" +
+            (if (gpu) "Graphics: Phone GPU (VirGL) – tap for CPU" else "Graphics: CPU – tap for Phone GPU (VirGL)")
         AlertDialog.Builder(this)
             .setTitle("AirBoost (now: ${now.label})")
             .setItems(labels) { _, i ->
@@ -329,8 +331,18 @@ class CloudPcDesktopActivity : ComponentActivity() {
                     fpsMenu()
                     return@setItems
                 }
-                if (i > profiles.size) {
+                if (i == profiles.size + 1) {
                     boostNow()
+                    return@setItems
+                }
+                if (i == profiles.size + 2) {
+                    AirBoost.setPhoneGpu(this, !gpu)
+                    Toast.makeText(
+                        this,
+                        if (!gpu) "Phone GPU on – games use it from their next start. Benchmark compares both."
+                        else "Graphics: CPU – games use it from their next start.",
+                        Toast.LENGTH_LONG,
+                    ).show()
                     return@setItems
                 }
                 val b = profiles[i]

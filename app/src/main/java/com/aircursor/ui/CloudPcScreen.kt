@@ -66,6 +66,7 @@ fun CloudPcScreen(onBack: () -> Unit, onNeedPro: () -> Unit = {}) {
     var used by remember { mutableLongStateOf(0L) }
     var boost by remember { mutableStateOf(AirBoost.current(context)) }
     var fpsLimit by remember { mutableStateOf(AirBoost.fpsLimit(context)) }
+    var phoneGpu by remember { mutableStateOf(AirBoost.phoneGpu(context)) }
     var showLimitCard by remember { mutableStateOf(false) }
     var programs by remember { mutableStateOf(0) }
     var command by remember { mutableStateOf("") }
@@ -259,6 +260,27 @@ fun CloudPcScreen(onBack: () -> Unit, onNeedPro: () -> Unit = {}) {
                 Text(
                     "Games and the desktop are held at this rate. A steady 30 or 45 feels smoother than jumping " +
                         "between 15 and 90, and the phone stays cooler, so it does not slow down after a few minutes.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text("Graphics for games", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SegmentOption("CPU", !phoneGpu) {
+                        phoneGpu = false
+                        AirBoost.setPhoneGpu(context, false)
+                    }
+                    SegmentOption("Phone GPU (VirGL)", phoneGpu) {
+                        phoneGpu = true
+                        AirBoost.setPhoneGpu(context, true)
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Phone GPU lets games draw on the phone's graphics chip (VirGL). It can be faster or slower than " +
+                        "the CPU depending on the game – try both: Benchmark on the desktop shows both numbers. " +
+                        "Games use the new choice from their next start.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

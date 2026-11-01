@@ -74,6 +74,7 @@ android {
             useLegacyPackaging = true
             keepDebugSymbols += setOf(
                 "**/libproot.so", "**/libproot-loader.so", "**/libtalloc.so", "**/libandroid-shmem.so",
+                "**/libvirgl_server.so", "**/libvirglrenderer.so", "**/libepoxy.so",
             )
         }
     }

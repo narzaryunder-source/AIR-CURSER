@@ -111,6 +111,7 @@ private val TOPICS = listOf(
             "Open Benchmark on the desktop to measure graphics FPS and compare profiles.",
             "Games show their FPS in the corner (Right Shift + F12 hides it).",
             "Steady FPS (30 / 45 / 60) keeps games and the desktop even and the phone cooler.",
+            "Graphics: CPU or Phone GPU (VirGL) for games – Benchmark compares both.",
             "FPS meter shows Idle when nothing on the screen changes – that is not lag.",
         ),
     ),

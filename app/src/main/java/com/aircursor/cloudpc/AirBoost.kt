@@ -19,6 +19,15 @@ enum class AirBoost(val label: String, val width: Int, val sharpen: Float, val l
         private const val PREFS = "cloudpc_engine"
         private const val KEY = "airboost"
         private const val KEY_FPS = "fps_limit"
+        private const val KEY_GPU = "phone_gpu"
+
+        /** Games draw on the phone's GPU through VirGL (instead of the CPU). */
+        fun phoneGpu(c: Context): Boolean = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_GPU, false)
+
+        fun setPhoneGpu(c: Context, on: Boolean) {
+            c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_GPU, on).apply()
+            if (CloudPcBus.state.value.desktopRunning) CloudPcService.send(c, CloudPcService.ACTION_GPU)
+        }
 
         /** Steady-FPS choices; 0 = no limit. */
         val FPS_CHOICES = listOf(30, 45, 60, 0)

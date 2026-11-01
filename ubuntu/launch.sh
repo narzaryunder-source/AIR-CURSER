@@ -67,14 +67,19 @@ run() {   # $1 = 1 for the safe second try
     if [ "$safe" = 1 ]; then
         # Safe mode: simplest drawing paths for GTK, Qt and OpenGL.
         env GSK_RENDERER=cairo QT_X11_NO_MITSHM=1 QT_QUICK_BACKEND=software QT_XCB_GL_INTEGRATION=none \
-            LIBGL_ALWAYS_SOFTWARE=1 GDK_BACKEND=x11 "${cmd[@]}" </dev/null >"$LOG" 2>&1
+            LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe GDK_BACKEND=x11 "${cmd[@]}" </dev/null >"$LOG" 2>&1
     elif [ $GAME = 1 ]; then
         # Games: OpenGL work on its own CPU thread; FPS overlay + steady FPS limit (MangoHud).
+        # AirBoost → Graphics → Phone GPU: draw on the phone's GPU through VirGL.
+        local gpu=()
+        if [ "$(cat /etc/cloudpc/gpu-mode 2>/dev/null)" = virgl ] && [ -S /tmp/.virgl_test ]; then
+            gpu=(GALLIUM_DRIVER=virpipe MESA_GL_VERSION_OVERRIDE=4.0)
+        fi
         if command -v mangohud >/dev/null 2>&1 && [ ! -f /root/.config/cloudpc/no-game-overlay ]; then
-            env mesa_glthread=true MANGOHUD_CONFIGFILE=/etc/cloudpc/MangoHud.conf \
+            env "${gpu[@]}" mesa_glthread=true MANGOHUD_CONFIGFILE=/etc/cloudpc/MangoHud.conf \
                 mangohud --dlsym "${cmd[@]}" </dev/null >"$LOG" 2>&1
         else
-            env mesa_glthread=true "${cmd[@]}" </dev/null >"$LOG" 2>&1
+            env "${gpu[@]}" mesa_glthread=true "${cmd[@]}" </dev/null >"$LOG" 2>&1
         fi
     else
         "${cmd[@]}" </dev/null >"$LOG" 2>&1

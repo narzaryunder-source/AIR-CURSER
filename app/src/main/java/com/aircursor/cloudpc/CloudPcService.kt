@@ -35,6 +35,7 @@ class CloudPcService : Service() {
         const val ACTION_DESKTOP_INSTALL = "com.aircursor.cloudpc.DESKTOP_INSTALL"
         const val ACTION_DESKTOP_START = "com.aircursor.cloudpc.DESKTOP_START"
         const val ACTION_DESKTOP_STOP = "com.aircursor.cloudpc.DESKTOP_STOP"
+        const val ACTION_GPU = "com.aircursor.cloudpc.GPU"
         const val EXTRA_COMMAND = "command"
         const val EXTRA_WIDTH = "width"
         const val EXTRA_HEIGHT = "height"
@@ -60,7 +61,7 @@ class CloudPcService : Service() {
 
     private val executor = Executors.newSingleThreadExecutor()
     private var jobs = 0
-    private var desktopActive = false
+    @Volatile private var desktopActive = false
 
     private fun stopIfIdle() {
         if (jobs == 0 && !desktopActive) {
@@ -96,6 +97,7 @@ class CloudPcService : Service() {
         goForeground()
         when (action) {
             ACTION_INSTALL -> submit("Preparing…") { install() }
+            ACTION_GPU -> Thread({ applyGpu() }, "cloudpc-gpu").start()
             ACTION_RUN -> {
                 val cmd = intent.getStringExtra(EXTRA_COMMAND).orEmpty()
                 if (cmd.isNotBlank()) submit(cmd.take(40)) { runCommand(cmd) }
@@ -240,6 +242,7 @@ class CloudPcService : Service() {
                 }
                 CloudPcEngine.writeGuestFile(CloudPcEngine.rootfs(this).toPath(), "etc/cloudpc/child-limit", "$limit\n")
                 AirBoost.writeGameConfig(this)
+                applyGpu()
                 if (CloudPcTools.needsSetup(this)) {
                     CloudPcBus.line("==> Updating desktop tools (App Store, layout, AI apps)…", force = true)
                     CloudPcEngine.run(this, CloudPcTools.PACKAGES_SCRIPT, onProcess = { desktop = it }) { CloudPcBus.line(it) }
@@ -261,6 +264,8 @@ class CloudPcService : Service() {
                 CloudPcBus.update { it.copy(error = e.message) }
             } finally {
                 desktop = null
+                VirglServer.stop(this)
+                VirglServer.writeMode(this, false)
                 try {
                     deskWake?.takeIf { it.isHeld }?.release()
                 } catch (_: Exception) {
@@ -272,6 +277,22 @@ class CloudPcService : Service() {
                 }
             }
         }, "cloudpc-desktop").start()
+    }
+
+    /** Phone GPU switch: starts or stops the VirGL server and tells the PC which one games use. */
+    private fun applyGpu() {
+        val want = AirBoost.phoneGpu(this) && desktopActive
+        if (want) {
+            val ok = VirglServer.start(this)
+            CloudPcBus.line(
+                if (ok) "==> Phone GPU (VirGL) is on – games use it from their next start"
+                else "==> Phone GPU (VirGL) could not start on this phone – games use the CPU",
+                force = true,
+            )
+        } else {
+            VirglServer.stop(this)
+        }
+        VirglServer.writeMode(this, want)
     }
 
     private fun stopDesktop() {
