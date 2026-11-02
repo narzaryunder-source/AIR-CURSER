@@ -1,26 +1,34 @@
-/* TS Station – interface logic. Keyboard, mouse, touch and the AirCursor hand cursor all work. */
+/* TS Station – interface logic. Controller, keyboard, mouse, touch and the AirCursor hand cursor all work. */
 "use strict";
 
 const KEY = new URLSearchParams(location.hash.slice(1)).get("k") || "";
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const PAGES = ["home", "library", "search", "performance", "themes", "settings"];
+const PAGES = ["home", "library", "store", "search", "performance", "themes", "settings"];
 
-const state = { games: [], settings: {}, page: "home", shelf: "all", focus: 0, inHero: false, art: {}, colors: {} };
+const state = {
+  games: [], store: [], job: null, settings: {}, sys: {}, page: "home", shelf: "all", sort: "az", genre: "All",
+  storeGenre: "All", storeHero: null, hero: null, rowSel: 0, details: null, padSeen: false, sheetBack: null,
+};
 
 async function api(path, body) {
-  const opt = body === undefined ? {} : { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } };
-  opt.headers = Object.assign(opt.headers || {}, { "X-TS-Key": KEY });
+  const opt = { headers: { "X-TS-Key": KEY } };
+  if (body !== undefined) { opt.method = "POST"; opt.body = JSON.stringify(body); opt.headers["Content-Type"] = "application/json"; }
   const r = await fetch(path, opt);
   if (!r.ok) throw new Error(r.status);
   return r.json();
 }
-const iconUrl = (id) => `/api/icon/${encodeURIComponent(id)}?k=${KEY}`;
-const artUrl = (id) => `/api/art/${encodeURIComponent(id)}?k=${KEY}`;
+const enc = encodeURIComponent;
+const iconUrl = (id) => `/api/icon/${enc(id)}?k=${KEY}`;
+const artUrl = (id) => `/api/art/${enc(id)}?k=${KEY}`;
+const storeArtUrl = (id, hd) => `/api/storeart/${enc(id)}?k=${KEY}${hd ? "&hd=1" : ""}`;
+const storeIconUrl = (id) => `/api/storeicon/${enc(id)}?k=${KEY}`;
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const size = (mb) => (mb >= 1 ? `${mb} MB` : "< 1 MB");
 
 /* ---------- sounds (soft, short, can be turned off) ---------- */
 let audio;
-function blip(freq = 660, dur = 0.05, vol = 0.04) {
+function blip(freq = 660, dur = 0.05, vol = 0.035) {
   if (!state.settings.sounds) return;
   try {
     audio = audio || new AudioContext();
@@ -32,149 +40,162 @@ function blip(freq = 660, dur = 0.05, vol = 0.04) {
   } catch (_) { /* no sound device */ }
 }
 
-/* ---------- art: the game's own screenshot, else a colour field from its icon ---------- */
-function probeArt(id) {
-  if (id in state.art) return Promise.resolve(state.art[id]);
-  return new Promise((res) => {
-    const img = new Image();
-    img.onload = () => res((state.art[id] = artUrl(id)));
-    img.onerror = () => res((state.art[id] = null));
-    img.src = artUrl(id);
+/* ---------- pictures: probe once, remember the answer ---------- */
+const probed = {};
+function probe(url) {
+  if (!(url in probed)) {
+    probed[url] = new Promise((res) => {
+      const img = new Image();
+      img.onload = () => res(url); img.onerror = () => res(null); img.src = url;
+    });
+  }
+  return probed[url];
+}
+const colors = {};
+function iconColor(url) {
+  if (!colors[url]) {
+    colors[url] = new Promise((res) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const c = document.createElement("canvas"); c.width = c.height = 16;
+          const x = c.getContext("2d"); x.drawImage(img, 0, 0, 16, 16);
+          const d = x.getImageData(0, 0, 16, 16).data;
+          let r = 0, g = 0, b = 0, n = 0;
+          for (let i = 0; i < d.length; i += 4) {
+            if (d[i + 3] < 128) continue;
+            const w = 1 + (Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2])) / 32;   // colourful pixels count more
+            r += d[i] * w; g += d[i + 1] * w; b += d[i + 2] * w; n += w;
+          }
+          res(n ? [r / n, g / n, b / n].map((v) => Math.round(v * 0.55)) : [40, 44, 60]);
+        } catch (_) { res([40, 44, 60]); }
+      };
+      img.onerror = () => res([40, 44, 60]);
+      img.src = url;
+    });
+  }
+  return colors[url];
+}
+const rgb = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
+function paintArt(el, art, icon) {
+  probe(art).then((url) => {
+    if (url) { el.style.backgroundImage = `url("${url}")`; el.classList.add("has-art"); return; }
+    iconColor(icon).then((c) => {
+      el.style.background = `radial-gradient(circle at 50% 36%, ${rgb(c.map((v) => Math.min(255, v * 1.7)))} 0%, ${rgb(c)} 55%, #0c0e14 100%)`;
+    });
   });
 }
-function iconColor(id) {
-  if (state.colors[id]) return Promise.resolve(state.colors[id]);
-  return new Promise((res) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const c = document.createElement("canvas"); c.width = c.height = 16;
-        const x = c.getContext("2d"); x.drawImage(img, 0, 0, 16, 16);
-        const d = x.getImageData(0, 0, 16, 16).data;
-        let r = 0, g = 0, b = 0, n = 0;
-        for (let i = 0; i < d.length; i += 4) {
-          if (d[i + 3] < 128) continue;
-          const mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]);
-          const w = 1 + (mx - mn) / 32;           // colourful pixels count more
-          r += d[i] * w; g += d[i + 1] * w; b += d[i + 2] * w; n += w;
-        }
-        const col = n ? [r / n, g / n, b / n].map((v) => Math.round(v * 0.55)) : [40, 44, 60];
-        res((state.colors[id] = col));
-      } catch (_) { res((state.colors[id] = [40, 44, 60])); }
-    };
-    img.onerror = () => res((state.colors[id] = [40, 44, 60]));
-    img.src = iconUrl(id);
-  });
+
+/* ---------- game names as a logo ---------- */
+function setLogo(el, name) {
+  name = String(name);
+  const m = name.match(/^(.+?)\s*(?:[:–]\s+|\s-\s|\()(.+?)\)?$/);
+  el.innerHTML = m ? `${esc(m[1])}<small>${esc(m[2])}</small>` : esc(name);
+  const len = (m ? m[1] : name).length;
+  el.classList.toggle("long", len > 11 && len <= 18);
+  el.classList.toggle("xlong", len > 18);
 }
-const rgb = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 
 /* ---------- tiles ---------- */
 const STAR = '<svg viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg>';
-function tile(g, i) {
+function tile(g) {
   const t = document.createElement("button");
   t.className = "tile" + (g.favorite ? " is-fav" : "");
-  t.dataset.id = g.id; t.dataset.i = i;
+  t.dataset.id = g.id;
   t.innerHTML = `<div class="art"><img class="icon" alt="" src="${iconUrl(g.id)}" onerror="this.remove()"></div>
-    <span class="fav">${STAR}</span><span class="name"></span>`;
-  t.querySelector(".name").textContent = g.name;
-  const art = t.querySelector(".art");
-  probeArt(g.id).then((url) => {
-    if (url) {
-      art.style.backgroundImage = `url("${url}")`;
-      const ic = art.querySelector(".icon");
-      if (ic) { ic.style.width = "30%"; ic.style.alignSelf = "end"; ic.style.marginBottom = "10px"; }
-    } else {
-      iconColor(g.id).then((c) => {
-        art.style.background = `radial-gradient(circle at 50% 38%, ${rgb(c.map((v) => Math.min(255, v * 1.6)))} 0%, ${rgb(c)} 55%, #0d0f15 100%)`;
-      });
-    }
-  });
+    <span class="fav">${STAR}</span><span class="t-name"></span><span class="t-src"></span>`;
+  t.querySelector(".t-name").textContent = g.name;
+  t.querySelector(".t-src").textContent = g.source || "";
+  paintArt(t.querySelector(".art"), artUrl(g.id), iconUrl(g.id));
   return t;
 }
 function addTile() {
   const t = document.createElement("button");
   t.className = "tile add"; t.dataset.add = "1";
-  t.innerHTML = '<div class="art">+<br>Add a game</div><span class="name">Add a game</span>';
+  t.innerHTML = '<div class="art">+</div><span class="t-name">Get games</span><span class="t-src">TS Store</span>';
   return t;
 }
+const gameById = (id) => state.games.find((g) => g.id === id);
+const storeById = (id) => state.store.find((s) => s.id === id);
+const gameForStore = (sid) => state.games.find((g) => g.store === sid);
 
 /* ---------- home ---------- */
 function shelfGames() {
   const g = [...state.games];
-  if (state.shelf === "fav") return g.filter((x) => x.favorite);
+  if (state.shelf === "fav") return g.filter((x) => x.favorite).sort((a, b) => a.name.localeCompare(b.name));
   if (state.shelf === "recent") return g.filter((x) => x.last).sort((a, b) => b.last - a.last);
   return g.sort((a, b) => (b.last - a.last) || a.name.localeCompare(b.name));
 }
 function renderRow() {
   const row = $("#row"); row.innerHTML = "";
   const list = shelfGames();
-  list.forEach((g, i) => row.appendChild(tile(g, i)));
+  list.forEach((g) => row.appendChild(tile(g)));
   row.appendChild(addTile());
-  state.focus = Math.min(state.focus, Math.max(0, list.length - 1));
-  focusTile(state.focus, false);
+  $("#nAll").textContent = state.games.length;
+  $("#nFav").textContent = state.games.filter((g) => g.favorite).length;
+  $("#nRecent").textContent = state.games.filter((g) => g.last).length;
+  state.rowSel = Math.min(state.rowSel, Math.max(0, list.length - 1));
+  selectRow(state.rowSel, false);
   if (!list.length) showHero(null);
-  $("#count").textContent = `${state.games.length} games installed`;
+  $("#count").innerHTML = `<b>${state.games.length}</b> installed · TS Console`;
 }
-function current() { return shelfGames()[state.focus]; }
+function selectRow(i, sound = true) {
+  const tiles = $$("#row .tile");
+  if (!tiles.length) return;
+  i = Math.max(0, Math.min(i, tiles.length - 1));
+  tiles.forEach((t, k) => t.classList.toggle("focus", k === i));
+  state.rowSel = i;
+  const g = gameById(tiles[i].dataset.id);
+  if (g) showHero(g);
+  if (sound) blip(720);
+}
 function ago(t) {
   if (!t) return "Not played yet";
   const d = Math.floor((Date.now() / 1000 - t) / 86400);
   return d < 1 ? "Played today" : d === 1 ? "Played yesterday" : `Played ${d} days ago`;
 }
-let heroToken = 0;
-async function showHero(g) {
+function metaHtml(g) {
+  const parts = [`<span class="src">${esc(g.source || "Ubuntu")}</span>`, '<span class="dot">Installed</span>'];
+  if (state.sys.profile) parts.push(`<span>Profile <b>${esc(state.sys.profile)}</b></span>`);
+  if (g.fit) parts.push(`<span>Runs <b>${esc(g.fit)}</b></span>`);
+  parts.push(`<span>${esc(g.count ? `${ago(g.last)} · ${g.count}×` : ago(g.last))}</span>`);
+  return parts.join("");
+}
+let heroTimer, heroToken = 0;
+function showHero(g) {
+  state.hero = g;
+  setLogo($("#heroTitle"), g ? g.name : "Your games live here");
+  $("#heroEyebrow").textContent = g ? (g.last ? "Continue playing" : g.genre || "Game") : "TS Station";
+  $("#heroChips").innerHTML = g ? metaHtml(g) : '<span class="src">TS Store</span><span>Free games, one tap to install</span>';
+  $("#heroAbout").textContent = g ? (g.about || "") : "Open the Store to install free games – racing, building, shooters, strategy and more.";
+  $("#btnPlay span").textContent = g ? "Play Game" : "Open Store";
+  clearTimeout(heroTimer);
+  heroTimer = setTimeout(() => setBackground(g ? artUrl(g.id) : null, g ? iconUrl(g.id) : null), 90);   // fast scrolling skips pictures
+}
+async function setBackground(art, icon) {
   const tok = ++heroToken;
-  $("#heroTitle").textContent = g ? g.name : "Your games live here";
-  $("#heroAbout").textContent = g ? (g.about || "") : "Install games from the App Store, or add any game in Settings.";
-  $("#heroEyebrow").textContent = g && g.last ? "Continue playing" : "From your collection";
-  const chips = $("#heroChips"); chips.innerHTML = "";
-  if (g) {
-    for (const v of [g.genre, "Installed", ago(g.last), g.count ? `Played ${g.count}×` : ""]) {
-      if (!v) continue;
-      const c = document.createElement("span"); c.className = "chip"; c.textContent = v; chips.appendChild(c);
-    }
-  }
-  $("#btnPlay").disabled = !g;
-  // background crossfade
   const a = $("#bgA"), b = $("#bgB");
   const next = a.classList.contains("on") ? b : a, prev = next === a ? b : a;
-  const url = g ? await probeArt(g.id) : null;
+  const url = art ? await probe(art) : null;
+  const c = !url && icon ? await iconColor(icon) : [26, 30, 42];
   if (tok !== heroToken) return;
   next.removeAttribute("style");
   if (url) {
-    next.className = "bg-img";
-    next.style.backgroundImage = `url("${url}")`;
+    next.className = "bg-img"; next.style.backgroundImage = `url("${url}")`;
   } else {
-    const c = g ? await iconColor(g.id) : [30, 34, 48];
-    if (tok !== heroToken) return;
-    next.className = "bg-img fallback";
-    next.style.backgroundColor = rgb(c);
-    if (g) {
-      next.style.backgroundImage = `url("${iconUrl(g.id)}")`;
-      next.style.backgroundSize = "contain"; next.style.backgroundRepeat = "no-repeat"; next.style.backgroundPosition = "80% 40%";
-    }
+    next.className = "bg-img fallback"; next.style.backgroundColor = rgb(c);
+    if (icon) Object.assign(next.style, { backgroundImage: `url("${icon}")`, backgroundSize: "34%", backgroundRepeat: "no-repeat", backgroundPosition: "78% 40%" });
   }
   requestAnimationFrame(() => { next.classList.add("on"); prev.classList.remove("on"); });
-}
-function focusTile(i, sound = true) {
-  const tiles = $$("#row .tile");
-  if (!tiles.length) return;
-  i = Math.max(0, Math.min(i, tiles.length - 1));
-  tiles.forEach((t) => t.classList.remove("focus"));
-  const t = tiles[i]; t.classList.add("focus");
-  t.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
-  state.focus = i; state.inHero = false;
-  $("#btnPlay").classList.remove("focus");
-  if (!t.dataset.add) showHero(shelfGames()[i]);
-  if (sound) blip(720);
 }
 
 /* ---------- actions ---------- */
 async function play(g) {
-  if (!g) return;
+  if (!g) { go("store"); return; }
   blip(520, 0.12, 0.05);
   toast(`Starting ${g.name}…`);
-  try { await api("/api/launch", { id: g.id }); g.last = Date.now() / 1000; g.count++; } catch (_) { toast("Could not start the game"); }
+  try { await api("/api/launch", { id: g.id }); g.last = Date.now() / 1000; g.count = (g.count || 0) + 1; }
+  catch (_) { toast("Could not start the game"); }
 }
 async function toggleFav(g) {
   if (!g) return;
@@ -183,92 +204,267 @@ async function toggleFav(g) {
   state.settings = await api("/api/settings", { favorites: [...favs] });
   g.favorite = favs.has(g.id);
   toast(g.favorite ? "Added to favourites" : "Removed from favourites");
-  renderAll(false);
+  blip(880, 0.06);
+  const keep = document.activeElement && document.activeElement.closest(".tile");
+  const keepId = keep && keep.dataset.id, inRow = keep && keep.closest("#row");
+  renderGames();
+  if (state.details && state.details.game === g) openDetails(g);
+  else if (keepId) {
+    const again = $(`${inRow ? "#row" : "#page-" + state.page} .tile[data-id="${CSS.escape(keepId)}"]`);
+    if (again) again.focus({ preventScroll: true });
+  }
 }
 function options(g) {
   if (!g) return;
-  sheet(g.name, `<p>${esc(g.about || "No description.")}</p><p>${esc(g.genre)} · ${esc(ago(g.last))}${g.count ? ` · played ${g.count}×` : ""}</p>`, [
+  sheet(g.name, `<p>${esc(g.genre)} · ${esc(ago(g.last))}${g.count ? ` · played ${g.count}×` : ""}</p>`, [
+    ["Details", () => openDetails(g)],
     [g.favorite ? "Remove favourite" : "Add to favourites", () => toggleFav(g)],
-    ...(g.mine ? [["Remove from collection", async () => { await api("/api/remove", { id: g.id }); await load(); }]] : []),
+    ...(g.mine ? [["Remove from collection", () => removeCustom(g)]] : []),
+    ...(g.store ? [["Uninstall", () => uninstall(storeById(g.store))]] : []),
     ["Play", () => play(g), true],
   ]);
 }
+async function removeCustom(g) { await api("/api/remove", { id: g.id }); closeDetails(); await load(false); toast(`${g.name} removed`); }
 function addGame() {
-  sheet("Add a game", `<p>Any program can be a game in your collection – for example a game you downloaded, a script or an emulator.</p>
-    <label>Name</label><input id="agName" maxlength="60" placeholder="My game">
-    <label>Command to start it</label><input id="agCmd" placeholder="/root/Games/mygame/start.sh">`, [
+  sheet("Add a game", `<p>Any program can be a game in your collection – a game you downloaded, a script or an emulator.</p>
+    <label for="agName">Name</label><input id="agName" maxlength="60" placeholder="My game">
+    <label for="agCmd">Command to start it</label><input id="agCmd" placeholder="/root/Games/mygame/start.sh">`, [
     ["Cancel", null],
     ["Add", async () => {
       const name = $("#agName").value.trim(), command = $("#agCmd").value.trim();
       if (!name || !command) { toast("Fill in both fields"); return; }
-      await api("/api/add", { name, command }); await load(); toast(`${name} added`);
+      await api("/api/add", { name, command }); await load(false); toast(`${name} added`);
     }, true],
   ]);
   setTimeout(() => $("#agName").focus(), 50);
 }
 
+/* ---------- details ---------- */
+const stat = (k, v) => `<div class="stat"><small>${esc(k)}</small><b>${esc(v)}</b></div>`;
+const FIT_TEXT = { Smooth: "Runs smooth", Good: "Good · Game profile", Heavy: "Heavy · Turbo profile" };
+function button(cls, html, fn) {
+  const b = document.createElement("button"); b.className = cls; b.innerHTML = html;
+  if (fn) b.onclick = fn; else b.disabled = true;
+  return b;
+}
+const PLAY_ICON = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+function openDetails(g) {
+  const s = g.store ? storeById(g.store) : null;
+  state.details = { game: g, back: state.details ? state.details.back : document.activeElement };
+  detailsArt(artUrl(g.id), iconUrl(g.id));
+  $("#dEyebrow").textContent = g.genre || "Game";
+  setLogo($("#dTitle"), g.name);
+  $("#dChips").innerHTML = metaHtml(g);
+  $("#dAbout").textContent = g.about || "No description yet.";
+  const acts = $("#dActions"); acts.innerHTML = "";
+  acts.append(button("btn-play", `${PLAY_ICON}<span>Play Game</span>`, () => play(g)));
+  acts.append(button("btn-ghost", g.favorite ? "★ Favourite" : "☆ Add to favourites", () => toggleFav(g)));
+  if (s) acts.append(button("btn-ghost", "Uninstall", () => uninstall(s)));
+  if (g.mine) acts.append(button("btn-ghost", "Remove", () => removeCustom(g)));
+  $("#dStats").innerHTML = stat("Played", g.count ? `${g.count} time${g.count > 1 ? "s" : ""}` : "Never") +
+    stat("Last played", g.last ? ago(g.last).replace("Played ", "") : "–") + stat("Genre", g.genre || "Game") +
+    stat("On this phone", FIT_TEXT[g.fit] || "–") + stat("Source", g.source || "Ubuntu");
+  showDetails();
+}
+function openStoreDetails(s) {
+  if (!s) return;
+  const g = gameForStore(s.id);
+  if (s.installed && g) { openDetails(g); return; }
+  state.details = { store: s, back: state.details ? state.details.back : document.activeElement };
+  detailsArt(storeArtUrl(s.id, true), storeIconUrl(s.id));
+  $("#dEyebrow").textContent = `TS Store · ${s.genre}`;
+  setLogo($("#dTitle"), s.name);
+  $("#dChips").innerHTML = `<span class="src">TS Store</span><span class="dot${s.installed ? "" : " warn"}">${s.installed ? "Installed" : "Not installed"}</span>` +
+    `<span>Free</span><span>${size(s.mb)}</span><span>Runs <b>${esc(s.fit)}</b></span>`;
+  $("#dAbout").textContent = s.about;
+  const acts = $("#dActions"); acts.innerHTML = "";
+  const job = state.job && state.job.state === "running" && state.job.id === s.id;
+  if (job) acts.append(button("btn-play", `<span>${state.job.action === "install" ? "Installing" : "Removing"}… ${state.job.percent}%</span>`, null));
+  else if (s.installed) {
+    acts.append(button("btn-play", "<span>Installed – find it in Library</span>", () => go("library")));
+    acts.append(button("btn-ghost", "Uninstall", () => uninstall(s)));
+  } else acts.append(button("btn-play", '<svg viewBox="0 0 24 24" style="fill:none;stroke:currentColor"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>Install – free</span>', () => install(s)));
+  $("#dStats").innerHTML = stat("Price", "Free") + stat("Download", size(s.mb)) + stat("On this phone", FIT_TEXT[s.fit]) +
+    stat("Genre", s.genre) + stat("From", "Ubuntu");
+  showDetails();
+}
+function detailsArt(art, icon) {
+  const el = $("#dArt"); el.removeAttribute("style"); el.className = "details-art";
+  probe(art).then(async (url) => {
+    if (url) { el.style.backgroundImage = `url("${url}")`; return; }
+    const c = await iconColor(icon);
+    el.className = "details-art fallback";
+    Object.assign(el.style, { backgroundColor: rgb(c), backgroundImage: `url("${icon}")`, backgroundSize: "30%", backgroundRepeat: "no-repeat", backgroundPosition: "80% 45%" });
+  });
+}
+function showDetails() {
+  const wasOpen = !$("#details").hidden;
+  $("#details").hidden = false;
+  if (!wasOpen) blip(560, 0.08);
+  ($("#dActions button:not([disabled])") || $("#dBack")).focus({ preventScroll: true });
+}
+function closeDetails() {
+  if ($("#details").hidden) return;
+  const back = state.details && state.details.back;
+  $("#details").hidden = true; state.details = null;
+  if (back && back.isConnected) back.focus({ preventScroll: true }); else defaultFocus();
+  blip(480, 0.05);
+}
+
+/* ---------- store ---------- */
+function storeCard(s) {
+  const b = document.createElement("button");
+  b.className = "sgame"; b.dataset.sid = s.id;
+  b.innerHTML = `<div class="s-art"><img alt="" src="${storeIconUrl(s.id)}" onerror="this.remove()"></div>
+    <div class="s-body"><span class="s-name"></span><span class="s-info"><span class="fit fit-${esc(s.fit)}">${esc(s.fit)}</span>
+    <span>${esc(s.genre)}</span><span>${size(s.mb)}</span></span><span class="s-act"></span></div>`;
+  b.querySelector(".s-name").textContent = s.name;
+  paintArt(b.querySelector(".s-art"), storeArtUrl(s.id), storeIconUrl(s.id));
+  cardState(b, s);
+  return b;
+}
+function cardState(b, s) {
+  const act = b.querySelector(".s-act");
+  const job = state.job && state.job.state === "running" && state.job.id === s.id ? state.job : null;
+  let bar = b.querySelector(".bar");
+  if (job) {
+    act.className = "s-act"; act.textContent = `${job.action === "install" ? "Installing" : "Removing"}… ${job.percent}%`;
+    if (!bar) { bar = document.createElement("div"); bar.className = "bar"; bar.innerHTML = "<i></i>"; b.querySelector(".s-body").append(bar); }
+    bar.firstChild.style.width = job.percent + "%";
+  } else {
+    if (bar) bar.remove();
+    act.className = "s-act " + (s.installed ? "have" : "get");
+    act.textContent = s.installed ? "✓ Installed" : "Get – free";
+  }
+}
+function renderStore() {
+  const genres = ["All", "Runs smooth", ...new Set(state.store.map((s) => s.genre))];
+  const tabs = $("#storeTabs"); tabs.innerHTML = "";
+  for (const name of genres) {
+    const b = document.createElement("button"); b.textContent = name; b.classList.toggle("active", name === state.storeGenre);
+    b.onclick = () => { state.storeGenre = name; renderStore(); blip(600); $$("#storeTabs button")[genres.indexOf(name)].focus(); };
+    tabs.appendChild(b);
+  }
+  const list = state.store.filter((s) => state.storeGenre === "All" || (state.storeGenre === "Runs smooth" ? s.fit === "Smooth" : s.genre === state.storeGenre));
+  const grid = $("#storeGrid"); grid.innerHTML = "";
+  list.forEach((s) => grid.appendChild(storeCard(s)));
+  if (!state.storeHero && state.store.length) storeHero(state.store[0]);
+}
+function storeHero(s) {
+  if (!s || state.storeHero === s.id) return;
+  state.storeHero = s.id;
+  $("#storeHeroTitle").textContent = s.name;
+  $("#storeHeroAbout").textContent = `${s.about}  ·  ${s.genre} · ${size(s.mb)} · runs ${s.fit.toLowerCase()}`;
+  const el = $("#storeHeroArt");
+  probe(storeArtUrl(s.id, true)).then((u) => { if (state.storeHero === s.id) el.style.backgroundImage = u ? `url("${u}")` : "none"; });
+}
+async function install(s) {
+  if (!s) return;
+  const r = await api("/api/install", { id: s.id });
+  if (!r.ok) { toast(r.error); return; }
+  state.job = r.job; toast(`Installing ${s.name}… you can keep browsing`); blip(620, 0.1);
+  if (state.details && state.details.store) openStoreDetails(s);
+  refreshJob(); watchJob();
+}
+function uninstall(s) {
+  if (!s) return;
+  sheet(`Uninstall ${s.name}?`, "<p>The game is removed from this PC. Your saves in the home folder stay.</p>", [["Cancel", null], ["Uninstall", async () => {
+    const r = await api("/api/uninstall", { id: s.id });
+    if (!r.ok) { toast(r.error); return; }
+    state.job = r.job; closeDetails(); refreshJob(); watchJob();
+  }, true]]);
+}
+let jobTimer;
+function watchJob() {
+  clearInterval(jobTimer);
+  jobTimer = setInterval(async () => {
+    try { state.job = await api("/api/job"); } catch (_) { return; }
+    refreshJob();
+    if (state.job.state === "running") return;
+    clearInterval(jobTimer);
+    const sid = state.job.id, s = storeById(sid);
+    if (state.job.state === "done") { blip(660, 0.12); setTimeout(() => blip(990, 0.16), 110); toast(`${s ? s.name : "Game"}: ${state.job.text}`); }
+    else toast(`Did not work: ${state.job.text}`);
+    await load(false);
+    if (state.details && state.details.store && state.details.store.id === sid) openStoreDetails(storeById(sid));
+  }, 900);
+}
+function refreshJob() {
+  for (const b of $$(".sgame")) { const s = storeById(b.dataset.sid); if (s) cardState(b, s); }
+  const j = state.job;
+  if (state.details && state.details.store && j && state.details.store.id === j.id && j.state === "running") {
+    const p = $("#dActions .btn-play span"); if (p) p.textContent = `${j.action === "install" ? "Installing" : "Removing"}… ${j.percent}%`;
+  }
+}
+
 /* ---------- pages ---------- */
-function go(page) {
+function go(page, focus = true) {
   if (!PAGES.includes(page)) return;
+  closeDetails();
   state.page = page;
+  document.body.classList.toggle("on-home", page === "home");
   $$("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.page === page));
   $$(".page").forEach((p) => p.classList.toggle("active", p.id === "page-" + page));
   blip(600, 0.04);
-  if (page === "search") setTimeout(() => $("#searchBox").focus(), 30);
   if (page === "performance") renderPerf();
-  if (page === "home") showHero(current());
+  if (page === "home") showHero(state.hero);
+  if (focus) {
+    const target = page === "home" ? $$("#row .tile")[state.rowSel] : page === "search" ? $("#searchBox") : firstIn($("#page-" + page));
+    if (target) target.focus({ preventScroll: true });
+  }
 }
-function renderGrid(el, list, withAdd) {
-  el.innerHTML = "";
-  list.forEach((g, i) => el.appendChild(tile(g, i)));
-  if (withAdd) el.appendChild(addTile());
+function firstIn(root) { return focusables().find((e) => root.contains(e)); }
+function sortedLibrary() {
+  const list = state.games.filter((g) => state.genre === "All" || g.genre === state.genre);
+  if (state.sort === "recent") return list.sort((a, b) => (b.last - a.last) || a.name.localeCompare(b.name));
+  if (state.sort === "most") return list.sort((a, b) => (b.count - a.count) || a.name.localeCompare(b.name));
+  return list.sort((a, b) => a.name.localeCompare(b.name));
 }
-let genre = "All";
 function renderLibrary() {
   const genres = ["All", ...new Set(state.games.map((g) => g.genre))];
+  if (!genres.includes(state.genre)) state.genre = "All";
   const tabs = $("#genreTabs"); tabs.innerHTML = "";
   for (const name of genres) {
-    const b = document.createElement("button"); b.textContent = name; b.classList.toggle("active", name === genre);
-    b.onclick = () => { genre = name; renderLibrary(); }; tabs.appendChild(b);
+    const b = document.createElement("button");
+    b.innerHTML = `${esc(name)} <i>${name === "All" ? state.games.length : state.games.filter((g) => g.genre === name).length}</i>`;
+    b.classList.toggle("active", name === state.genre);
+    b.onclick = () => { state.genre = name; renderLibrary(); blip(600); $$("#genreTabs button")[genres.indexOf(name)].focus(); };
+    tabs.appendChild(b);
   }
-  const list = state.games.filter((g) => genre === "All" || g.genre === genre).sort((a, b) => a.name.localeCompare(b.name));
-  renderGrid($("#libGrid"), list, true);
+  $("#btnSort").textContent = "Sort: " + { az: "A–Z", recent: "Recently played", most: "Most played" }[state.sort];
+  const grid = $("#libGrid"); grid.innerHTML = "";
+  sortedLibrary().forEach((g) => grid.appendChild(tile(g)));
+  grid.appendChild(addTile());
 }
 function renderSearch() {
   const q = $("#searchBox").value.trim().toLowerCase();
-  const list = !q ? [] : state.games.filter((g) => (g.name + " " + g.about + " " + g.genre).toLowerCase().includes(q));
-  renderGrid($("#searchGrid"), list, false);
+  const hit = (x) => (x.name + " " + x.about + " " + x.genre).toLowerCase().includes(q);
+  const grid = $("#searchGrid"); grid.innerHTML = "";
+  const store = $("#searchStore"); store.innerHTML = "";
+  if (!q) return;
+  state.games.filter(hit).forEach((g) => grid.appendChild(tile(g)));
+  state.store.filter((s) => !s.installed && hit(s)).forEach((s) => store.appendChild(storeCard(s)));
 }
 async function renderPerf() {
   const box = $("#perfCards");
   try {
-    const s = await api("/api/system");
+    const s = state.sys = await api("/api/system");
     const cards = [
+      ["Profile", s.profile || "–", `Desktop ${s.resolution || "–"} · smaller = more FPS`],
       ["Game graphics", s.graphics, "AirCursor toolbar → AirBoost → Graphics"],
       ["Steady FPS", s.fpsLimit ? `${s.fpsLimit} FPS` : "No limit", "Even frame pacing, cooler phone"],
-      ["Desktop size", s.resolution || "–", "Fewer pixels = more FPS (Turbo profile)"],
       ["Memory free", `${s.memFreeGB} / ${s.memTotalGB} GB`, "Close unused apps before big games"],
       ["CPU cores", String(s.cores), "All cores draw the graphics"],
       ["Programs running", String(s.programs), s.programLimit === "off" ? "Android limit lifted" : "Android limit: about 32"],
       ["Storage free", `${s.storageFreeGB} GB`, "For games and projects"],
       ["FPS overlay", s.overlay ? "On" : "Off", "Right Shift + F12 in a game"],
     ];
-    box.innerHTML = "";
-    for (const [k, v, n] of cards) {
-      const c = document.createElement("div"); c.className = "card";
-      c.innerHTML = "<small></small><b></b><span></span>";
-      c.querySelector("small").textContent = k; c.querySelector("b").textContent = v; c.querySelector("span").textContent = n;
-      box.appendChild(c);
-    }
+    box.innerHTML = cards.map(([k, v, n]) => `<div class="card"><small>${esc(k)}</small><b>${esc(v)}</b><span>${esc(n)}</span></div>`).join("");
   } catch (_) { box.textContent = "Could not read the system."; }
 }
-function renderAll(resetFocus = true) {
-  if (resetFocus) state.focus = 0;
-  renderRow(); renderLibrary(); renderSearch();
-}
+function renderGames() { renderRow(); renderLibrary(); renderSearch(); }
 
 /* ---------- sheet + toast ---------- */
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 function sheet(title, html, actions) {
   $("#sheetTitle").textContent = title; $("#sheetBody").innerHTML = html;
   const box = $("#sheetActions"); box.innerHTML = "";
@@ -276,85 +472,224 @@ function sheet(title, html, actions) {
     const b = document.createElement("button"); b.className = "btn" + (primary ? " primary" : ""); b.textContent = label;
     b.onclick = async () => { closeSheet(); if (fn) await fn(); }; box.appendChild(b);
   }
+  state.sheetBack = document.activeElement;
   $("#sheet").hidden = false;
+  ($("#sheetActions .primary") || $("#sheetActions button")).focus();
 }
-function closeSheet() { $("#sheet").hidden = true; }
+function closeSheet() {
+  if ($("#sheet").hidden) return;
+  $("#sheet").hidden = true;
+  if (state.sheetBack && state.sheetBack.isConnected) state.sheetBack.focus({ preventScroll: true });
+}
 let toastTimer;
 function toast(msg) {
   const t = $("#toast"); t.textContent = msg; t.hidden = false;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 2600);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 3000);
 }
 
-/* ---------- settings + theme ---------- */
-function applyTheme(name) {
-  document.body.className = document.body.className.replace(/theme-\S+/g, "").trim() + " theme-" + name;
-  $$(".theme-card").forEach((c) => c.classList.toggle("active", c.dataset.theme === name));
-}
-function applyProfile() {
-  const n = (state.settings.name || "Player").trim() || "Player";
-  $("#avatar").textContent = n.slice(0, 1).toUpperCase();
-  $("#setName").value = state.settings.name || "";
-  $("#setSounds").checked = !!state.settings.sounds;
+/* ---------- hint bar ---------- */
+function updateHints() {
+  const pad = state.settings.padHints || state.padSeen;
+  const k = (t, cls = "") => `<kbd class="${cls}">${t}</kbd>`;
+  const items = pad
+    ? [[k("✚", "pad"), "Navigate"], [k("A", "pad a"), "Select"], [k("B", "pad b"), "Back"], [k("X", "pad x"), "Details"],
+       [k("Y", "pad y"), "Favourite"], [k("≡", "pad"), "Options"], [k("L1") + k("R1"), "Pages"]]
+    : [[k("WASD"), "Navigate"], [k("↵"), "Activate"], [k("Esc"), "Back"], [k("F1"), "Details"], [k("O"), "Options"],
+       [k("F"), "Favourite"], [k("Q") + k("E"), "Pages"]];
+  $("#keys").innerHTML = items.map(([a, b]) => `<span>${a}${b}</span>`).join("");
 }
 
-/* ---------- input ---------- */
+/* ---------- moving the focus (keyboard, controller) ---------- */
+function focusables() {
+  let scope;
+  if (!$("#sheet").hidden) scope = [$("#sheet")];
+  else if (!$("#details").hidden) scope = [$("#details")];
+  else scope = [$("#top"), $("#page-" + state.page)];
+  const out = [];
+  for (const root of scope) {
+    for (const e of root.querySelectorAll("button, input")) {
+      if (!e.disabled && e.getClientRects().length) out.push(e);
+    }
+  }
+  return out;
+}
+function move(dir) {
+  const all = focusables();
+  const cur = document.activeElement;
+  if (!all.includes(cur)) { defaultFocus(); return; }
+  const r = cur.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const horiz = dir === "left" || dir === "right";
+  let best = null, bestScore = Infinity;
+  for (const e of all) {
+    if (e === cur) continue;
+    const q = e.getBoundingClientRect();
+    const qx = q.left + q.width / 2, qy = q.top + q.height / 2;
+    let main;
+    if (dir === "right") { if (qx <= cx + 1) continue; main = q.left - r.right; }
+    else if (dir === "left") { if (qx >= cx - 1) continue; main = r.left - q.right; }
+    else if (dir === "down") { if (qy <= cy + 1) continue; main = q.top - r.bottom; }
+    else { if (qy >= cy - 1) continue; main = r.top - q.bottom; }
+    const side = horiz ? Math.max(0, q.top - r.bottom, r.top - q.bottom) : Math.max(0, q.left - r.right, r.left - q.right);
+    const score = Math.max(main, -8) + side * 4 + Math.abs(horiz ? qy - cy : qx - cx) * 0.05;
+    if (score < bestScore) { bestScore = score; best = e; }
+  }
+  // Home: up from the shelf goes to Play; down from Play goes back to the chosen game.
+  if (dir === "up" && cur.closest("#row") && !$("#btnPlay").disabled) best = $("#btnPlay");
+  if (dir === "down" && (cur === $("#btnPlay") || cur === $("#btnMore"))) best = $$("#row .tile")[state.rowSel] || best;
+  if (best) { focusEl(best); blip(740, 0.035, 0.025); }
+}
+function focusEl(e) {
+  if (!e) return;
+  e.focus({ preventScroll: true });
+  e.scrollIntoView({ block: "nearest", inline: "nearest", behavior: state.settings.theme === "minimal" ? "auto" : "smooth" });
+}
+function defaultFocus() {
+  if (!$("#sheet").hidden) { ($("#sheetActions .primary") || $("#sheetActions button")).focus(); return; }
+  if (!$("#details").hidden) { ($("#dActions button:not([disabled])") || $("#dBack")).focus(); return; }
+  focusEl(state.page === "home" ? $$("#row .tile")[state.rowSel] : firstIn($("#page-" + state.page)));
+}
+function focusedGame() {
+  if (state.details && state.details.game) return state.details.game;
+  const e = document.activeElement;
+  const t = e && e.closest && e.closest(".tile");
+  if (t && t.dataset.id) return gameById(t.dataset.id);
+  return state.page === "home" ? state.hero : null;
+}
+function focusedStore() {
+  const e = document.activeElement;
+  const c = e && e.closest && e.closest(".sgame");
+  return c ? storeById(c.dataset.sid) : null;
+}
+function activate() {
+  const e = document.activeElement;
+  if (!e || e === document.body) { defaultFocus(); return; }
+  e.click();
+}
+function details() {
+  if (state.details) return;
+  const s = focusedStore();
+  if (s) { openStoreDetails(s); return; }
+  const g = focusedGame();
+  if (g) openDetails(g);
+}
+function back() {
+  if (!$("#sheet").hidden) { closeSheet(); return; }
+  if (!$("#details").hidden) { closeDetails(); return; }
+  if (state.page !== "home") { go("home"); return; }
+  focusEl($$("#row .tile")[state.rowSel]);
+}
+function page(step) {
+  if (!$("#sheet").hidden) return;
+  const i = PAGES.indexOf(state.page);
+  go(PAGES[(i + step + PAGES.length) % PAGES.length]);
+}
+function optionsKey() { const s = focusedStore(); if (s) openStoreDetails(s); else options(focusedGame()); }
+
+/* ---------- keyboard (a controller on the phone arrives here as keys too) ---------- */
+const KEYS = {
+  ArrowLeft: () => move("left"), a: () => move("left"), ArrowRight: () => move("right"), d: () => move("right"),
+  ArrowUp: () => move("up"), w: () => move("up"), ArrowDown: () => move("down"), s: () => move("down"),
+  Enter: activate, Escape: back, Backspace: back, " ": details, F1: details, i: details,
+  o: optionsKey, ContextMenu: optionsKey, f: () => toggleFav(focusedGame()),
+  q: () => page(-1), "[": () => page(-1), PageUp: () => page(-1), e: () => page(1), "]": () => page(1), PageDown: () => page(1),
+};
+document.addEventListener("keydown", (e) => {
+  if (document.body.classList.contains("booting")) { start(); e.preventDefault(); return; }
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (e.target.matches && e.target.matches("input:not(.switch)")) {   // typing
+    if (k === "Escape") { e.preventDefault(); e.target.blur(); back(); }
+    else if (k === "ArrowDown" || k === "Enter") { e.preventDefault(); move("down"); }
+    else if (k === "ArrowUp") { e.preventDefault(); move("up"); }
+    return;
+  }
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  const fn = KEYS[k];
+  if (fn) { e.preventDefault(); fn(); }
+});
+
+/* ---------- controller seen by the browser itself (USB, or when the system passes it on) ---------- */
+const PAD = { 0: activate, 1: back, 2: details, 3: () => toggleFav(focusedGame()), 4: () => page(-1), 5: () => page(1),
+  8: details, 9: optionsKey, 12: () => move("up"), 13: () => move("down"), 14: () => move("left"), 15: () => move("right") };
+let padPrev = {}, padRepeat = {}, padLoop = false;
+function pollPads() {
+  const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
+  if (!pads.length) { padLoop = false; return; }
+  const now = performance.now(), down = {};
+  for (const p of pads) {
+    p.buttons.forEach((b, i) => { if (b.pressed) down[i] = true; });
+    const [x = 0, y = 0] = p.axes;
+    if (x < -0.55) down[14] = true;
+    if (x > 0.55) down[15] = true;
+    if (y < -0.55) down[12] = true;
+    if (y > 0.55) down[13] = true;
+  }
+  for (const i of Object.keys(PAD)) {
+    if (down[i] && !padPrev[i]) {
+      if (document.body.classList.contains("booting")) start(); else PAD[i]();
+      padRepeat[i] = now + 380;
+    } else if (down[i] && i >= 12 && now > padRepeat[i]) { PAD[i](); padRepeat[i] = now + 120; }
+  }
+  padPrev = down;
+  requestAnimationFrame(pollPads);
+}
+window.addEventListener("gamepadconnected", () => {
+  state.padSeen = true; updateHints(); toast("Controller connected");
+  if (!padLoop) { padLoop = true; requestAnimationFrame(pollPads); }
+});
+
+/* ---------- mouse, touch, hand cursor ---------- */
 function start() {
   if (!document.body.classList.contains("booting")) return;
   document.body.classList.remove("booting");
   blip(440, 0.18, 0.05); setTimeout(() => blip(660, 0.22, 0.04), 120);
-  const fs = document.documentElement.requestFullscreen;
-  if (fs) document.documentElement.requestFullscreen().catch(() => {});
+  if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
+  setTimeout(defaultFocus, 60);
 }
-document.addEventListener("keydown", (e) => {
-  if (document.body.classList.contains("booting")) { start(); e.preventDefault(); return; }
-  if (!$("#sheet").hidden) { if (e.key === "Escape") closeSheet(); return; }
-  const typing = e.target.matches("input");
-  if (e.key === "Escape") { if (state.page !== "home") go("home"); e.preventDefault(); return; }
-  if (typing) return;
-  const i = PAGES.indexOf(state.page);
-  if (e.key === "q" || e.key === "Q" || e.key === "[") { go(PAGES[(i + PAGES.length - 1) % PAGES.length]); return; }
-  if (e.key === "e" || e.key === "E" || e.key === "]") { go(PAGES[(i + 1) % PAGES.length]); return; }
-  if (state.page !== "home") return;
-  const k = e.key.toLowerCase();
-  if (k === "arrowright" || k === "d") { e.preventDefault(); focusTile(state.focus + 1); }
-  else if (k === "arrowleft" || k === "a") { e.preventDefault(); focusTile(state.focus - 1); }
-  else if (k === "arrowup" || k === "w") {
-    e.preventDefault(); state.inHero = true;
-    $$("#row .tile").forEach((t) => t.classList.remove("focus")); $("#btnPlay").classList.add("focus"); blip(820);
-  } else if (k === "arrowdown" || k === "s") { e.preventDefault(); focusTile(state.focus); }
-  else if (k === "enter" || k === " ") {
-    e.preventDefault();
-    const t = $$("#row .tile")[state.focus];
-    if (t && t.dataset.add && !state.inHero) addGame(); else play(current());
-  } else if (k === "f") toggleFav(current());
-  else if (k === "o") options(current());
-});
 $("#boot").addEventListener("click", start);
 $("#nav").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) go(b.dataset.page); });
 $$("[data-goto]").forEach((b) => (b.onclick = () => go(b.dataset.goto)));
 $("#shelfTabs").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   state.shelf = b.dataset.shelf; $$("#shelfTabs button").forEach((x) => x.classList.toggle("active", x === b));
-  state.focus = 0; renderRow(); blip(600);
+  state.rowSel = 0; renderRow(); blip(600);
 });
-function tileClick(e, where) {
+let pressedSelected = false;
+$("#row").addEventListener("pointerdown", (e) => { const t = e.target.closest(".tile"); pressedSelected = !!(t && t.classList.contains("focus")); });
+$("#row").addEventListener("focusin", (e) => {
   const t = e.target.closest(".tile"); if (!t) return;
-  if (t.dataset.add) { addGame(); return; }
-  const g = state.games.find((x) => x.id === t.dataset.id);
-  if (where === "row") {
-    const i = Number(t.dataset.i);
-    if (i === state.focus && t.classList.contains("focus")) play(g); else focusTile(i);   // tap = select, tap again = play
-  } else options(g);
+  const i = $$("#row .tile").indexOf(t);
+  if (i !== state.rowSel || !t.classList.contains("focus")) selectRow(i, false);
+});
+$("#row").addEventListener("click", (e) => {
+  const t = e.target.closest(".tile"); if (!t) return;
+  if (t.dataset.add) { go("store"); return; }
+  if (e.detail === 0 || pressedSelected) play(gameById(t.dataset.id));   // Enter / A plays; tap = select, tap again = play
+  else t.focus({ preventScroll: true });
+  pressedSelected = false;
+});
+function gridClick(e) {
+  const t = e.target.closest(".tile"); if (!t) return;
+  if (t.dataset.add) { go("store"); return; }
+  const g = gameById(t.dataset.id);
+  if (e.detail === 0) play(g); else openDetails(g);
 }
-$("#row").addEventListener("click", (e) => tileClick(e, "row"));
-$("#libGrid").addEventListener("click", (e) => tileClick(e, "grid"));
-$("#searchGrid").addEventListener("click", (e) => tileClick(e, "grid"));
-$("#btnPlay").onclick = () => play(current());
-$("#btnMore").onclick = () => options(current());
+$("#libGrid").addEventListener("click", gridClick);
+$("#searchGrid").addEventListener("click", gridClick);
+function storeClick(e) { const c = e.target.closest(".sgame"); if (c) openStoreDetails(storeById(c.dataset.sid)); }
+$("#storeGrid").addEventListener("click", storeClick);
+$("#searchStore").addEventListener("click", storeClick);
+$("#storeGrid").addEventListener("focusin", (e) => { const c = e.target.closest(".sgame"); if (c) storeHero(storeById(c.dataset.sid)); });
+$("#rowPrev").onclick = () => { selectRow(state.rowSel - 1); focusEl($$("#row .tile")[state.rowSel]); };
+$("#rowNext").onclick = () => { selectRow(state.rowSel + 1); focusEl($$("#row .tile")[state.rowSel]); };
+$("#btnPlay").onclick = () => play(state.hero);
+$("#btnMore").onclick = () => (state.hero ? openDetails(state.hero) : go("store"));
+$("#dBack").onclick = closeDetails;
+$("#btnSort").onclick = () => { state.sort = { az: "recent", recent: "most", most: "az" }[state.sort]; renderLibrary(); blip(600); $("#btnSort").focus(); };
 $("#searchBox").addEventListener("input", renderSearch);
 $("#sheet").addEventListener("click", (e) => { if (e.target.id === "sheet") closeSheet(); });
 $("#btnAdd").onclick = addGame;
-$("#btnRescan").onclick = async () => { await load(); toast(`${state.games.length} games found`); };
+$("#btnRescan").onclick = async () => { await load(false); toast(`${state.games.length} games found`); };
 $$("[data-tool]").forEach((b) => (b.onclick = async () => { await api("/api/tool", { name: b.dataset.tool }); toast("Opening…"); }));
 $("#btnDoctor").onclick = async () => {
   toast("Checking the PC…");
@@ -368,6 +703,7 @@ $("#themeCards").addEventListener("click", async (e) => {
 });
 $("#setName").addEventListener("change", async (e) => { state.settings = await api("/api/settings", { name: e.target.value.trim() }); applyProfile(); });
 $("#setSounds").addEventListener("change", async (e) => { state.settings = await api("/api/settings", { sounds: e.target.checked }); });
+$("#setPad").addEventListener("change", async (e) => { state.settings = await api("/api/settings", { padHints: e.target.checked }); updateHints(); });
 $("#btnFull").onclick = () => {
   const p = document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
   if (p) p.catch(() => {});
@@ -378,16 +714,36 @@ $("#btnQuit").onclick = () => sheet("Exit TS Station?", "<p>Your games and setti
   window.close();
 }, true]]);
 
+/* ---------- settings + theme ---------- */
+function applyTheme(name) {
+  document.body.className = document.body.className.replace(/theme-\S+/g, "").trim() + " theme-" + name;
+  $$(".theme-card").forEach((c) => c.classList.toggle("active", c.dataset.theme === name));
+}
+function applyProfile() {
+  const n = (state.settings.name || "Player").trim() || "Player";
+  $("#avatar").textContent = n.slice(0, 1).toUpperCase();
+  $("#avatar").title = n;
+  $("#setName").value = state.settings.name || "";
+  $("#setSounds").checked = !!state.settings.sounds;
+  $("#setPad").checked = !!state.settings.padHints;
+}
 function tick() { $("#clock").textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
 
-async function load() {
-  const [{ games }, settings] = await Promise.all([api("/api/games"), api("/api/settings")]);
-  state.games = games; state.settings = settings;
-  applyTheme(settings.theme || "native"); applyProfile();
-  renderAll(true);
+async function load(resetFocus = true) {
+  const [{ games }, settings, store, sys] = await Promise.all([
+    api("/api/games"), api("/api/settings"), api("/api/store"), api("/api/system").catch(() => ({})),
+  ]);
+  state.games = games; state.settings = settings; state.store = store.games; state.job = store.job; state.sys = sys;
+  applyTheme(settings.theme || "native"); applyProfile(); updateHints();
+  if (resetFocus) state.rowSel = 0;
+  const hadFocus = document.activeElement && document.activeElement !== document.body;
+  renderGames(); renderStore();
+  if (state.job && state.job.state === "running") watchJob();
+  if (hadFocus && !document.activeElement.isConnected) defaultFocus();
+  if (hadFocus && document.activeElement === document.body && !document.body.classList.contains("booting")) defaultFocus();
 }
 tick(); setInterval(tick, 15000);
 load().catch(() => {
-  $("#heroTitle").textContent = "Start TS Station from its desktop icon";
+  setLogo($("#heroTitle"), "Start TS Station from its desktop icon");
   document.body.classList.remove("booting");
 });

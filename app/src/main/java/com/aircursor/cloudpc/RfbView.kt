@@ -22,6 +22,7 @@ import android.view.ViewConfiguration
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import com.aircursor.core.GamepadKeys
 import com.aircursor.core.Keysyms
 import com.aircursor.core.RfbClient
 import java.util.concurrent.Executors
@@ -412,8 +413,50 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
         }
     }
 
+    // ---- Game controller (connected to the phone): buttons and sticks become held keys ----
+
+    private val padHeld = HashSet<Int>()
+    private var axisHeld: Set<Int> = emptySet()
+
+    private fun isPad(e: KeyEvent) = KeyEvent.isGamepadButton(e.keyCode) ||
+        e.isFromSource(InputDevice.SOURCE_GAMEPAD) || e.isFromSource(InputDevice.SOURCE_JOYSTICK)
+
+    private fun padKey(e: KeyEvent, down: Boolean): Boolean {
+        val sym = GamepadKeys.forButton(e.keyCode) ?: return false
+        if (down) {
+            if (e.repeatCount == 0 && padHeld.add(sym) && sym !in axisHeld) {
+                lastInputMs = SystemClock.uptimeMillis()
+                sendKeyState(sym, true)
+            }
+        } else if (padHeld.remove(sym) && sym !in axisHeld) {
+            sendKeyState(sym, false)
+        }
+        return true
+    }
+
+    private fun padMotion(e: MotionEvent) {
+        val want = GamepadKeys.forStick(e.getAxisValue(MotionEvent.AXIS_X), e.getAxisValue(MotionEvent.AXIS_Y)) +
+            GamepadKeys.forStick(e.getAxisValue(MotionEvent.AXIS_HAT_X), e.getAxisValue(MotionEvent.AXIS_HAT_Y)) +
+            GamepadKeys.forTriggers(
+                maxOf(e.getAxisValue(MotionEvent.AXIS_LTRIGGER), e.getAxisValue(MotionEvent.AXIS_BRAKE)),
+                maxOf(e.getAxisValue(MotionEvent.AXIS_RTRIGGER), e.getAxisValue(MotionEvent.AXIS_GAS)),
+            )
+        if (want == axisHeld) return
+        for (k in axisHeld - want) if (k !in padHeld) sendKeyState(k, false)
+        for (k in want - axisHeld) if (k !in padHeld) sendKeyState(k, true)
+        if (want.isNotEmpty()) lastInputMs = SystemClock.uptimeMillis()
+        axisHeld = want
+    }
+
+    private fun releasePad() {
+        for (k in padHeld + axisHeld) sendKeyState(k, false)
+        padHeld.clear()
+        axisHeld = emptySet()
+    }
+
     /** Activity left the screen: make sure no mouse button stays pressed in the desktop. */
     fun releaseAll() {
+        releasePad()
         handDragging = false
         fingerDown = false
         dragging = false
@@ -551,6 +594,10 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
     }
 
     override fun onGenericMotionEvent(e: MotionEvent): Boolean {
+        if (e.isFromSource(InputDevice.SOURCE_JOYSTICK) && e.actionMasked == MotionEvent.ACTION_MOVE) {
+            padMotion(e)
+            return true
+        }
         if (e.isFromSource(InputDevice.SOURCE_MOUSE) || e.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE)) {
             if (handleMouse(e)) return true
         }
@@ -711,6 +758,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (isPad(event) && padKey(event, true)) return true
         if (keyCode == KeyEvent.KEYCODE_BACK) return super.onKeyDown(keyCode, event)
         modifier(keyCode)?.let {
             sendKeyState(it, true)
@@ -720,6 +768,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (isPad(event) && padKey(event, false)) return true
         modifier(keyCode)?.let {
             sendKeyState(it, false)
             return true
