@@ -28,10 +28,12 @@ fi
 BIN=$(command -v "${ARGS[$P]}" 2>/dev/null)
 REAL=$(readlink -f "$BIN" 2>/dev/null)
 ELECTRON=0
+BROWSER=0   # a Chromium web browser (Brave, Chromium, Vivaldi…), not an Electron app
 if [ -n "$REAL" ]; then
     D=$(dirname "$REAL")
     if [ -e "$D/chrome_100_percent.pak" ] || [ -e "$D/chrome-sandbox" ] || [ -e "$D/resources.pak" ]; then
         ELECTRON=1
+        [ -e "$D/resources/app.asar" ] || [ -d "$D/resources/app" ] || BROWSER=1
     elif [ "$(stat -c %s "$REAL" 2>/dev/null || echo 99999)" -lt 8000 ] &&
         grep -qsE 'chrome-sandbox|/usr/share/code/|electron' "$REAL"; then
         ELECTRON=1   # a small start script for an Electron app
@@ -56,9 +58,18 @@ run() {   # $1 = 1 for the safe second try
     local safe="$1" cmd=() i t0
     for ((i = 0; i < ${#ARGS[@]}; i++)); do
         cmd+=("${ARGS[$i]}")
-        if [ $i -eq $P ] && [ $ELECTRON = 1 ]; then
-            # First try: no zygote and no GPU process = 3 programs fewer, software drawing.
-            # Second try: Chromium's normal start (only the sandbox off).
+        if [ $i -eq $P ] && [ $BROWSER = 1 ]; then
+            # Browsers: keep WebGL working (websites' "verify you are human" checks need it), draw
+            # pages on the CPU; no warning bar about the sandbox flag. Second try: no GPU at all.
+            cmd+=(--no-sandbox --test-type)
+            if [ "$safe" = 0 ]; then
+                cmd+=(--no-zygote --ignore-gpu-blocklist --disable-gpu-compositing)
+            else
+                cmd+=(--disable-gpu --in-process-gpu)
+            fi
+        elif [ $i -eq $P ] && [ $ELECTRON = 1 ]; then
+            # Electron apps – first try: no zygote and no GPU process = 3 programs fewer, software
+            # drawing. Second try: Chromium's normal start (only the sandbox off).
             cmd+=(--no-sandbox)
             [ "$safe" = 0 ] && cmd+=(--no-zygote --disable-gpu --in-process-gpu)
         fi
