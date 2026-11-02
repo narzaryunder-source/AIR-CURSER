@@ -2,7 +2,7 @@
 # TS Station launcher: starts the local server and opens the interface full screen.
 . /tmp/cloudpc-session.env 2>/dev/null
 DIR=/opt/ts-station
-pkill -f "^python3 $DIR/server.py" 2>/dev/null
+pkill -f "python3 $DIR/server.py$" 2>/dev/null
 rm -f /tmp/ts-station.url
 python3 "$DIR/server.py" > /tmp/ts-station.url 2> /tmp/ts-station.log &
 URL=""

@@ -3,9 +3,15 @@
 A console-style game launcher (PS5-like feel) for the owner's own AirCursor PC.
 It is **not** part of the AirCursor app – it is installed separately inside one PC.
 
-Install / update inside AirCursor PC (Terminal):
+Install inside AirCursor PC – no terminal: open this link in the PC's browser, then click the
+downloaded file and choose Install:
 
-    wget -qO- https://raw.githubusercontent.com/narzaryunder-source/AIR-CURSER/main/tsstation/install.sh | bash
+    https://github.com/narzaryunder-source/AIR-CURSER/raw/main/tsstation/dist/ts-station.deb
+
+Updates: TS Station → Settings → "Update to …" (it checks GitHub itself).
+Terminal alternative: `wget -qO- https://raw.githubusercontent.com/narzaryunder-source/AIR-CURSER/main/tsstation/install.sh | bash`
+
+Maintainers: change the files, raise `VERSION`, run `./build-deb.sh`, commit `dist/ts-station.deb`.
 
 ## Version 0.2
 

@@ -6,7 +6,7 @@ SRC=https://raw.githubusercontent.com/narzaryunder-source/AIR-CURSER/main/tsstat
 DIR=/opt/ts-station
 echo "Installing TS Station…"
 mkdir -p "$DIR/ui"
-for f in server.py ts-station ts-station.svg ui/index.html ui/app.css ui/app.js; do
+for f in server.py ts-station ts-station.svg VERSION ui/index.html ui/app.css ui/app.js; do
     wget -qO "$DIR/$f.new" "$SRC/$f" && mv -f "$DIR/$f.new" "$DIR/$f"
 done
 chmod +x "$DIR/ts-station" "$DIR/server.py"

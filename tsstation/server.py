@@ -29,7 +29,20 @@ CACHE = os.path.join(HOME, ".cache", "ts-station")
 SETTINGS = os.path.join(DATA, "settings.json")
 MY_GAMES = os.path.join(HOME, ".local", "share", "applications")
 APP_DIRS = [MY_GAMES, "/usr/local/share/applications", "/usr/share/applications"]
-TOKEN = secrets.token_hex(16)
+TOKEN = os.environ.get("TS_TOKEN") or secrets.token_hex(16)
+RAW = "https://raw.githubusercontent.com/narzaryunder-source/AIR-CURSER/main/tsstation/"
+DEB_URL = "https://github.com/narzaryunder-source/AIR-CURSER/raw/main/tsstation/dist/ts-station.deb"
+
+
+def _read_version():
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")) as f:
+            return f.read().strip()
+    except OSError:
+        return "0.2.0"
+
+
+VERSION = _read_version()
 NOT_GAMES = re.compile(r"(stockfish|mangohud|cloudpc-|aircursor-)", re.I)
 
 os.makedirs(DATA, exist_ok=True)
@@ -501,6 +514,65 @@ def _run_job(sid, action):
         JOB.update(state="failed", text=str(ex)[:200])
 
 
+def _vt(v):
+    return tuple(int(x) for x in re.findall(r"\d+", v)[:3]) or (0,)
+
+
+_latest = {"t": 0, "v": ""}
+
+
+def version_info():
+    """Installed version and the newest one on GitHub (asked at most every 10 minutes)."""
+    if time.time() - _latest["t"] > 600:
+        try:
+            _latest["v"] = fetch(RAW + "VERSION", 100).decode().strip()
+        except Exception:
+            pass
+        _latest["t"] = time.time()
+    latest = _latest["v"]
+    return {"installed": VERSION, "latest": latest, "update": bool(latest) and _vt(latest) > _vt(VERSION)}
+
+
+def _run_update():
+    deb = "/tmp/ts-station-update.deb"
+    try:
+        JOB["text"] = "Downloading the update…"
+        data = fetch(DEB_URL, 20_000_000)
+        if data[:8] != b"!<arch>\n":
+            raise ValueError("the download is not a package")
+        with open(deb, "wb") as f:
+            f.write(data)
+        JOB.update(percent=50, text="Installing…")
+        rc, tail = _apt(["install", deb])
+        if rc == 0:
+            JOB.update(state="done", percent=100, text="Updated – restarting TS Station")
+        else:
+            JOB.update(state="failed", text=" ".join(tail)[-220:] or "Failed (code %d)" % rc)
+    except Exception as ex:
+        JOB.update(state="failed", text="Update failed: %s" % str(ex)[:160])
+
+
+def start_update():
+    if os.geteuid() != 0:
+        return "Updating needs the PC's main user (root)."
+    with _job_lock:
+        if JOB["state"] == "running":
+            return "Wait until the current install is finished."
+        JOB.update(id="ts-station", action="update", percent=0, text="", state="running")
+    threading.Thread(target=_run_update, daemon=True).start()
+    return ""
+
+
+def restart():
+    """Start the (updated) server again on the same address, so the open window just reloads."""
+    time.sleep(0.4)
+    env = dict(os.environ, TS_TOKEN=TOKEN, TS_PORT=str(PORT[0]))
+    os.execve(sys.executable, ["python3", os.path.abspath(__file__)], env)   # same name: the launcher finds it
+
+
+PORT = [0]
+
+
 def start_job(sid, action):
     if sid not in STORE_BY_ID or action not in ("install", "remove"):
         return "unknown game"
@@ -589,6 +661,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.file(p) if p else self.send(404, {"error": "no art"})
         if u.path == "/api/store":
             return self.send(200, {"games": store_list(), "job": JOB})
+        if u.path == "/api/version":
+            return self.send(200, version_info())
         if u.path == "/api/job":
             return self.send(200, JOB)
         if u.path.startswith("/api/storeart/"):
@@ -638,6 +712,13 @@ class Handler(BaseHTTPRequestHandler):
             if t:
                 spawn(t)
             return self.send(200, {"ok": bool(t)})
+        if u.path == "/api/update":
+            err = start_update()
+            return self.send(200, {"ok": not err, "error": err, "job": JOB})
+        if u.path == "/api/restart":
+            self.send(200, {"ok": True})
+            threading.Thread(target=restart, daemon=True).start()
+            return None
         if u.path == "/api/quit":
             self.send(200, {"ok": True})
             threading.Thread(target=lambda: (time.sleep(0.3), os._exit(0)), daemon=True).start()
@@ -646,7 +727,12 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    port = int(os.environ.get("TS_PORT") or 0)
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    except OSError:
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    PORT[0] = srv.server_address[1]
     url = "http://127.0.0.1:%d/#k=%s" % (srv.server_address[1], TOKEN)
     print(url, flush=True)
     srv.serve_forever()

@@ -324,6 +324,7 @@ function storeCard(s) {
   return b;
 }
 function cardState(b, s) {
+  if (state.job && state.job.id === "ts-station") return;
   const act = b.querySelector(".s-act");
   const job = state.job && state.job.state === "running" && state.job.id === s.id ? state.job : null;
   let bar = b.querySelector(".bar");
@@ -389,6 +390,37 @@ function watchJob() {
     if (state.details && state.details.store && state.details.store.id === sid) openStoreDetails(storeById(sid));
   }, 900);
 }
+/* ---------- TS Station updates (no terminal needed) ---------- */
+async function checkVersion(announce) {
+  try {
+    const v = await api("/api/version");
+    state.version = v;
+    $("#verText").textContent = `Version ${v.installed}` + (v.update ? ` · new version ${v.latest} is ready` : v.latest ? " · up to date" : "");
+    $("#btnUpdate").textContent = v.update ? `Update to ${v.latest}` : "Check for updates";
+    $("#btnUpdate").classList.toggle("primary", !!v.update);
+    if (announce && v.update) toast(`TS Station ${v.latest} is ready – Settings → Update`);
+    return v;
+  } catch (_) { return null; }
+}
+async function updateStation() {
+  const v = state.version && state.version.update ? state.version : await checkVersion(false);
+  if (!v || !v.update) { toast(v ? "TS Station is up to date" : "Could not check – is the internet on?"); return; }
+  const r = await api("/api/update", {});
+  if (!r.ok) { toast(r.error); return; }
+  $("#btnUpdate").disabled = true;
+  const timer = setInterval(async () => {
+    let j; try { j = await api("/api/job"); } catch (_) { return; }
+    $("#btnUpdate").textContent = j.state === "running" ? `Updating… ${j.percent}%` : "Check for updates";
+    if (j.state === "running") return;
+    clearInterval(timer); $("#btnUpdate").disabled = false;
+    if (j.state !== "done") { toast(j.text); return; }
+    toast("Updated – restarting TS Station…");
+    try { await api("/api/restart", {}); } catch (_) { /* restarting */ }
+    setTimeout(() => location.reload(), 2500);
+  }, 900);
+}
+$("#btnUpdate").onclick = updateStation;
+
 function refreshJob() {
   for (const b of $$(".sgame")) { const s = storeById(b.dataset.sid); if (s) cardState(b, s); }
   const j = state.job;
@@ -738,11 +770,12 @@ async function load(resetFocus = true) {
   if (resetFocus) state.rowSel = 0;
   const hadFocus = document.activeElement && document.activeElement !== document.body;
   renderGames(); renderStore();
-  if (state.job && state.job.state === "running") watchJob();
+  if (state.job && state.job.state === "running" && state.job.id !== "ts-station") watchJob();
   if (hadFocus && !document.activeElement.isConnected) defaultFocus();
   if (hadFocus && document.activeElement === document.body && !document.body.classList.contains("booting")) defaultFocus();
 }
 tick(); setInterval(tick, 15000);
+setTimeout(() => checkVersion(true), 4000);
 load().catch(() => {
   setLogo($("#heroTitle"), "Start TS Station from its desktop icon");
   document.body.classList.remove("booting");
