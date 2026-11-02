@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 16
+    const val VERSION = 17
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -180,6 +180,8 @@ object CloudPcTools {
         // Firefox: fewer background processes (less RAM on a phone), no first-run pages.
         put("etc/firefox/policies/policies.json", FIREFOX_POLICIES)
         put("usr/lib/firefox/defaults/pref/aircursor-pc.js", FIREFOX_PREFS)
+        // Brave (default browser, also AI web apps): smooth YouTube and fewer background jobs.
+        put("etc/brave/policies/managed/aircursor-pc.json", BRAVE_POLICIES)
         put(
             "usr/share/applications/cloudpc-benchmark.desktop",
             entry("Benchmark", "cloudpc-benchmark", "utilities-system-monitor", "System;", "Test graphics speed (FPS) with your AirBoost profile"),
@@ -842,13 +844,35 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         pref("dom.ipc.processCount", 2);
         pref("dom.ipc.processCount.webIsolated", 1);
         pref("dom.ipc.processPrelaunch.enabled", false);
-        // Speed on a phone CPU: YouTube uses VP9 instead of the much heavier AV1, multi-core software
-        // drawing, fewer page animations, fewer session saves.
+        // Smooth videos on a phone CPU: YouTube sends H.264, which decodes several times faster in
+        // software than VP9 or AV1. Multi-core software drawing, fewer session saves.
         pref("media.av1.enabled", false);
+        pref("media.mediasource.vp9.enabled", false);
         // No "Speech Dispatcher won't open" bar (there is no speech engine in the PC).
         pref("media.webspeech.synth.enabled", false);
         pref("gfx.webrender.software", true);
         pref("browser.sessionstore.interval", 60000);
+    """.trimIndent() + "\n"
+
+    /**
+     * Brave: "enhanced-h264ify" makes YouTube send H.264 instead of VP9/AV1 (much lighter to decode
+     * without a video chip), memory saver for background tabs, and Brave's extra background services
+     * (Rewards, Wallet, VPN, Tor, News, Leo) off – each of them is one more program and CPU work.
+     */
+    private val BRAVE_POLICIES = """
+        {
+          "ExtensionInstallForcelist": ["omkfmpieigblcllmkgbflkikinpkodlk;https://clients2.google.com/service/update2/crx"],
+          "HighEfficiencyModeEnabled": true,
+          "BackgroundModeEnabled": false,
+          "MetricsReportingEnabled": false,
+          "BraveRewardsDisabled": true,
+          "BraveWalletDisabled": true,
+          "BraveVPNDisabled": true,
+          "BraveNewsDisabled": true,
+          "BraveTalkDisabled": true,
+          "BraveAIChatEnabled": false,
+          "TorDisabled": true
+        }
     """.trimIndent() + "\n"
 
     private val FIREFOX_POLICIES = """

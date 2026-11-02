@@ -1,6 +1,7 @@
 package com.aircursor.cloudpc
 
 import android.app.AlertDialog
+import android.app.KeyguardManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -12,12 +13,14 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
 import android.provider.OpenableColumns
+import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -75,6 +78,10 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private var handButton: View? = null
     private var fpsButton: View? = null
     private var pendingExport: File? = null
+    private lateinit var rootLayout: FrameLayout
+    private lateinit var side: LinearLayout
+    private var lockView: PcLockScreen? = null
+    private var hiddenAt = 0L
 
     // Start screen: the latest step from the log, and one automatic restart if the desktop hangs.
     private var baseStatus: String? = null
@@ -124,6 +131,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         v.showFps = prefs.getBoolean(KEY_FPS, false)
         view = v
         val root = FrameLayout(this)
+        rootLayout = root
         root.setBackgroundColor(Color.BLACK)
         root.addView(v, FrameLayout.LayoutParams(-1, -1))
 
@@ -155,7 +163,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
             layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { setMargins(dp(2), dp(3), dp(2), dp(3)) }
             setPadding(dp(8), dp(8), dp(8), dp(8))
         }
-        val side = LinearLayout(this).apply {
+        side = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.END
             addView(handle)
@@ -166,6 +174,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         })
 
         tools.addView(iconButton(R.drawable.ic_ui_keyboard, "Keyboard") { toggleKeyboard() })
+        tools.addView(iconButton(R.drawable.ic_ui_lock, "Lock and password") { lockMenu() })
         handButton = iconButton(R.drawable.ic_ui_hand, "Hand control") { toggleHand() }.also { tools.addView(it) }
         tools.addView(iconButton(R.drawable.ic_ui_paste, "Paste from phone") { pasteFromPhone() })
         tools.addView(iconButton(R.drawable.ic_ui_folder, "Files") { filesMenu() })
@@ -214,8 +223,140 @@ class CloudPcDesktopActivity : ComponentActivity() {
         updateButtons()
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() = askExit()
+            override fun handleOnBackPressed() = if (lockView != null) finish() else askExit()
         })
+
+        // Windows-style: password screen (or the first-start question) in front, desktop starting behind it.
+        when {
+            PcLock.hasPassword(this) -> showLock(PcLockScreen.Mode.SIGN_IN)
+            PcLock.shouldOfferSetup(this) -> showLock(PcLockScreen.Mode.SETUP)
+        }
+    }
+
+    // ---- Password lock ----
+
+    private fun showLock(mode: PcLockScreen.Mode) {
+        lockView?.let { rootLayout.removeView(it) }
+        view?.locked = true
+        if (DesktopInput.target === view) DesktopInput.target = null
+        side.visibility = View.GONE
+        val l = PcLockScreen(this, mode, object : PcLockScreen.Listener {
+            override fun onUnlocked() = hideLock()
+            override fun onForgot() = forgotPassword()
+        })
+        lockView = l
+        rootLayout.addView(l, FrameLayout.LayoutParams(-1, -1))
+        // With a hardware keyboard, typing goes straight into the password box.
+        if (resources.configuration.keyboard != android.content.res.Configuration.KEYBOARD_NOKEYS) l.focusPassword()
+    }
+
+    private fun hideLock() {
+        lockView?.let { rootLayout.removeView(it) }
+        lockView = null
+        view?.locked = false
+        side.visibility = View.VISIBLE
+        DesktopInput.target = view
+        view?.requestFocus()
+    }
+
+    private fun lockMenu() {
+        val has = PcLock.hasPassword(this)
+        val items = if (has) arrayOf("Lock now", "Change password", "Remove password", "Change name (${PcLock.name(this)})")
+        else arrayOf("Set a password", "Change name (${PcLock.name(this)})")
+        AlertDialog.Builder(this)
+            .setTitle(if (has) "Lock and password" else "Password: not set")
+            .setItems(items) { _, i ->
+                when (if (has) i else i + 10) {
+                    0 -> showLock(PcLockScreen.Mode.SIGN_IN)
+                    1 -> confirmCurrent { showLock(PcLockScreen.Mode.SET_PASSWORD) }
+                    2 -> confirmCurrent {
+                        PcLock.removePassword(this)
+                        Toast.makeText(this, "Password removed – AirCursor PC opens without it", Toast.LENGTH_LONG).show()
+                    }
+                    10 -> showLock(PcLockScreen.Mode.SET_PASSWORD)
+                    else -> changeName()
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun passwordInput(hint: String) = EditText(this).apply {
+        this.hint = hint
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        setSingleLine()
+    }
+
+    private fun padded(v: View) = FrameLayout(this).apply {
+        setPadding(dp(22), dp(8), dp(22), 0)
+        addView(v)
+    }
+
+    /** Changing or removing the password needs the current one. */
+    private fun confirmCurrent(then: () -> Unit) {
+        val f = passwordInput("Current password")
+        AlertDialog.Builder(this)
+            .setTitle("Enter your current password")
+            .setView(padded(f))
+            .setPositiveButton("OK") { _, _ ->
+                val pw = f.text.toString()
+                Thread {
+                    val ok = PcLock.check(this, pw)
+                    runOnUiThread {
+                        if (ok) then() else Toast.makeText(this, "The password is incorrect", Toast.LENGTH_SHORT).show()
+                    }
+                }.start()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun changeName() {
+        val f = EditText(this).apply {
+            setSingleLine()
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+            setText(PcLock.name(this@CloudPcDesktopActivity))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Your name on the sign-in screen")
+            .setView(padded(f))
+            .setPositiveButton("Save") { _, _ -> if (f.text.isNotBlank()) PcLock.setName(this, f.text.toString()) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Forgot the password: prove it is the phone's owner with the phone's own screen lock, then set a new one. */
+    private val confirmPhoneLock = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        if (r.resultCode == RESULT_OK) resetPassword()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun forgotPassword() {
+        val km = getSystemService(KeyguardManager::class.java)
+        val intent = if (km?.isDeviceSecure == true) {
+            km.createConfirmDeviceCredentialIntent("Reset the AirCursor PC password", "Confirm with your phone's screen lock")
+        } else {
+            null
+        }
+        if (intent != null) {
+            confirmPhoneLock.launch(intent)
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Reset the password?")
+            .setMessage(
+                "This phone has no screen lock, so the PC password can be reset here. " +
+                    "Your files in the PC stay as they are. Tip: set a phone screen lock so nobody else can do this.",
+            )
+            .setPositiveButton("Reset") { _, _ -> resetPassword() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun resetPassword() {
+        PcLock.removePassword(this)
+        showLock(PcLockScreen.Mode.SET_PASSWORD)
+        Toast.makeText(this, "Password reset – set a new one or tap Cancel", Toast.LENGTH_LONG).show()
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).roundToInt()
@@ -550,11 +691,18 @@ class CloudPcDesktopActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         view?.connect()
+        // Away for a while (screen off, other apps): ask for the password again, like Windows.
+        if (lockView == null && hiddenAt > 0 && PcLock.hasPassword(this) &&
+            SystemClock.uptimeMillis() - hiddenAt > PcLock.RELOCK_AFTER_MS
+        ) {
+            showLock(PcLockScreen.Mode.SIGN_IN)
+        }
+        hiddenAt = 0L
     }
 
     override fun onResume() {
         super.onResume()
-        DesktopInput.target = view
+        if (lockView == null) DesktopInput.target = view
         view?.sharpness = AirBoost.current(this).sharpen
         view?.fpsLimit = AirBoost.fpsLimit(this)
         // Steady speed instead of short bursts followed by heat slow-downs (phones that support it).
@@ -580,6 +728,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        hiddenAt = SystemClock.uptimeMillis()
         view?.disconnect()
         super.onStop()
     }

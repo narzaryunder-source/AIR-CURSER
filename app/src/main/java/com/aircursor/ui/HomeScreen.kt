@@ -409,7 +409,7 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_38"
+private const val WHATS_NEW_ID = "whatsnew_40"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
@@ -422,6 +422,8 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             UiPrefs.close(context, WHATS_NEW_ID)
             whatsNew = false
         }) {
+            Bullet("Password for AirCursor PC, like Windows – set it at the first start or in toolbar → Lock")
+            Bullet("Smoother YouTube: videos come as H.264, much lighter for the phone (Brave and Firefox)")
             Bullet("Game controllers work in AirCursor PC: connect one to the phone and play")
             Bullet("Sound in AirCursor PC – videos, music and games play on the phone")
             Bullet("GitHub and Google Drive apps; Files: Send to phone, Projects folder")

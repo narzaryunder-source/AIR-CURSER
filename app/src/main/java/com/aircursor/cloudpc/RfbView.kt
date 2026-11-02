@@ -415,6 +415,13 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
 
     // ---- Game controller (connected to the phone): buttons and sticks become held keys ----
 
+    /** The password screen is in front: no key, touch or controller input reaches the desktop. */
+    var locked = false
+        set(v) {
+            field = v
+            if (v) releaseAll()
+        }
+
     private val padHeld = HashSet<Int>()
     private var axisHeld: Set<Int> = emptySet()
 
@@ -594,6 +601,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
     }
 
     override fun onGenericMotionEvent(e: MotionEvent): Boolean {
+        if (locked) return super.onGenericMotionEvent(e)
         if (e.isFromSource(InputDevice.SOURCE_JOYSTICK) && e.actionMasked == MotionEvent.ACTION_MOVE) {
             padMotion(e)
             return true
@@ -606,6 +614,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (locked) return false
         if (e.isFromSource(InputDevice.SOURCE_MOUSE) && handleMouse(e)) return true
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -758,6 +767,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (locked) return super.onKeyDown(keyCode, event)
         if (isPad(event) && padKey(event, true)) return true
         if (keyCode == KeyEvent.KEYCODE_BACK) return super.onKeyDown(keyCode, event)
         modifier(keyCode)?.let {
@@ -768,6 +778,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (locked) return super.onKeyUp(keyCode, event)
         if (isPad(event) && padKey(event, false)) return true
         modifier(keyCode)?.let {
             sendKeyState(it, false)
