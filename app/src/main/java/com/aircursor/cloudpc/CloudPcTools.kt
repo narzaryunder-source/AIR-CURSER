@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 14
+    const val VERSION = 15
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -22,7 +22,8 @@ object CloudPcTools {
         File(CloudPcEngine.rootfs(c), MARK).let { !it.exists() || it.readText().trim() != VERSION.toString() }
 
     /** Packages the tools need (App Store window, dialogs). Failures (no internet) are not fatal. */
-    private const val TOOL_PACKAGES = "zenity wget xdg-utils libnotify-bin python3-gi gir1.2-gtk-3.0 xclip"
+    private const val TOOL_PACKAGES = "zenity wget xdg-utils libnotify-bin python3-gi gir1.2-gtk-3.0 xclip " +
+        "xdotool xfce4-screenshooter xarchiver thunar-archive-plugin unzip zip p7zip-full"
     const val PACKAGES_SCRIPT =
         "apt-get install -y --no-install-recommends $TOOL_PACKAGES >/dev/null 2>&1 || " +
             "(apt-get update >/dev/null 2>&1 && apt-get install -y --no-install-recommends $TOOL_PACKAGES) " +
@@ -103,6 +104,13 @@ object CloudPcTools {
         }
         put("usr/local/bin/cloudpc-claude", CLAUDE, exec = true)
         put("usr/local/bin/cloudpc-web", WEB, exec = true)
+        put("usr/local/bin/cloudpc-windows-keys", WINDOWS_KEYS, exec = true)
+        // Claude's tools inside the PC (also handy for the person in the terminal).
+        put("usr/local/bin/pc-doctor", PC_DOCTOR, exec = true)
+        put("usr/local/bin/pc-open", PC_OPEN, exec = true)
+        put("usr/local/bin/pc-screenshot", PC_SCREENSHOT, exec = true)
+        val memory = File(CloudPcEngine.rootfs(c), "root/.claude/CLAUDE.md")
+        if (!memory.exists() || memory.readText().startsWith("<!-- AirCursor PC")) put("root/.claude/CLAUDE.md", CLAUDE_MD)
         // apt waits for a running background update instead of failing with "could not get lock".
         put("etc/apt/apt.conf.d/02-cloudpc-lock", "DPkg::Lock::Timeout \"600\";\n")
 
@@ -222,6 +230,11 @@ object CloudPcTools {
         AiApp(
             "cloudpc-ai-claude-code", "Claude Code", "xfce4-terminal --title=\"Claude Code\" -x cloudpc-claude",
             "utilities-terminal", "AI coding assistant in the terminal – you sign in on your phone",
+        ),
+        AiApp(
+            "cloudpc-ai-pc-assistant", "PC Assistant (Claude)",
+            "xfce4-terminal --title=\"PC Assistant\" -x cloudpc-claude --assistant",
+            "utilities-system-monitor", "Claude checks and fixes the PC: speed, FPS, apps – and builds and opens apps for you",
         ),
     )
 
@@ -348,6 +361,149 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         exit 0
     """.trimIndent() + "\n"
 
+    /** Windows-style keys and window snapping (set once; change them in Settings → Keyboard). */
+    private val WINDOWS_KEYS = """
+        #!/bin/sh
+        STAMP=/var/lib/cloudpc/windows-keys-1
+        [ -f "${'$'}STAMP" ] && exit 0
+        . /tmp/cloudpc-session.env 2>/dev/null
+        k() { xfconf-query -c xfce4-keyboard-shortcuts -p "${'$'}1" --create -t string -s "${'$'}2"; }
+        k "/commands/custom/<Super>e" "thunar"
+        k "/commands/custom/<Super>r" "xfce4-appfinder --collapsed"
+        k "/commands/custom/<Super>i" "xfce4-settings-manager"
+        k "/commands/custom/<Primary><Shift>Escape" "xfce4-taskmanager"
+        k "/commands/custom/Print" "xfce4-screenshooter -f"
+        k "/commands/custom/<Super><Shift>s" "xfce4-screenshooter -r"
+        k "/xfwm4/custom/<Super>Left" "tile_left_key"
+        k "/xfwm4/custom/<Super>Right" "tile_right_key"
+        k "/xfwm4/custom/<Super>Up" "maximize_window_key"
+        k "/xfwm4/custom/<Super>Down" "hide_window_key"
+        k "/xfwm4/custom/<Super>d" "show_desktop_key"
+        xfconf-query -c xfwm4 -p /general/tile_on_move --create -t bool -s true
+        xfconf-query -c xfwm4 -p /general/snap_to_border --create -t bool -s true
+        mkdir -p /var/lib/cloudpc && touch "${'$'}STAMP"
+        exit 0
+    """.trimIndent() + "\n"
+
+    /** Health report for the person and for Claude: what makes the PC slow or broken. */
+    private val PC_DOCTOR = """
+        #!/bin/bash
+        . /tmp/cloudpc-session.env 2>/dev/null
+        echo "== AirCursor PC health =="
+        echo "CPU cores: ${'$'}(nproc)"
+        free -h | head -n 2
+        df -h / | awk 'NR==2 {print "Storage: " ${'$'}4 " free of " ${'$'}2}'
+        N=${'$'}(ls -d /proc/[0-9]* 2>/dev/null | wc -l)
+        echo "Programs running: ${'$'}N   (Android's 32-program limit: ${'$'}(cat /etc/cloudpc/child-limit 2>/dev/null || echo unknown))"
+        echo "Desktop size: ${'$'}(xrandr 2>/dev/null | awk '/current/ {print ${'$'}8 "x" ${'$'}10}' | tr -d ,)"
+        echo "Game graphics: ${'$'}(cat /etc/cloudpc/gpu-mode 2>/dev/null || echo cpu)   ${'$'}(grep -m1 '^fps_limit' /etc/cloudpc/MangoHud.conf 2>/dev/null)"
+        echo "Default browser: ${'$'}(grep -m1 '^WebBrowser=' /root/.config/xfce4/helpers.rc 2>/dev/null | cut -d= -f2 || echo firefox)"
+        echo
+        echo "== Programs using the most CPU =="
+        ps -eo pid,pcpu,rss,comm --sort=-pcpu | head -n 11
+        echo
+        echo "== Programs using the most memory (RSS in KB) =="
+        ps -eo pid,rss,comm --sort=-rss | head -n 9
+        echo
+        echo "== Problems =="
+        dpkg --audit 2>/dev/null | head -n 5
+        [ -s /tmp/cloudpc-app-errors.log ] && { echo "Recent app errors:"; tail -n 8 /tmp/cloudpc-app-errors.log; }
+        getent hosts deb.debian.org >/dev/null 2>&1 || getent hosts ports.ubuntu.com >/dev/null 2>&1 || echo "No internet (DNS) right now."
+        echo "(done)"
+    """.trimIndent() + "\n"
+
+    /** Opens an app by name, a file or a web link on the desktop (for the person and for Claude). */
+    private val PC_OPEN = """
+        #!/bin/bash
+        . /tmp/cloudpc-session.env 2>/dev/null
+        [ ${'$'}# -gt 0 ] || { echo "Usage: pc-open <app name | file | link>"; exit 1; }
+        T="${'$'}*"
+        if [ -e "${'$'}T" ] || [[ "${'$'}T" == *://* ]]; then
+            setsid xdg-open "${'$'}T" >/dev/null 2>&1 &
+            echo "Opened: ${'$'}T"; exit 0
+        fi
+        want=${'$'}(echo "${'$'}T" | tr '[:upper:]' '[:lower:]')
+        exact=""; part=""
+        for f in /usr/local/share/applications/*.desktop /usr/share/applications/*.desktop; do
+            [ -f "${'$'}f" ] || continue
+            grep -qi '^NoDisplay=true' "${'$'}f" && continue
+            id=${'$'}(basename "${'$'}f" .desktop | tr '[:upper:]' '[:lower:]')
+            name=${'$'}(grep -m1 '^Name=' "${'$'}f" | cut -d= -f2- | tr '[:upper:]' '[:lower:]')
+            if [ "${'$'}id" = "${'$'}want" ] || [ "${'$'}name" = "${'$'}want" ]; then exact="${'$'}f"; break; fi
+            [ -z "${'$'}part" ] && case "${'$'}name ${'$'}id" in *"${'$'}want"*) part="${'$'}f" ;; esac
+        done
+        F="${'$'}{exact:-${'$'}part}"
+        if [ -n "${'$'}F" ]; then
+            if command -v gio >/dev/null 2>&1; then setsid gio launch "${'$'}F" >/dev/null 2>&1 &
+            else setsid exo-open "${'$'}F" >/dev/null 2>&1 &
+            fi
+            echo "Opening ${'$'}(grep -m1 '^Name=' "${'$'}F" | cut -d= -f2-)"; exit 0
+        fi
+        if command -v "${'$'}1" >/dev/null 2>&1; then
+            setsid "${'$'}@" >/dev/null 2>&1 &
+            echo "Started ${'$'}1"; exit 0
+        fi
+        echo "No app called \"${'$'}T\" found."; exit 1
+    """.trimIndent() + "\n"
+
+    /** Saves a picture of the desktop (Claude can look at it). */
+    private val PC_SCREENSHOT = """
+        #!/bin/sh
+        . /tmp/cloudpc-session.env 2>/dev/null
+        OUT="${'$'}{1:-/tmp/pc-screen.png}"
+        python3 - "${'$'}OUT" <<'PY'
+        import sys, gi
+        gi.require_version("Gdk", "3.0")
+        from gi.repository import Gdk
+        w = Gdk.get_default_root_window()
+        pb = Gdk.pixbuf_get_from_window(w, 0, 0, w.get_width(), w.get_height())
+        pb.savev(sys.argv[1], "png", [], [])
+        print(sys.argv[1])
+        PY
+    """.trimIndent() + "\n"
+
+    /** What Claude Code knows about this PC (its memory file). */
+    private val CLAUDE_MD = """
+        <!-- AirCursor PC: written by the AirCursor app. Put your own notes in /root/CLAUDE.md -->
+        # AirCursor PC – notes for Claude
+
+        You run inside AirCursor PC: Ubuntu 24.04 (ARM64) inside the AirCursor Android app (proot: you are
+        root inside, but there is no systemd, no kernel modules and no real hardware access). The person
+        uses it on a phone (touch, hand gestures, Bluetooth keyboard and mouse). Answer in simple Hinglish
+        unless they write in another language.
+
+        ## Tools you can use
+        - `pc-doctor` – health report: memory, storage, programs vs Android's limit, screen size, FPS
+          limit, game graphics, top CPU/memory programs, recent app errors.
+        - `pc-screenshot` – saves the desktop to /tmp/pc-screen.png; read that image to see the screen.
+        - `pc-open <app name | file | link>` – opens it on the desktop (e.g. `pc-open firefox`,
+          `pc-open "LibreOffice Writer"`, `pc-open ~/site/index.html`).
+        - `xdotool` – click and type in apps (DISPLAY=:1), e.g. `xdotool mousemove 400 300 click 1`,
+          `xdotool type "hello"`, `xdotool key ctrl+s`. Take a screenshot first to find positions.
+        - Install software with `apt-get install -y <package>` (no sudo needed). App Store apps:
+          `ubuntu-extras install <id>` (vscode, coding, python, games, luanti, brave, …).
+        - Projects: Python 3, git, gcc; Node.js after `ubuntu-extras install coding`. GUI programs you
+          build show up on the desktop when started (use `pc-open` or start them in the background).
+
+        ## Speed and FPS
+        - Everything is drawn by the CPU (llvmpipe, all cores). Fewer pixels = more FPS:
+          `cloudpc-resize 960 432` (or 800 360 for games, 1280 576 for sharp text). The app's AirBoost
+          setting sets its own size again at the next start.
+        - `cloudpc-light 0` stops background helpers and animations.
+        - Games: FPS limit in /etc/cloudpc/MangoHud.conf (`fps_limit=`, 30/45 is steadiest); phone GPU
+          when /etc/cloudpc/gpu-mode says `virgl` (games started from the menu use it).
+        - Android allows about 32 programs for the whole PC unless the person lifted the limit
+          (/etc/cloudpc/child-limit). Over it, Android kills programs (exit code 137). Close programs
+          that are not needed before heavy apps. Fewer browser tabs help a lot.
+        - Brave is the default browser; it is lighter on heavy sites than Firefox.
+
+        ## Rules
+        - Ask before deleting the person's files or removing apps. The phone's own files are not reachable.
+        - Never kill the desktop itself: Xtigervnc/Xvnc, xfce4-session, xfwm4, xfce4-panel, xfdesktop,
+          xfsettingsd, dbus-daemon.
+        - No systemd: start servers in the background yourself (e.g. `nohup ollama serve >/tmp/ollama.log 2>&1 &`).
+    """.trimIndent() + "\n"
+
     /** Opens a website like an app: own window in the default browser (Brave: app window, no tabs). */
     private val WEB = """
         #!/bin/sh
@@ -368,12 +524,36 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
             echo "Claude Code is not installed yet: App Store → AI & Coding → Claude Code → Install."
             exec bash
         fi
+        # Claude may use the PC's own tools without asking each time (they only look or open things).
+        python3 - <<'PY' 2>/dev/null
+        import json, os
+        p = "/root/.claude/settings.json"
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        try:
+            d = json.load(open(p))
+        except Exception:
+            d = {}
+        allow = d.setdefault("permissions", {}).setdefault("allow", [])
+        for rule in ["Bash(pc-doctor)", "Bash(pc-doctor:*)", "Bash(pc-screenshot)", "Bash(pc-screenshot:*)",
+                     "Bash(pc-open:*)", "Bash(xdotool:*)", "Bash(xrandr:*)", "Bash(free:*)", "Bash(df:*)",
+                     "Bash(ps:*)", "Bash(nproc)", "Bash(cloudpc-light:*)", "Bash(cloudpc-resize:*)",
+                     "Read(//tmp/**)"]:
+            if rule not in allow:
+                allow.append(rule)
+        json.dump(d, open(p, "w"), indent=2)
+        PY
         clear
         echo "Claude Code"
         echo "Sign-in opens in your PHONE's browser (fast, Google sign-in works)."
         echo "After signing in, come back to AirCursor PC. If Claude Code asks for a code:"
         echo "copy it on the phone, then AirCursor toolbar → Paste, then press Enter."
         echo ""
+        if [ "${'$'}1" = "--assistant" ]; then
+            shift
+            echo "PC Assistant: Claude checks this PC and fixes speed, FPS and app problems."
+            echo ""
+            set -- "Namaste! Run pc-doctor and look at the screen with pc-screenshot. Tell me in simple Hinglish what makes this PC slow or broken, then fix it step by step (ask before deleting anything)." "${'$'}@"
+        fi
         claude "${'$'}@"
         exec bash
     """.trimIndent() + "\n"

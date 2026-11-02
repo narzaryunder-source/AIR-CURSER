@@ -51,7 +51,12 @@ def web(id, name, desc, cat, url, domain, popular=False, builtin_desktop=None, c
     return a
 
 
-AI, OFFICE, MEDIA, GAMES, WEB = "AI & Coding", "Office", "Photo & Video", "Games", "Web apps"
+AI, OFFICE, MEDIA, GAMES, WEB, TOOLS = "AI & Coding", "Office", "Photo & Video", "Games", "Web apps", "Tools"
+
+
+def pkg(id, name, desc, cat, size, domain, icon, popular=False):
+    """An app that is one Ubuntu package (installed and removed by its package name)."""
+    return App(id, name, desc, cat, size, [domain], ["pkg:" + id], ["pkg:" + id], icon, popular=popular)
 CATALOG = [
     # AI & coding
     App("vscode", "VS Code", "Code editor from Microsoft. On most phones it opens in Firefox (VS Code Server)", AI, 110,
@@ -129,9 +134,35 @@ CATALOG = [
         ["openarena.ws"], ["pkg:openarena"], ["desk:openarena.desktop", "pkg:openarena"], "applications-games"),
     App("games", "Games pack", "SuperTux, X-Moto, Frozen Bubble, 2048, Chess, Solitaire, OpenTTD and more (2D, smooth)",
         GAMES, 280, ["supertux.org"], ["pkg:supertux"], ["folder:Desktop/Games"], "applications-games"),
+    # Light, fast apps that suit a phone
+    pkg("geany", "Geany", "Fast, light code editor and IDE for every language", AI, 15, "geany.org", "accessories-text-editor", True),
+    pkg("thonny", "Thonny", "Python editor for beginners: run and debug step by step", AI, 30, "thonny.org", "applications-development"),
+    pkg("codeblocks", "Code::Blocks", "C and C++ IDE with compiler support", AI, 60, "codeblocks.org", "applications-development"),
+    pkg("bluefish", "Bluefish", "Editor for HTML, CSS, JavaScript and PHP websites", AI, 10, "bfwebsite.bluefish.openoffice.nl", "applications-development"),
+    pkg("godot3", "Godot 3", "Make your own 2D and 3D games", AI, 70, "godotengine.org", "applications-games"),
+    pkg("atril", "PDF Reader", "Open and read PDF files (Atril)", OFFICE, 10, "mate-desktop.org", "x-office-document", True),
+    pkg("galculator", "Calculator", "Simple and scientific calculator", OFFICE, 2, "galculator.mnzs.de", "accessories-calculator", True),
+    pkg("abiword", "AbiWord", "Light word processor – opens Word files fast", OFFICE, 25, "abisource.com", "x-office-document"),
+    pkg("gnumeric", "Gnumeric", "Light spreadsheet – opens Excel files fast", OFFICE, 30, "gnumeric.org", "x-office-spreadsheet"),
+    pkg("xournalpp", "Xournal++", "Handwritten notes and PDF annotation", OFFICE, 20, "xournalpp.github.io", "accessories-text-editor"),
+    pkg("cherrytree", "CherryTree", "Notes organised in a tree, with search", OFFICE, 15, "giuspen.net", "accessories-text-editor"),
+    pkg("foliate", "Foliate", "Read e-books (EPUB) comfortably", OFFICE, 15, "johnfactotum.github.io", "x-office-document"),
+    pkg("drawing", "Drawing", "Simple paint app, like Microsoft Paint", MEDIA, 15, "maoschanz.github.io", "applications-graphics", True),
+    pkg("krita", "Krita", "Digital painting and drawing (heavy)", MEDIA, 150, "krita.org", "applications-graphics"),
+    pkg("audacity", "Audacity", "Record and edit audio", MEDIA, 40, "audacityteam.org", "applications-multimedia"),
+    pkg("mpv", "mpv", "Very fast, light video player (smoother than VLC on phones)", MEDIA, 15, "mpv.io", "applications-multimedia", True),
+    pkg("audacious", "Audacious", "Light music player with playlists", MEDIA, 10, "audacious-media-player.org", "applications-multimedia"),
+    pkg("shotwell", "Shotwell", "Photo manager and simple photo fixes", MEDIA, 30, "wiki.gnome.org", "applications-graphics"),
+    pkg("simplescreenrecorder", "Screen Recorder", "Record the PC screen to a video", MEDIA, 20, "maartenbaert.be", "applications-multimedia"),
+    pkg("filezilla", "FileZilla", "Upload and download files with FTP / SFTP", TOOLS, 15, "filezilla-project.org", "folder-remote"),
+    pkg("qbittorrent", "qBittorrent", "Download torrents", TOOLS, 30, "qbittorrent.org", "folder-download"),
+    pkg("remmina", "Remmina", "Remote desktop: control a Windows or Linux computer", TOOLS, 15, "remmina.org", "preferences-desktop-remote-desktop", True),
+    pkg("hardinfo", "System Information", "See the PC's CPU, memory and benchmarks", TOOLS, 5, "github.com", "utilities-system-monitor"),
+    pkg("baobab", "Disk Usage", "See what fills the storage", TOOLS, 5, "apps.gnome.org", "drive-harddisk"),
 ]
 CATEGORIES = [("Popular", "starred"), (AI, "applications-development"), (OFFICE, "x-office-document"),
-              (MEDIA, "applications-multimedia"), (GAMES, "applications-games"), (WEB, "web-browser"),
+              (MEDIA, "applications-multimedia"), (GAMES, "applications-games"), (TOOLS, "applications-utilities"),
+              (WEB, "web-browser"),
               ("Installed", "emblem-ok-symbolic")]
 
 CSS = b"""
@@ -669,6 +700,7 @@ class Store(Gtk.Window):
             MEDIA: "Photos, videos, music and design.",
             GAMES: "Choose AirBoost → Game for the best FPS. Set graphics to Low inside 3D games.",
             WEB: "Websites as apps: open in their own window, no download.",
+            TOOLS: "Remote desktop, file transfer, downloads and system information.",
             "Installed": "Everything you added. Open or remove it here.",
         }
         self.title.set_text(name)

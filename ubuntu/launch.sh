@@ -111,9 +111,12 @@ Until then: close other windows (for example Firefox) and open $NAME again.
 (Already lifted? Then the phone ran out of memory: close other phone apps and try again.)" >/dev/null 2>&1
 }
 
+# Game mode: background helpers and animations off while games run (frees CPU for FPS).
+[ $GAME = 1 ] && command -v cloudpc-light >/dev/null 2>&1 && (cloudpc-light 0 >/dev/null 2>&1 &)
+
 run 0
 if [ $RC -eq 137 ] && [ "$LIMIT" != off ]; then
-    echo "CLOUDPC_APP: $NAME was closed by Android (program limit, $(programs) running)" >&2
+    echo "CLOUDPC_APP: $NAME was closed by Android (program limit, $(programs) running)" | tee -a /tmp/cloudpc-app-errors.log >&2
     limit_message
     exit $RC
 fi
@@ -124,7 +127,8 @@ if [ $RC -ne 0 ] && [ $RC -ne 130 ] && [ $RC -ne 143 ] && [ $DUR -lt 25 ]; then
         exit $RC
     fi
     if [ $RC -ne 0 ] && [ $RC -ne 130 ] && [ $RC -ne 143 ] && [ $DUR -lt 25 ]; then
-        echo "CLOUDPC_APP: $NAME could not open (code $RC): $(grep -v '^[[:space:]]*$' "$LOG" | tail -n 3 | tr '\n' ' ' | cut -c1-300)" >&2
+        echo "CLOUDPC_APP: $NAME could not open (code $RC): $(grep -v '^[[:space:]]*$' "$LOG" | tail -n 3 | tr '\n' ' ' | cut -c1-300)" |
+            tee -a /tmp/cloudpc-app-errors.log >&2
         MSG=$(grep -v '^[[:space:]]*$' "$LOG" | grep -viE 'libEGL warning|dbind-WARNING|Gtk-Message|^ATTENTION' |
             tail -n 8 | cut -c1-150)
         zenity --error --no-markup --width=560 --title="$NAME" \

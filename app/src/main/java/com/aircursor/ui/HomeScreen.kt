@@ -409,7 +409,7 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_35"
+private const val WHATS_NEW_ID = "whatsnew_36"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
@@ -422,10 +422,10 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             UiPrefs.close(context, WHATS_NEW_ID)
             whatsNew = false
         }) {
-            Bullet("Brave – a Chrome-like browser, now the default in AirCursor PC")
-            Bullet("Phone GPU (VirGL) for games, Turbo profile and Steady FPS")
-            Bullet("Claude Code signs in on your phone's own browser")
-            Bullet("New App Store, VS Code, mouse and keyboard support")
+            Bullet("PC Assistant: Claude checks and fixes the PC, builds and opens apps")
+            Bullet("24 more apps: Geany, Thonny, PDF Reader, Calculator, Paint, mpv, Remmina…")
+            Bullet("Windows keys: Win+E, Win+R, snap windows, Task Manager, screenshots, zip")
+            Bullet("Brave as default browser, Phone GPU for games, Turbo and Steady FPS")
         }
     }
     if (howTo) {

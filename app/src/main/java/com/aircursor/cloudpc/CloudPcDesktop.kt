@@ -112,6 +112,8 @@ object CloudPcDesktop {
             fi >/dev/null 2>&1
             # Every installed app: working launcher, desktop icon, Start menu entry.
             command -v cloudpc-apps >/dev/null && nice -n 10 cloudpc-apps >/dev/null 2>&1
+            # Windows-style keys (Win+E, Win+R, Win+arrows, Ctrl+Shift+Esc, Print) – set once.
+            command -v cloudpc-windows-keys >/dev/null && cloudpc-windows-keys >/dev/null 2>&1
             for i in 1 2 3 4 5; do
                 pgrep -x xfwm4 >/dev/null || (xfwm4 --replace >/dev/null 2>&1 &)
                 pgrep -x xfce4-panel >/dev/null || (xfce4-panel >/dev/null 2>&1 &)

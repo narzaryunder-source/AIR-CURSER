@@ -63,6 +63,7 @@ private val TOPICS = listOf(
             "The button on the right edge opens the toolbar: keyboard, hand control, paste, files, wallpaper, boost and FPS.",
             "One tap opens a desktop icon. Tap Getting Started on the desktop for a full guide.",
             "A Bluetooth or USB keyboard and mouse work like on a PC (shortcuts, right click, scroll wheel).",
+            "Windows keys: Win+E files, Win+R run, Win+arrows snap windows, Ctrl+Shift+Esc Task Manager, Print screenshot.",
         ),
     ),
     Topic(
@@ -85,6 +86,7 @@ private val TOPICS = listOf(
             "Offline AI works without internet using a small model (first start downloads about 1 GB).",
             "Claude Code: install it from the App Store, open AI Apps → Claude Code. Sign-in opens in your phone's browser.",
             "If it asks for a code: copy it on the phone, then toolbar → Paste and Enter.",
+            "PC Assistant (AI Apps): Claude checks the PC, fixes speed and app problems, builds and opens apps.",
         ),
     ),
     Topic(

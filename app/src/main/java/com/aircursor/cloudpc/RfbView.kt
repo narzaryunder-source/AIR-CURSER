@@ -684,6 +684,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
         KeyEvent.KEYCODE_PAGE_UP -> Keysyms.PAGE_UP
         KeyEvent.KEYCODE_PAGE_DOWN -> Keysyms.PAGE_DOWN
         KeyEvent.KEYCODE_INSERT -> Keysyms.INSERT
+        KeyEvent.KEYCODE_SYSRQ -> 0xff61 // Print Screen
         in KeyEvent.KEYCODE_F1..KeyEvent.KEYCODE_F12 -> Keysyms.F1 + (keyCode - KeyEvent.KEYCODE_F1)
         else -> null
     }
