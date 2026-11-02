@@ -93,7 +93,9 @@ private val TOPICS = listOf(
         R.drawable.ic_ui_folder, "Files and copy-paste", "Move files and text between phone and PC",
         steps = listOf(
             "Toolbar → Files → Import from phone copies files into Downloads/From phone.",
-            "Put files in the To phone folder on the desktop, then Toolbar → Files → Save to phone.",
+            "In Files, right-click a file or folder → Send to phone (folders are zipped).",
+            "Or put files in the To phone folder on the desktop, then Toolbar → Files → Save to phone.",
+            "GitHub and Google Drive icons on the desktop: sign in on your phone, then sync your projects.",
             "Text copied in the PC is copied to your phone automatically.",
             "Toolbar → Paste puts the phone's copied text into the PC.",
         ),

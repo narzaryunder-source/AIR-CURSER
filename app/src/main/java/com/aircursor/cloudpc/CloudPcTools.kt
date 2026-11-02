@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 15
+    const val VERSION = 16
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -23,7 +23,8 @@ object CloudPcTools {
 
     /** Packages the tools need (App Store window, dialogs). Failures (no internet) are not fatal. */
     private const val TOOL_PACKAGES = "zenity wget xdg-utils libnotify-bin python3-gi gir1.2-gtk-3.0 xclip " +
-        "xdotool xfce4-screenshooter xarchiver thunar-archive-plugin unzip zip p7zip-full"
+        "xdotool xfce4-screenshooter xarchiver thunar-archive-plugin unzip zip p7zip-full " +
+        "pulseaudio pulseaudio-utils pavucontrol"
     const val PACKAGES_SCRIPT =
         "apt-get install -y --no-install-recommends $TOOL_PACKAGES >/dev/null 2>&1 || " +
             "(apt-get update >/dev/null 2>&1 && apt-get install -y --no-install-recommends $TOOL_PACKAGES) " +
@@ -105,6 +106,41 @@ object CloudPcTools {
         put("usr/local/bin/cloudpc-claude", CLAUDE, exec = true)
         put("usr/local/bin/cloudpc-web", WEB, exec = true)
         put("usr/local/bin/cloudpc-windows-keys", WINDOWS_KEYS, exec = true)
+        // Sound: PulseAudio → "Phone speaker" → the AirCursor app.
+        put("etc/cloudpc/pulse.pa", PULSE_PA)
+        put("etc/pulse/client.conf.d/50-cloudpc.conf", "default-server = unix:/tmp/pulse-native\nautospawn = no\nenable-shm = no\n")
+        // Files, GitHub, Google Drive
+        put("usr/local/bin/cloudpc-send-to-phone", SEND_TO_PHONE, exec = true)
+        put("usr/local/bin/cloudpc-github", GITHUB, exec = true)
+        put("usr/local/bin/cloudpc-gdrive", GDRIVE, exec = true)
+        put("usr/share/applications/cloudpc-github.desktop",
+            entry("GitHub", "cloudpc-github", "github", "Development;", "Clone, publish and push your projects"))
+        put("usr/share/applications/cloudpc-gdrive.desktop",
+            entry("Google Drive", "cloudpc-gdrive", "folder-remote", "Network;", "Sync a folder with your Google Drive"))
+        val r0 = CloudPcEngine.rootfs(c)
+        for (d in listOf("Documents", "Pictures", "Music", "Videos", "Projects", "Google Drive")) File(r0, "root/$d").mkdirs()
+        // Files sidebar: the folders people use most.
+        val marks = File(r0, "root/.config/gtk-3.0/bookmarks")
+        val have = if (marks.isFile) marks.readText() else ""
+        val want = listOf("Projects", "Documents", "Downloads", "Google%20Drive Google Drive",
+            "Desktop/To%20phone To phone", "Downloads/From%20phone From phone")
+        val add = want.map { "file:///root/$it" }.filter { line -> !have.contains(line.substringBefore(' ')) }
+        if (add.isNotEmpty()) put("root/.config/gtk-3.0/bookmarks", have + (if (have.isEmpty() || have.endsWith("\n")) "" else "\n") + add.joinToString("\n", postfix = "\n"))
+        // Files right-click: "Send to phone".
+        val uca = File(r0, "root/.config/Thunar/uca.xml")
+        val ucaText = when {
+            !uca.isFile -> File(r0, "etc/xdg/Thunar/uca.xml").takeIf { it.isFile }?.readText()
+                ?: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<actions>\n</actions>\n"
+            else -> uca.readText()
+        }
+        if (!ucaText.contains("aircursor-send-to-phone") && ucaText.contains("</actions>")) {
+            put("root/.config/Thunar/uca.xml", ucaText.replace("</actions>", UCA_SEND + "</actions>"))
+        }
+        // Older Google Drive icon opened a terminal: use the new window.
+        val oldDrive = File(r0, "root/Desktop/Google-Drive.desktop")
+        if (oldDrive.isFile && oldDrive.readText().contains("google-drive")) {
+            put("root/Desktop/Google-Drive.desktop", File(r0, "usr/share/applications/cloudpc-gdrive.desktop").readText(), exec = true)
+        }
         // Claude's tools inside the PC (also handy for the person in the terminal).
         put("usr/local/bin/pc-doctor", PC_DOCTOR, exec = true)
         put("usr/local/bin/pc-open", PC_OPEN, exec = true)
@@ -158,6 +194,8 @@ object CloudPcTools {
             "Firefox.desktop" to "usr/share/applications/firefox.desktop",
             "Terminal.desktop" to "usr/share/applications/xfce4-terminal.desktop",
             "Change-Wallpaper.desktop" to "usr/share/applications/aircursor-wallpaper.desktop",
+            "GitHub.desktop" to "usr/share/applications/cloudpc-github.desktop",
+            "Google-Drive.desktop" to "usr/share/applications/cloudpc-gdrive.desktop",
         )
         val r = CloudPcEngine.rootfs(c)
         for ((name, src) in icons) {
@@ -361,6 +399,173 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         exit 0
     """.trimIndent() + "\n"
 
+    /** PulseAudio: one virtual "Phone speaker"; its sound goes to the AirCursor app through a private socket. */
+    private val PULSE_PA = """
+        load-module module-null-sink sink_name=phone rate=44100 channels=2 sink_properties=device.description=Phone-speaker
+        set-default-sink phone
+        load-module module-native-protocol-unix auth-anonymous=1 socket=/tmp/pulse-native
+        load-module module-simple-protocol-unix socket=/tmp/cloudpc-audio.sock source=phone.monitor record=true playback=false format=s16le rate=44100 channels=2
+    """.trimIndent() + "\n"
+
+    /** Files → right-click → Send to phone (a folder or several files are zipped first). */
+    private val SEND_TO_PHONE = """
+        #!/bin/bash
+        . /tmp/cloudpc-session.env 2>/dev/null
+        [ ${'$'}# -gt 0 ] || exit 1
+        if [ ${'$'}# -eq 1 ] && [ -f "${'$'}1" ]; then
+            F=${'$'}(readlink -f "${'$'}1")
+        else
+            mkdir -p /tmp/aircursor-share
+            NAME=${'$'}(basename "${'$'}1")
+            [ ${'$'}# -gt 1 ] && NAME="files"
+            F="/tmp/aircursor-share/${'$'}NAME.zip"
+            rm -f "${'$'}F"
+            cd "${'$'}(dirname "${'$'}(readlink -f "${'$'}1")")" || exit 1
+            args=(); for a in "${'$'}@"; do args+=("${'$'}(basename "${'$'}a")"); done
+            zip -qr "${'$'}F" "${'$'}{args[@]}" || { zenity --error --text="Could not pack the files."; exit 1; }
+        fi
+        printf '%s' "aircursor-save:${'$'}F" | timeout 15 xclip -quiet -selection clipboard >/dev/null 2>&1 &
+        notify-send -a "AirCursor PC" -i phone "Send to phone" "Choose where to save it on your phone." >/dev/null 2>&1 &
+        exit 0
+    """.trimIndent() + "\n"
+
+    /** GitHub: sign in (on the phone), clone, publish a folder, save and get changes. */
+    private val GITHUB = """
+        #!/bin/bash
+        . /tmp/cloudpc-session.env 2>/dev/null
+        export LANG=C.UTF-8 GSK_RENDERER=cairo NO_AT_BRIDGE=1
+        T="GitHub"
+        P=/root/Projects
+        mkdir -p "${'$'}P"
+        if ! command -v gh >/dev/null 2>&1; then
+            zenity --question --width=420 --title="${'$'}T" --ok-label="Install" \
+                --text="Install the GitHub tools (git + GitHub CLI, about 20 MB)?" || exit 0
+            ( ubuntu-extras install github 2>&1 | sed -u 's/^/# /' ) |
+                zenity --progress --pulsate --auto-close --no-cancel --width=480 --title="${'$'}T" --text="Installing…"
+            command -v gh >/dev/null 2>&1 || { zenity --error --text="Could not install. Check the internet."; exit 1; }
+        fi
+        if ! gh auth status >/dev/null 2>&1; then
+            zenity --info --width=480 --title="${'$'}T" \
+                --text="Sign in to GitHub:\n\n1. A terminal shows a code (like ABCD-1234).\n2. GitHub's page opens in your PHONE's browser – type the code there and tap Authorize.\n3. Come back here."
+            xfce4-terminal --title="GitHub sign-in" --hold -x env PATH="/usr/local/lib/cloudpc/phone-browser:${'$'}PATH" \
+                BROWSER=cloudpc-open-on-phone gh auth login -h github.com -p https -w
+            gh auth status >/dev/null 2>&1 || { zenity --error --text="Not signed in yet. Open GitHub again to retry."; exit 0; }
+            gh auth setup-git >/dev/null 2>&1
+            LOGIN=${'$'}(gh api user -q .login 2>/dev/null); ID=${'$'}(gh api user -q .id 2>/dev/null)
+            [ -n "${'$'}LOGIN" ] && git config --global user.name "${'$'}LOGIN"
+            [ -n "${'$'}ID" ] && git config --global user.email "${'$'}ID+${'$'}LOGIN@users.noreply.github.com"
+            git config --global init.defaultBranch main
+        fi
+        pick_repo() {
+            zenity --file-selection --directory --filename="${'$'}P/" --title="Choose the project folder"
+        }
+        run() {   # title, then a shell command
+            local title="${'$'}1"; shift
+            ( bash -c "${'$'}*" 2>&1 | sed -u 's/^/# /'; echo "# Done." ) |
+                zenity --progress --pulsate --auto-close --width=520 --title="${'$'}title" --text="${'$'}title…"
+        }
+        while true; do
+            C=${'$'}(zenity --list --width=560 --height=420 --title="${'$'}T" \
+                --text="Signed in as ${'$'}(gh api user -q .login 2>/dev/null). Your projects live in Home → Projects." \
+                --column=id --column="What do you want to do?" --hide-column=1 --print-column=1 \
+                clone "Download (clone) a repository" \
+                publish "Publish a folder as a new repository" \
+                push "Save my changes to GitHub (push)" \
+                pull "Get the latest changes (pull)" \
+                folder "Open the Projects folder" \
+                web "Open github.com" \
+                logout "Sign out") || exit 0
+            case "${'$'}C" in
+                clone)
+                    R=${'$'}(zenity --entry --width=460 --title="Clone" --text="Repository (owner/name or a GitHub link):") || continue
+                    [ -n "${'$'}R" ] && run "Downloading ${'$'}R" "cd '${'$'}P' && gh repo clone '${'$'}R'"
+                    setsid thunar "${'$'}P" >/dev/null 2>&1 & ;;
+                publish)
+                    D=${'$'}(pick_repo) || continue
+                    N=${'$'}(zenity --entry --title="Publish" --text="Name on GitHub:" --entry-text="${'$'}(basename "${'$'}D")") || continue
+                    V=${'$'}(zenity --list --title="Publish" --text="Who can see it?" --column=v private public | head -n1)
+                    run "Publishing ${'$'}N" "cd '${'$'}D' && { [ -d .git ] || git init; } && git add -A && { git commit -m 'First upload from AirCursor PC' || true; } && gh repo create '${'$'}N' --${'$'}{V:-private} --source . --push" ;;
+                push)
+                    D=${'$'}(pick_repo) || continue
+                    M=${'$'}(zenity --entry --title="Save changes" --text="What did you change? (short note)" --entry-text="Update from AirCursor PC") || continue
+                    run "Saving changes" "cd '${'$'}D' && git add -A && { git commit -m '${'$'}{M//\'/}' || true; } && git push" ;;
+                pull)
+                    D=${'$'}(pick_repo) || continue
+                    run "Getting changes" "cd '${'$'}D' && git pull" ;;
+                folder) setsid thunar "${'$'}P" >/dev/null 2>&1 & ;;
+                web) setsid cloudpc-web https://github.com >/dev/null 2>&1 & ;;
+                logout) gh auth logout -h github.com >/dev/null 2>&1 <<< "Y"; exit 0 ;;
+            esac
+        done
+    """.trimIndent() + "\n"
+
+    /** Google Drive: sign in on the phone, a "Google Drive" folder in Home that syncs both ways. */
+    private val GDRIVE = """
+        #!/bin/bash
+        . /tmp/cloudpc-session.env 2>/dev/null
+        export LANG=C.UTF-8 GSK_RENDERER=cairo NO_AT_BRIDGE=1
+        T="Google Drive"
+        DIR="/root/Google Drive"
+        REMOTE="gdrive:AirCursor PC"
+        MARK=/root/.config/cloudpc/gdrive-synced
+        mkdir -p "${'$'}DIR" /root/.config/cloudpc
+        if ! command -v rclone >/dev/null 2>&1; then
+            zenity --question --width=420 --title="${'$'}T" --ok-label="Install" \
+                --text="Install Google Drive support (about 25 MB)?" || exit 0
+            ( ubuntu-extras install gdrive 2>&1 | sed -u 's/^/# /' ) |
+                zenity --progress --pulsate --auto-close --no-cancel --width=480 --title="${'$'}T" --text="Installing…"
+            command -v rclone >/dev/null 2>&1 || { zenity --error --text="Could not install. Check the internet."; exit 1; }
+        fi
+        if ! rclone listremotes 2>/dev/null | grep -q '^gdrive:'; then
+            zenity --question --width=480 --title="${'$'}T" --ok-label="Sign in" \
+                --text="Connect your Google Drive (15 GB free).\n\nGoogle's sign-in opens in your PHONE's browser. Sign in, tap Allow, then come back here." || exit 0
+            PATH="/usr/local/lib/cloudpc/phone-browser:${'$'}PATH" BROWSER=cloudpc-open-on-phone \
+                rclone config create gdrive drive scope=drive > /tmp/gdrive-login.log 2>&1 &
+            PID=${'$'}!
+            ( while kill -0 ${'$'}PID 2>/dev/null; do echo "# Waiting for the sign-in on your phone…"; sleep 2; done ) |
+                zenity --progress --pulsate --auto-close --width=480 --title="${'$'}T" --text="Waiting for the sign-in on your phone…"
+            kill ${'$'}PID 2>/dev/null
+            rclone listremotes 2>/dev/null | grep -q '^gdrive:' || { zenity --error --text="Sign-in did not finish. Try again."; exit 1; }
+            rclone mkdir "${'$'}REMOTE" >/dev/null 2>&1
+        fi
+        sync_now() {
+            local extra=""
+            [ -f "${'$'}MARK" ] || extra="--resync"
+            ( rclone bisync "${'$'}DIR" "${'$'}REMOTE" ${'$'}extra --create-empty-src-dirs -v 2>&1 | sed -u 's/^/# /'
+              echo "${'$'}{PIPESTATUS[0]}" > /tmp/gdrive-sync.rc ) |
+                zenity --progress --pulsate --auto-close --width=560 --title="${'$'}T" --text="Syncing…"
+            if [ "${'$'}(cat /tmp/gdrive-sync.rc 2>/dev/null)" = 0 ]; then
+                touch "${'$'}MARK"
+                notify-send -a "AirCursor PC" -i folder-remote "Google Drive" "Synced." >/dev/null 2>&1
+            else
+                rm -f "${'$'}MARK"
+                zenity --error --width=460 --text="Sync did not finish (internet?). Try again – the next sync starts fresh."
+            fi
+        }
+        while true; do
+            C=${'$'}(zenity --list --width=560 --height=380 --title="${'$'}T" \
+                --text="Home → Google Drive  ⇄  the \"AirCursor PC\" folder in your Drive" \
+                --column=id --column="What do you want to do?" --hide-column=1 --print-column=1 \
+                sync "Sync now (both ways)" \
+                open "Open the Google Drive folder" \
+                web "Open drive.google.com (all your files)" \
+                out "Disconnect Google Drive") || exit 0
+            case "${'$'}C" in
+                sync) sync_now ;;
+                open) setsid thunar "${'$'}DIR" >/dev/null 2>&1 & ;;
+                web) setsid cloudpc-web https://drive.google.com >/dev/null 2>&1 & ;;
+                out) zenity --question --text="Disconnect Google Drive? Files stay in both places." &&
+                        { rclone config delete gdrive; rm -f "${'$'}MARK"; exit 0; } ;;
+            esac
+        done
+    """.trimIndent() + "\n"
+
+    /** Thunar: "Send to phone" in the right-click menu. */
+    private const val UCA_SEND = "<action>\n\t<icon>phone</icon>\n\t<name>Send to phone</name>\n" +
+        "\t<unique-id>aircursor-send-to-phone</unique-id>\n\t<command>cloudpc-send-to-phone %F</command>\n" +
+        "\t<description>Save a copy on the phone</description>\n\t<patterns>*</patterns>\n\t<directories/>\n" +
+        "\t<audio-files/>\n\t<image-files/>\n\t<other-files/>\n\t<text-files/>\n\t<video-files/>\n</action>\n"
+
     /** Windows-style keys and window snapping (set once; change them in Settings → Keyboard). */
     private val WINDOWS_KEYS = """
         #!/bin/sh
@@ -519,7 +724,8 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
     private val CLAUDE = """
         #!/bin/bash
         export PATH="/$LIB/phone-browser:${'$'}PATH" BROWSER=cloudpc-open-on-phone
-        cd /root || exit 1
+        mkdir -p /root/Projects
+        cd /root/Projects || cd /root || exit 1
         if ! command -v claude >/dev/null 2>&1; then
             echo "Claude Code is not installed yet: App Store → AI & Coding → Claude Code → Install."
             exec bash

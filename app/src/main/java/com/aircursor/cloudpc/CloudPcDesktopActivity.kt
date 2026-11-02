@@ -52,6 +52,9 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
         /** The PC asks to open a web link in the phone's own browser (logins: fast, already signed in). */
         private const val OPEN_ON_PHONE = "aircursor-open:"
+
+        /** Files → right-click → Send to phone: the PC names a file, the phone asks where to save it. */
+        private const val SAVE_ON_PHONE = "aircursor-save:"
         private const val OFF = 0xA0101828.toInt()
 
         /** Desktop size with the phone's landscape shape (even numbers for the VNC server). */
@@ -200,6 +203,8 @@ class CloudPcDesktopActivity : ComponentActivity() {
         v.onDesktopClipboard = { text ->
             if (text.startsWith(OPEN_ON_PHONE)) {
                 openOnPhone(text.removePrefix(OPEN_ON_PHONE).trim())
+            } else if (text.startsWith(SAVE_ON_PHONE)) {
+                sendToPhone(text.removePrefix(SAVE_ON_PHONE).trim())
             } else {
                 getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("AirCursor PC", text))
                 Toast.makeText(this, "Copied to phone", Toast.LENGTH_SHORT).show()
@@ -468,6 +473,18 @@ class CloudPcDesktopActivity : ComponentActivity() {
                 exportFile.launch(files[which].name)
             }
             .show()
+    }
+
+    private fun sendToPhone(guestPath: String) {
+        val root = CloudPcEngine.rootfs(this).canonicalFile
+        val file = File(root, guestPath.removePrefix("/")).canonicalFile
+        // Only files inside the PC, never anything else of the app.
+        if (!file.path.startsWith(root.path + File.separator) || !file.isFile) {
+            Toast.makeText(this, "That file could not be found", Toast.LENGTH_SHORT).show()
+            return
+        }
+        pendingExport = file
+        exportFile.launch(file.name)
     }
 
     private fun saveToPhone(src: File, uri: Uri) {

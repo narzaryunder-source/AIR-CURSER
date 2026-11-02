@@ -91,6 +91,11 @@ install_brave() {
     fi
 }
 
+install_github() {
+    install_apt git gh
+    command -v gh >/dev/null 2>&1 && ok "GitHub ready: desktop icon GitHub (sign in, clone, publish, push)"
+}
+
 install_gdrive() {
     echo "Installing Google Drive support (rclone)..."
     if ! apt-get install -y rclone; then bad "rclone install failed"; return; fi
@@ -115,7 +120,7 @@ GD
 [Desktop Entry]
 Type=Application
 Name=Google Drive
-Exec=xfce4-terminal --hold -e google-drive
+Exec=cloudpc-gdrive
 Icon=folder-remote
 Terminal=false
 GDD
@@ -170,7 +175,7 @@ label_for() {
     case "$1" in
         vscode) echo "VS Code" ;; claude) echo "Claude Code" ;; ollama) echo "Offline AI (Ollama)" ;;
         blender) echo "Blender" ;; libreoffice) echo "LibreOffice" ;; gimp) echo "GIMP" ;;
-        inkscape) echo "Inkscape" ;; python) echo "Python" ;; vlc) echo "VLC" ;; gdrive) echo "Google Drive" ;; brave) echo "Brave" ;;
+        inkscape) echo "Inkscape" ;; python) echo "Python" ;; vlc) echo "VLC" ;; gdrive) echo "Google Drive" ;; brave) echo "Brave" ;; github) echo "GitHub" ;;
         shotcut) echo "Shotcut" ;; kdenlive) echo "Kdenlive" ;; games) echo "Games pack" ;;
         games3d) echo "3D games" ;; luanti) echo "Minetest" ;; coding) echo "Coding tools" ;;
         trigger) echo "Trigger Rally" ;; tuxracer) echo "Extreme Tux Racer" ;; *) echo "$1" ;;
@@ -196,6 +201,7 @@ install_id() {
         vlc) install_apt vlc ;;
         gdrive) install_gdrive ;;
         brave) install_brave ;;
+        github) install_github ;;
         shotcut) install_apt shotcut ;;
         kdenlive) install_apt kdenlive ;;
         coding) install_coding ;;
@@ -219,6 +225,7 @@ remove_id() {
         ollama) rm -rf /usr/local/bin/ollama /usr/local/bin/ai-chat /usr/local/lib/ollama /usr/share/ollama; return ;;
         gdrive) pkgs="rclone"; rm -f /usr/local/bin/google-drive "$REAL_HOME/Desktop/Google-Drive.desktop" ;;
         brave) pkgs="brave-browser brave-keyring" ;;
+        github) pkgs="gh" ;;
         games) pkgs="supertux frozen-bubble pingus xmoto 2048-qt openttd openttd-opengfx aisleriot gnome-mines gnome-sudoku gnome-chess stockfish quadrapassel" ;;
         games3d) pkgs="supertuxkart neverball extremetuxracer minetest luanti" ;;
         luanti) pkgs="minetest luanti" ;;

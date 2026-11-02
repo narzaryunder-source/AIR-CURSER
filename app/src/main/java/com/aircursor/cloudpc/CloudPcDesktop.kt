@@ -64,7 +64,7 @@ object CloudPcDesktop {
         mkdir -p "${'$'}XDG_RUNTIME_DIR" /tmp/.X11-unix /tmp/.ICE-unix
         chmod 700 "${'$'}XDG_RUNTIME_DIR"; chmod 1777 /tmp/.X11-unix /tmp/.ICE-unix
         # Leftovers of a desktop that Android stopped half-way would block the new one.
-        for p in Xtigervnc Xvnc xfce4-session xfwm4 xfce4-panel xfdesktop xfsettingsd; do pkill -x "${'$'}p" 2>/dev/null; done
+        for p in Xtigervnc Xvnc xfce4-session xfwm4 xfce4-panel xfdesktop xfsettingsd pulseaudio; do pkill -x "${'$'}p" 2>/dev/null; done
         sleep 0.3
         rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 "${'$'}SOCK"
         rm -rf /root/.cache/sessions
@@ -85,6 +85,13 @@ object CloudPcDesktop {
         export LP_NUM_THREADS="${'$'}(nproc 2>/dev/null || echo 4)" GALLIUM_DRIVER=llvmpipe vblank_mode=0 MESA_NO_ERROR=1
         # GTK4 apps: simple CPU drawing (much faster than OpenGL on a software GPU); no DRI3 probing.
         export GSK_RENDERER=cairo LIBGL_DRI3_DISABLE=1
+        # Sound: PulseAudio plays into the "Phone speaker"; the AirCursor app plays it on the phone.
+        export PULSE_SERVER=unix:/tmp/pulse-native
+        if command -v pulseaudio >/dev/null && [ -f /etc/cloudpc/pulse.pa ]; then
+            rm -f /tmp/pulse-native /tmp/cloudpc-audio.sock
+            pulseaudio -n -F /etc/cloudpc/pulse.pa --exit-idle-time=-1 --disable-shm=yes --daemonize=no \
+                > /tmp/pulseaudio.log 2>&1 &
+        fi
         # Firefox's own Linux sandbox cannot work inside proot; the whole PC already runs inside
         # Android's app sandbox. "Fake no sandbox" = Firefox treats it like a kernel without
         # sandbox support (no crashes, no scary banner), unlike forcing it off.
@@ -95,7 +102,7 @@ object CloudPcDesktop {
         {
             echo "export DISPLAY=:1"
             echo "export DBUS_SESSION_BUS_ADDRESS='${'$'}DBUS_SESSION_BUS_ADDRESS'"
-            echo "export XDG_RUNTIME_DIR=${'$'}XDG_RUNTIME_DIR NO_AT_BRIDGE=1 LANG=C.UTF-8"
+            echo "export XDG_RUNTIME_DIR=${'$'}XDG_RUNTIME_DIR NO_AT_BRIDGE=1 LANG=C.UTF-8 PULSE_SERVER=unix:/tmp/pulse-native"
         } > /tmp/cloudpc-session.env
         startxfce4 &
         # One helper (Android allows an app only ~32 programs, so no extra background shells):

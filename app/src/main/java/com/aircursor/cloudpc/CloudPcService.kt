@@ -243,6 +243,7 @@ class CloudPcService : Service() {
                 CloudPcEngine.writeGuestFile(CloudPcEngine.rootfs(this).toPath(), "etc/cloudpc/child-limit", "$limit\n")
                 AirBoost.writeGameConfig(this)
                 applyGpu()
+                AudioBridge.start(this)
                 if (CloudPcTools.needsSetup(this)) {
                     CloudPcBus.line("==> Updating desktop tools (App Store, layout, AI apps)…", force = true)
                     CloudPcEngine.run(this, CloudPcTools.PACKAGES_SCRIPT, onProcess = { desktop = it }) { CloudPcBus.line(it) }
@@ -266,6 +267,7 @@ class CloudPcService : Service() {
                 desktop = null
                 VirglServer.stop(this)
                 VirglServer.writeMode(this, false)
+                AudioBridge.stop()
                 try {
                     deskWake?.takeIf { it.isHeld }?.release()
                 } catch (_: Exception) {
