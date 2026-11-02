@@ -1,0 +1,23 @@
+#!/bin/bash
+# TS Station launcher: starts the local server and opens the interface full screen.
+. /tmp/cloudpc-session.env 2>/dev/null
+DIR=/opt/ts-station
+pkill -f "^python3 $DIR/server.py" 2>/dev/null
+rm -f /tmp/ts-station.url
+python3 "$DIR/server.py" > /tmp/ts-station.url 2> /tmp/ts-station.log &
+URL=""
+for i in $(seq 1 60); do
+    URL=$(head -n 1 /tmp/ts-station.url 2>/dev/null)
+    [ -n "$URL" ] && break
+    sleep 0.1
+done
+if [ -z "$URL" ]; then
+    zenity --error --no-markup --text="TS Station could not start.
+
+$(tail -n 5 /tmp/ts-station.log)" 2>/dev/null
+    exit 1
+fi
+if [ -x /usr/bin/brave-browser-stable ]; then
+    exec cloudpc-launch brave-browser.desktop /usr/bin/brave-browser-stable --app="$URL" --start-fullscreen
+fi
+exec firefox --kiosk --new-window "$URL"

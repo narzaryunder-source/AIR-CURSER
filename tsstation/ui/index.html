@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TS Station</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body class="theme-native booting">
+<div id="bg" aria-hidden="true"><div class="bg-img" id="bgA"></div><div class="bg-img" id="bgB"></div><div class="bg-shade"></div></div>
+
+<div id="boot" role="button" tabindex="0">
+  <div class="mark big">TS</div>
+  <div class="boot-name">TechOS <b>Station</b></div>
+  <div class="boot-hint">Press any key or tap to start</div>
+</div>
+
+<header id="top">
+  <div class="brand"><div class="mark">TS</div><div class="brand-text"><b>STATION</b><span id="ver">TS1 · AirCursor PC</span></div></div>
+  <nav id="nav">
+    <button data-page="home" class="active">Home</button>
+    <button data-page="library">Library</button>
+    <button data-page="search">Search</button>
+    <button data-page="performance">Performance</button>
+    <button data-page="themes">Themes</button>
+    <button data-page="settings">Settings</button>
+  </nav>
+  <div class="top-right">
+    <span id="clock"></span>
+    <div class="avatar" id="avatar" title="Profile">P</div>
+    <button class="icon-btn" id="btnFull" title="Full screen" aria-label="Full screen"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+    <button class="icon-btn" id="btnQuit" title="Exit TS Station" aria-label="Exit"><svg viewBox="0 0 24 24"><path d="M12 3v8M7.5 6.5a7 7 0 1 0 9 0"/></svg></button>
+  </div>
+</header>
+
+<main>
+  <section class="page active" id="page-home">
+    <div class="hero">
+      <div class="eyebrow" id="heroEyebrow">From your collection</div>
+      <h1 id="heroTitle"></h1>
+      <div class="chips" id="heroChips"></div>
+      <p class="hero-about" id="heroAbout"></p>
+      <div class="hero-actions">
+        <button class="btn-play" id="btnPlay"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>Play Game</button>
+        <button class="btn-round" id="btnMore" aria-label="More options"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+      </div>
+    </div>
+    <div class="shelf">
+      <div class="shelf-head">
+        <div class="tabs" id="shelfTabs">
+          <button data-shelf="all" class="active">All games</button>
+          <button data-shelf="fav">Favorites</button>
+          <button data-shelf="recent">Recently played</button>
+        </div>
+        <button class="link" data-goto="library">View collection →</button>
+      </div>
+      <div class="row" id="row"></div>
+    </div>
+  </section>
+
+  <section class="page" id="page-library">
+    <div class="page-head"><h2>Library</h2><div class="tabs" id="genreTabs"></div></div>
+    <div class="grid" id="libGrid"></div>
+  </section>
+
+  <section class="page" id="page-search">
+    <div class="page-head"><h2>Search</h2></div>
+    <input id="searchBox" class="search" placeholder="Search your games" autocomplete="off">
+    <div class="grid" id="searchGrid"></div>
+  </section>
+
+  <section class="page" id="page-performance">
+    <div class="page-head"><h2>Performance</h2><span class="sub">What this PC is doing for your games</span></div>
+    <div class="cards" id="perfCards"></div>
+    <div class="actions">
+      <button class="btn" data-tool="benchmark">Run Benchmark</button>
+      <button class="btn" data-tool="light">Boost now</button>
+      <button class="btn" data-tool="taskmanager">Task Manager</button>
+      <button class="btn" id="btnDoctor">PC health report</button>
+    </div>
+    <p class="note">Game Mode is automatic: when a game starts, background helpers and animations stop, the FPS counter appears (Right Shift + F12 hides it) and the steady FPS limit applies. Change Steady FPS, Turbo profile and Phone GPU in the AirCursor toolbar (lightning button).</p>
+  </section>
+
+  <section class="page" id="page-themes">
+    <div class="page-head"><h2>Themes</h2><span class="sub">Choose how TS Station looks</span></div>
+    <div class="themes" id="themeCards">
+      <button class="theme-card" data-theme="native"><div class="tprev tp-native"><i></i><i></i><i></i></div><b>TS Native</b><span>Console style, big game art</span></button>
+      <button class="theme-card" data-theme="glass"><div class="tprev tp-glass"><i></i><i></i><i></i></div><b>Glass</b><span>Frosted panels over the art</span></button>
+      <button class="theme-card" data-theme="classic"><div class="tprev tp-classic"><i></i><i></i><i></i></div><b>Classic</b><span>Light, like a desktop app</span></button>
+      <button class="theme-card" data-theme="minimal"><div class="tprev tp-minimal"><i></i><i></i><i></i></div><b>Minimal</b><span>No effects – fastest</span></button>
+    </div>
+  </section>
+
+  <section class="page" id="page-settings">
+    <div class="page-head"><h2>Settings</h2></div>
+    <div class="settings">
+      <label class="set-row"><span><b>Your name</b><small>Shown in the corner</small></span><input id="setName" maxlength="24" placeholder="Player"></label>
+      <label class="set-row"><span><b>Interface sounds</b><small>Soft clicks when you move</small></span><input type="checkbox" id="setSounds" class="switch"></label>
+      <div class="set-row"><span><b>Add a game</b><small>Any program or script you want in the collection</small></span><button class="btn" id="btnAdd">Add game</button></div>
+      <div class="set-row"><span><b>Get more games</b><small>App Store → Games</small></span><button class="btn" data-tool="store">Open App Store</button></div>
+      <div class="set-row"><span><b>Find games again</b><small>After installing new games</small></span><button class="btn" id="btnRescan">Refresh</button></div>
+      <div class="set-row"><span><b>About</b><small>TechOS Station TS1 for AirCursor PC · keyboard: ← → move, Enter play, Q / E switch pages, F favourite, Esc back</small></span></div>
+    </div>
+  </section>
+</main>
+
+<footer id="hints">
+  <div class="keys"><kbd>← →</kbd> Navigate <kbd>Enter</kbd> Play <kbd>F</kbd> Favourite <kbd>Q</kbd><kbd>E</kbd> Pages <kbd>Esc</kbd> Back</div>
+  <div id="count"></div>
+</footer>
+
+<div id="sheet" class="sheet" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true">
+    <h3 id="sheetTitle"></h3>
+    <div id="sheetBody"></div>
+    <div class="sheet-actions" id="sheetActions"></div>
+  </div>
+</div>
+<div id="toast" class="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
