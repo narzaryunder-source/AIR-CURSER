@@ -86,6 +86,36 @@ while IFS= read -r f; do
     if [ -f "$SRC/$id" ]; then APPS+=("$id"); else rm -f "$f" "$H/Desktop/$id" "$H/Desktop/Games/$id"; fi
 done <<< "$OURS"
 
+# ---- Brave as the default web browser (once; change it in Settings → Default Applications) -------
+if [ -x /usr/bin/brave-browser-stable ] && [ -f "$OVR/brave-browser.desktop" ] && [ ! -f "$STATE/default-browser" ]; then
+    mkdir -p "$H/.local/share/xfce4/helpers" "$H/.config/xfce4"
+    cat > "$H/.local/share/xfce4/helpers/brave-browser.desktop" <<'HELPER'
+[Desktop Entry]
+NoDisplay=true
+Version=1.0
+Type=X-XFCE-Helper
+X-XFCE-Category=WebBrowser
+X-XFCE-Commands=cloudpc-launch brave-browser.desktop /usr/bin/brave-browser-stable
+X-XFCE-CommandsWithParameter=cloudpc-launch brave-browser.desktop /usr/bin/brave-browser-stable "%s"
+Icon=brave-browser
+Name=Brave
+HELPER
+    rc="$H/.config/xfce4/helpers.rc"
+    touch "$rc" && sed -i '/^WebBrowser=/d' "$rc" && echo "WebBrowser=brave-browser" >> "$rc"
+    # Links and web pages opened from any app.
+    HOME="$H" xdg-mime default brave-browser.desktop x-scheme-handler/http x-scheme-handler/https \
+        text/html application/xhtml+xml >/dev/null 2>&1
+    # The pinned browser button on the taskbar becomes Brave.
+    for f in "$H"/.config/xfce4/panel/launcher-*/*.desktop; do
+        [ -f "$f" ] && grep -qE '^Exec=.*firefox' "$f" && cp "$OVR/brave-browser.desktop" "$f"
+    done
+    touch "$STATE/default-browser"
+fi
+# Web apps made by older versions opened Firefox directly: open them in the default browser.
+for f in "$SRC"/aircursor-web-*.desktop "$H/Desktop/Web Apps"/*.desktop; do
+    [ -f "$f" ] && grep -q '^Exec=firefox --new-window ' "$f" && sed -i 's|^Exec=firefox --new-window |Exec=cloudpc-web |' "$f"
+done
+
 # ---- Desktop icons + Start menu favourites for new apps ---------------------------------------
 KNOWN="$STATE/apps.known"
 touch "$KNOWN"

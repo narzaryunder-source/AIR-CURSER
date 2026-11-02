@@ -270,7 +270,7 @@ def open_app(app):
             subprocess.Popen(["thunar", os.path.join(HOME, val)], start_new_session=True)
             return True
     if app.web and app.url:
-        subprocess.Popen(["firefox", "--new-window", app.url], start_new_session=True)
+        subprocess.Popen(["cloudpc-web", app.url], start_new_session=True)
         return True
     return False
 
@@ -377,7 +377,7 @@ def add_web_app(app):
             icon = dst
         except OSError:
             pass
-    text = ("[Desktop Entry]\nType=Application\nName=%s\nComment=%s\nExec=firefox --new-window %s\nIcon=%s\n"
+    text = ("[Desktop Entry]\nType=Application\nName=%s\nComment=%s\nExec=cloudpc-web %s\nIcon=%s\n"
             "Terminal=false\nCategories=%s\nStartupWMClass=firefox\nX-AirCursor-WebApp=true\n"
             % (app.name, app.desc, app.url, icon, getattr(app, "categories", "Network;")))
     path = os.path.join("/usr/share/applications", web_desktop_id(app))

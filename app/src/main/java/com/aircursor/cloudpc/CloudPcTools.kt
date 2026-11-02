@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 13
+    const val VERSION = 14
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -102,6 +102,7 @@ object CloudPcTools {
             put("$LIB/phone-browser/$name", "#!/bin/sh\nexec cloudpc-open-on-phone \"\$@\"\n", exec = true)
         }
         put("usr/local/bin/cloudpc-claude", CLAUDE, exec = true)
+        put("usr/local/bin/cloudpc-web", WEB, exec = true)
         // apt waits for a running background update instead of failing with "could not get lock".
         put("etc/apt/apt.conf.d/02-cloudpc-lock", "DPkg::Lock::Timeout \"600\";\n")
 
@@ -160,7 +161,7 @@ object CloudPcTools {
         }
         for (ai in AI_APPS) {
             val rel = "$desk/AI Apps/${ai.id}.desktop"
-            if (!File(r, rel).exists()) put(rel, ai.desktopEntry(), exec = true)
+            put(rel, ai.desktopEntry(), exec = true)   // ours: kept up to date (browser choice etc.)
         }
         // Folders for moving files between the phone and the PC (toolbar → Files).
         File(r, "$desk/$TO_PHONE").mkdirs()
@@ -214,9 +215,9 @@ object CloudPcTools {
     }
 
     private val AI_APPS = listOf(
-        AiApp("cloudpc-ai-claude", "Claude (AI)", "firefox --new-window https://claude.ai", "web-browser", "Claude AI assistant (website)"),
-        AiApp("cloudpc-ai-chatgpt", "ChatGPT (AI)", "firefox --new-window https://chatgpt.com", "web-browser", "ChatGPT (website)"),
-        AiApp("cloudpc-ai-gemini", "Gemini (AI)", "firefox --new-window https://gemini.google.com", "web-browser", "Google Gemini (website)"),
+        AiApp("cloudpc-ai-claude", "Claude (AI)", "cloudpc-web https://claude.ai", "web-browser", "Claude AI assistant (website)"),
+        AiApp("cloudpc-ai-chatgpt", "ChatGPT (AI)", "cloudpc-web https://chatgpt.com", "web-browser", "ChatGPT (website)"),
+        AiApp("cloudpc-ai-gemini", "Gemini (AI)", "cloudpc-web https://gemini.google.com", "web-browser", "Google Gemini (website)"),
         AiApp("cloudpc-ai-offline", "Offline AI (Ollama)", "cloudpc-ai-offline", "utilities-terminal", "AI chat without internet – small models, slow on phones"),
         AiApp(
             "cloudpc-ai-claude-code", "Claude Code", "xfce4-terminal --title=\"Claude Code\" -x cloudpc-claude",
@@ -325,7 +326,7 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
                 exit 1
             fi
         fi
-        exec firefox --new-window "http://127.0.0.1:${'$'}PORT/?tkn=${'$'}TOKEN&folder=${'$'}FOLDER"
+        exec cloudpc-web "http://127.0.0.1:${'$'}PORT/?tkn=${'$'}TOKEN&folder=${'$'}FOLDER"
     """.trimIndent() + "\n"
 
     /** Opens a web link in the phone's browser: the AirCursor app watches the clipboard for this marker. */
@@ -345,6 +346,17 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         echo "  (Link: ${'$'}URL)"
         echo ""
         exit 0
+    """.trimIndent() + "\n"
+
+    /** Opens a website like an app: own window in the default browser (Brave: app window, no tabs). */
+    private val WEB = """
+        #!/bin/sh
+        URL="${'$'}1"
+        [ -n "${'$'}URL" ] || exit 1
+        if grep -qs '^WebBrowser=brave-browser' /root/.config/xfce4/helpers.rc && [ -x /usr/bin/brave-browser-stable ]; then
+            exec cloudpc-launch brave-browser.desktop /usr/bin/brave-browser-stable --app="${'$'}URL"
+        fi
+        exec firefox --new-window "${'$'}URL"
     """.trimIndent() + "\n"
 
     /** Claude Code in a terminal, with sign-in in the phone's browser. */
