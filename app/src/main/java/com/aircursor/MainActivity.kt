@@ -47,6 +47,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AuthManager.init(this)
+        com.aircursor.ui.UiPrefs.load(this)
         requested.value = intent?.getStringExtra(EXTRA_OPEN)
         val needsSetup = !Permissions.camera(this) || !Permissions.accessibility(this)
         setContent {
@@ -90,6 +91,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenSettings = { screen = "settings" },
                                 onOpenPc = { screen = "cloudpc" },
                                 onOpenHelp = { screen = "help" },
+                                onOpenPro = { screen = "pro" },
                             )
                         }
                     }

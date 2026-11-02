@@ -7,6 +7,8 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -87,8 +89,14 @@ private val AppShapes = Shapes(
 
 @Composable
 fun AirCursorTheme(content: @Composable () -> Unit) {
+    val mode by UiPrefs.theme.collectAsState()
+    val dark = when (mode) {
+        UiPrefs.ThemeMode.LIGHT -> false
+        UiPrefs.ThemeMode.DARK -> true
+        UiPrefs.ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    }
     MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
+        colorScheme = if (dark) DarkColors else LightColors,
         shapes = AppShapes,
         content = content,
     )
