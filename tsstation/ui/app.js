@@ -41,12 +41,15 @@ function blip(freq = 660, dur = 0.05, vol = 0.035) {
 }
 
 /* ---------- pictures: probe once, remember the answer ---------- */
-const probed = {};
+const probed = {}, probedOk = {};
 function probe(url) {
   if (!(url in probed)) {
     probed[url] = new Promise((res) => {
       const img = new Image();
-      img.onload = () => res(url); img.onerror = () => res(null); img.src = url;
+      img.onload = () => { probedOk[url] = true; res(url); };
+      // Not there (yet): the server may still be downloading it – ask again a little later.
+      img.onerror = () => { setTimeout(() => delete probed[url], 15000); res(null); };
+      img.src = url;
     });
   }
   return probed[url];
@@ -77,9 +80,10 @@ function iconColor(url) {
   return colors[url];
 }
 const rgb = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
-function paintArt(el, art, icon) {
+function paintArt(el, art, icon, again = true) {
   probe(art).then((url) => {
-    if (url) { el.style.backgroundImage = `url("${url}")`; el.classList.add("has-art"); return; }
+    if (url) { el.style.background = ""; el.style.backgroundImage = `url("${url}")`; el.classList.add("has-art"); return; }
+    if (again) setTimeout(() => { if (el.isConnected) paintArt(el, art, icon, false); }, 20000);
     iconColor(icon).then((c) => {
       el.style.background = `radial-gradient(circle at 50% 36%, ${rgb(c.map((v) => Math.min(255, v * 1.7)))} 0%, ${rgb(c)} 55%, #0c0e14 100%)`;
     });
@@ -172,21 +176,33 @@ function showHero(g) {
   clearTimeout(heroTimer);
   heroTimer = setTimeout(() => setBackground(g ? artUrl(g.id) : null, g ? iconUrl(g.id) : null), 90);   // fast scrolling skips pictures
 }
+function bgLayer() {
+  const a = $("#bgA"), b = $("#bgB");
+  const next = a.classList.contains("on") ? b : a;
+  return [next, next === a ? b : a];
+}
+function showLayer(next, prev) { requestAnimationFrame(() => { next.classList.add("on"); prev.classList.remove("on"); }); }
 async function setBackground(art, icon) {
   const tok = ++heroToken;
-  const a = $("#bgA"), b = $("#bgB");
-  const next = a.classList.contains("on") ? b : a, prev = next === a ? b : a;
-  const url = art ? await probe(art) : null;
-  const c = !url && icon ? await iconColor(icon) : [26, 30, 42];
-  if (tok !== heroToken) return;
-  next.removeAttribute("style");
-  if (url) {
-    next.className = "bg-img"; next.style.backgroundImage = `url("${url}")`;
-  } else {
-    next.className = "bg-img fallback"; next.style.backgroundColor = rgb(c);
-    if (icon) Object.assign(next.style, { backgroundImage: `url("${icon}")`, backgroundSize: "34%", backgroundRepeat: "no-repeat", backgroundPosition: "78% 40%" });
+  // Picture already here: show it straight away. Otherwise the game's colours first (never a black
+  // screen), and the picture fades in as soon as it has been downloaded.
+  const known = art && probedOk[art];
+  if (!known) {
+    const c = icon ? await iconColor(icon) : [26, 30, 42];
+    if (tok !== heroToken) return;
+    const [next, prev] = bgLayer();
+    next.removeAttribute("style");
+    next.className = "bg-img fallback";
+    next.style.background = `radial-gradient(ellipse at 72% 38%, ${rgb(c.map((v) => Math.min(255, v * 2.2)))} 0%, ${rgb(c)} 45%, #050608 100%)`;
+    if (icon) Object.assign(next.style, { backgroundImage: `url("${icon}"), ${next.style.backgroundImage}`, backgroundSize: "30%, cover", backgroundRepeat: "no-repeat", backgroundPosition: "76% 42%, center" });
+    showLayer(next, prev);
   }
-  requestAnimationFrame(() => { next.classList.add("on"); prev.classList.remove("on"); });
+  const url = art ? await probe(art) : null;
+  if (!url || tok !== heroToken) return;
+  const [next, prev] = bgLayer();
+  next.removeAttribute("style");
+  next.className = "bg-img"; next.style.backgroundImage = `url("${url}")`;
+  showLayer(next, prev);
 }
 
 /* ---------- actions ---------- */
@@ -194,8 +210,12 @@ async function play(g) {
   if (!g) { go("store"); return; }
   blip(520, 0.12, 0.05);
   toast(`Starting ${g.name}…`);
-  try { await api("/api/launch", { id: g.id }); g.last = Date.now() / 1000; g.count = (g.count || 0) + 1; }
-  catch (_) { toast("Could not start the game"); }
+  try {
+    const r = await api("/api/launch", { id: g.id });
+    if (!r.ok) { toast(r.error || "Could not start the game"); return; }
+    g.last = Date.now() / 1000; g.count = (g.count || 0) + 1;
+    toast(`Starting ${g.name}… big games can take up to a minute`);
+  } catch (_) { toast("TS Station lost its connection – close it and open it again"); }
 }
 async function toggleFav(g) {
   if (!g) return;

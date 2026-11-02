@@ -13,10 +13,13 @@ import mimetypes
 import os
 import re
 import secrets
+import shlex
+import shutil
 import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -150,7 +153,7 @@ def store_entry_for(gid):
 
 def fetch(url, limit=8_000_000):
     req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with urllib.request.urlopen(req, timeout=12) as r:
         return r.read(limit)
 
 
@@ -167,15 +170,28 @@ def flathub(fid):
             pass
     try:
         d = json.loads(fetch("https://flathub.org/api/v2/appstream/" + urllib.parse.quote(fid)))
+    except urllib.error.HTTPError:
+        d = {}          # Flathub does not know it: remember that
     except Exception:
-        d = {}
+        return None     # no internet right now: ask again next time
     with open(p, "w") as f:
         json.dump(d, f)
     return d or None
 
 
+_dl_locks = {}
+_dl_guard = threading.Lock()
+
+
 def cached_download(name, url_fn):
     """Cached file CACHE/art/<name>.(jpg|png), downloaded once from url_fn() (None if impossible)."""
+    with _dl_guard:
+        lock = _dl_locks.setdefault(name, threading.Lock())
+    with lock:   # the background prefetch and the window may ask at the same time: download once
+        return _cached_download(name, url_fn)
+
+
+def _cached_download(name, url_fn):
     for ext in ("jpg", "png"):
         p = os.path.join(CACHE, "art", "%s.%s" % (name, ext))
         if os.path.exists(p) and os.path.getsize(p) > 0:
@@ -183,18 +199,24 @@ def cached_download(name, url_fn):
     miss = os.path.join(CACHE, "art", name + ".none")
     if os.path.exists(miss) and time.time() - os.path.getmtime(miss) < 3 * 86400:
         return None
+    offline = False
     for url in url_fn():
         try:
             data = fetch(url)
+            if not (data[:4] == b"\x89PNG" or data[:3] == b"\xff\xd8\xff" or data[8:12] == b"WEBP"):
+                continue    # an error page, not a picture
             ext = "png" if data[:4] == b"\x89PNG" else "jpg"
             p = os.path.join(CACHE, "art", "%s.%s" % (name, ext))
             with open(p + ".tmp", "wb") as f:
                 f.write(data)
             os.replace(p + ".tmp", p)
             return p
-        except Exception:
+        except urllib.error.HTTPError:
             continue
-    open(miss, "w").close()
+        except Exception:
+            offline = True  # no internet / too slow: try again later instead of giving up for days
+    if not offline:
+        open(miss, "w").close()
     return None
 
 
@@ -296,6 +318,8 @@ def find_games():
                 "about": (st or {}).get("about") or e.get("Comment", ""),
                 "icon": e.get("Icon", ""),
                 "file": path,
+                "exec": e.get("Exec", ""),
+                "path": e.get("Path", ""),
                 "mine": d == MY_GAMES,
                 "genre": st["genre"] if st else genre(cats),
                 "source": "Added by you" if d == MY_GAMES else ("TS Store" if st else "Ubuntu"),
@@ -317,32 +341,94 @@ def genre(cats):
 
 # ---- art ---------------------------------------------------------------------------------------
 
+_meta = {"index": None}
+
+
 def metainfo_screenshots(gid):
-    for path in glob.glob("/usr/share/metainfo/*.xml") + glob.glob("/usr/share/appdata/*.xml"):
+    """Screenshot links from the games' AppStream files (read once, then remembered)."""
+    if _meta["index"] is None:
+        index = {}
+        for path in glob.glob("/usr/share/metainfo/*.xml") + glob.glob("/usr/share/appdata/*.xml"):
+            try:
+                root = ET.parse(path).getroot()
+            except Exception:
+                continue
+            urls = []
+            for shot in root.iter("screenshot"):
+                imgs = shot.findall("image")
+                src = [i for i in imgs if i.get("type", "source") == "source"] or imgs
+                if src and src[0].text:
+                    urls.append(src[0].text.strip())
+            for t in list(root.iter("launchable")) + root.findall("id"):
+                key = (t.text or "").strip().removesuffix(".desktop")
+                if key and urls:
+                    index.setdefault(key, urls)
+        _meta["index"] = index
+    return _meta["index"].get(gid, [])
+
+
+def flathub_find(name):
+    """Flathub app id for a game name (their search; remembered for a week)."""
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    p = os.path.join(CACHE, "flathub", "search-%s.json" % slug)
+    if os.path.exists(p) and time.time() - os.path.getmtime(p) < 7 * 86400:
         try:
-            root = ET.parse(path).getroot()
+            with open(p) as f:
+                return json.load(f).get("id", "")
         except Exception:
-            continue
-        ids = [t.text or "" for t in root.iter("launchable")] + [t.text or "" for t in root.findall("id")]
-        if not any(i.strip().removesuffix(".desktop") == gid for i in ids):
-            continue
-        urls = []
-        for shot in root.iter("screenshot"):
-            imgs = shot.findall("image")
-            src = [i for i in imgs if i.get("type", "source") == "source"] or imgs
-            if src and src[0].text:
-                urls.append(src[0].text.strip())
-        return urls
-    return []
+            pass
+    fid = ""
+    try:
+        req = urllib.request.Request("https://flathub.org/api/v2/search", data=json.dumps({"query": name}).encode(),
+                                     headers=dict(UA, **{"Content-Type": "application/json"}))
+        with urllib.request.urlopen(req, timeout=12) as r:
+            hits = json.loads(r.read(2_000_000)).get("hits") or []
+        want = re.sub(r"[^a-z0-9]", "", name.lower())
+        for h in hits[:6]:
+            have = re.sub(r"[^a-z0-9]", "", (h.get("name") or "").lower())
+            if have and (have == want or (len(want) > 4 and (want in have or have in want))):
+                fid = h.get("app_id", "")
+                break
+    except Exception:
+        return None   # no internet: try again next time
+    with open(p, "w") as f:
+        json.dump({"id": fid}, f)
+    return fid
 
 
-def hero_art(gid):
-    """A big picture for an installed game: its own screenshot, else the TS Store's picture."""
+def hero_art(gid, name=""):
+    """A big picture for an installed game: TS Store / Flathub art first (big, reliable),
+    then the game's own AppStream screenshot, then a Flathub search by its name."""
+    e = store_entry_for(gid)
+    if e:
+        p = store_art(e["id"], hd=True)
+        if p:
+            return p
     p = cached_download(gid, lambda: metainfo_screenshots(gid)[:2])
     if p:
         return p
-    e = store_entry_for(gid)
-    return store_art(e["id"], hd=True) if e else None
+    if not name:
+        g = next((g for g in find_games() if g["id"] == gid), None)
+        name = g["name"] if g else ""
+    if name:
+        art = os.path.join(CACHE, "art", "fh-" + gid)
+        if os.path.exists(art + ".jpg") or os.path.exists(art + ".png"):
+            return cached_download("fh-" + gid, lambda: [])
+        fid = flathub_find(name)
+        if fid is None:
+            return None
+        return cached_download("fh-" + gid, lambda: flathub_shots(fid)[:2])
+    return None
+
+
+def prefetch_art():
+    """Download every game's picture in the background right after start, one at a time."""
+    time.sleep(1)
+    for g in find_games():
+        try:
+            hero_art(g["id"], g["name"])
+        except Exception:
+            pass
 
 
 _theme = None
@@ -424,17 +510,68 @@ def spawn(cmd):
                      start_new_session=True)
 
 
+FIELD_CODES = re.compile(r"%[fFuUdDnNickvm]")
+GAME_LOG = "/tmp/ts-station-games.log"
+
+
+def exec_argv(g):
+    """The game's command from its menu entry (desktop entry rules), through the AirCursor launcher."""
+    cmd = FIELD_CODES.sub("", g["exec"].replace("%%", "\0")).replace("\0", "%")
+    try:
+        argv = shlex.split(cmd)
+    except ValueError:
+        argv = cmd.split()
+    if argv and argv[0] != "cloudpc-launch" and shutil.which("cloudpc-launch"):
+        # Game mode, FPS overlay and the "safe" second try – like starting it from the Start menu.
+        argv = ["cloudpc-launch", g["id"] + ".desktop"] + argv
+    return argv
+
+
+def xdo(*args):
+    try:
+        return subprocess.run(["xdotool"] + list(args), capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return ""
+
+
+def _watch_game(proc, name):
+    """While the game runs, TS Station steps aside; when it closes, TS Station comes back."""
+    time.sleep(2.5)
+    if proc.poll() is None:
+        for wid in xdo("search", "--name", "^TS Station$").split():
+            xdo("windowminimize", wid)
+    proc.wait()
+    for wid in xdo("search", "--name", "^TS Station$").split()[:1]:
+        xdo("windowactivate", wid)
+
+
 def launch(gid):
+    """Starts a game. Returns "" when it is starting, else a short reason."""
     g = next((g for g in find_games() if g["id"] == gid), None)
     if not g:
-        return False
+        return "This game is not installed any more."
+    argv = exec_argv(g)
+    if not argv:
+        return "This game has no start command."
+    if not shutil.which(argv[0]) and not os.path.exists(argv[0]):
+        return "Program not found: %s" % argv[0]
     s = defaults(load_settings())
     p = s["played"].setdefault(gid, {"count": 0})
     p["count"] = p.get("count", 0) + 1
     p["last"] = int(time.time())
     save_settings(s)
-    spawn(["gio", "launch", g["file"]])
-    return True
+    log = open(GAME_LOG, "ab")
+    log.write(("\n==> %s  %s\n" % (time.strftime("%H:%M:%S"), " ".join(argv))).encode())
+    log.flush()
+    cwd = g["path"] if g["path"] and os.path.isdir(g["path"]) else HOME
+    try:
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=log, cwd=cwd, start_new_session=True)
+    except OSError as ex:
+        return "Could not start: %s" % ex
+    finally:
+        log.close()
+    threading.Thread(target=_watch_game, args=(proc, g["name"]), daemon=True).start()
+    return ""
 
 
 def add_game(name, command):
@@ -646,7 +783,8 @@ class Handler(BaseHTTPRequestHandler):
                 g["last"] = p.get("last", 0)
                 g["count"] = p.get("count", 0)
                 g["favorite"] = g["id"] in s["favorites"]
-                g.pop("file", None)
+                for k in ("file", "exec", "path"):
+                    g.pop(k, None)
             return self.send(200, {"games": games})
         if u.path == "/api/settings":
             return self.send(200, defaults(load_settings()))
@@ -690,7 +828,8 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             body = {}
         if u.path == "/api/launch":
-            return self.send(200, {"ok": launch(str(body.get("id", "")))})
+            err = launch(str(body.get("id", "")))
+            return self.send(200, {"ok": not err, "error": err})
         if u.path == "/api/settings":
             s = defaults(load_settings())
             for k in ("theme", "sounds", "favorites", "name"):
@@ -733,6 +872,7 @@ def main():
     except OSError:
         srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     PORT[0] = srv.server_address[1]
+    threading.Thread(target=prefetch_art, daemon=True).start()
     url = "http://127.0.0.1:%d/#k=%s" % (srv.server_address[1], TOKEN)
     print(url, flush=True)
     srv.serve_forever()
