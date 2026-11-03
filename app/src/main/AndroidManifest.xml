@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Only for the update check and the Pro plan settings (camera images never leave the phone). -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Updates downloaded inside the app (GitHub releases) are handed to Android's installer. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Built-in Cloud PC: keeps installs/commands running with the screen off. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
