@@ -2,7 +2,6 @@ import java.net.URI
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
@@ -17,7 +16,10 @@ val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 
 android {
     namespace = "com.aircursor"
-    compileSdk = 34
+    // Android 17 SDK (37.2): needed by the Air browser engine (GeckoView). Built-in Kotlin (AGP 9).
+    compileSdk {
+        version = release(37) { minorApiLevel = 2 }
+    }
 
     defaultConfig {
         applicationId = "com.aircursor"
@@ -50,9 +52,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = "17"
     }
 
     buildFeatures {
@@ -117,7 +116,7 @@ val copyCloudPcTools by tasks.registering(Copy::class) {
     }
     into(layout.buildDirectory.dir("generated/cloudpc-assets/cloudpc"))
 }
-android.sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/cloudpc-assets"))
+android.sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/cloudpc-assets").get().asFile)
 tasks.named("preBuild") { dependsOn(copyCloudPcTools) }
 
 dependencies {
