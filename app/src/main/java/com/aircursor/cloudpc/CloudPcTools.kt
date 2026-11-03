@@ -30,6 +30,8 @@ object CloudPcTools {
             "(apt-get update >/dev/null 2>&1 && apt-get install -y --no-install-recommends $TOOL_PACKAGES) " +
             "|| echo 'Tools packages: no internet, will retry later'"
 
+    private fun asset(c: Context, name: String) = c.assets.open("cloudpc/$name").bufferedReader().use { it.readText() }
+
     fun writeFiles(c: Context) {
         val root = CloudPcEngine.rootfs(c).toPath()
         fun put(rel: String, text: String, exec: Boolean = false) = CloudPcEngine.writeGuestFile(root, rel, text, exec)
@@ -120,7 +122,7 @@ object CloudPcTools {
         }
         // Air, AirCursor's browser (phone engine): the PC's default browser, Start menu, desktop icon.
         put("usr/local/bin/cloudpc-air", AIR, exec = true)
-        put("usr/share/pixmaps/air-browser.svg", AIR_ICON)
+        put("usr/share/pixmaps/air-browser.svg", asset(c, "air-logo.svg"))
         val airEntry = "[Desktop Entry]\nType=Application\nName=Air\nGenericName=Web Browser\n" +
             "Comment=Fast browser on the phone's own engine – videos, AI apps, Google sign-in\n" +
             "Exec=cloudpc-air %u\nIcon=/usr/share/pixmaps/air-browser.svg\nTerminal=false\nStartupNotify=false\n" +
@@ -217,9 +219,8 @@ object CloudPcTools {
                 "OnlyShowIn=XFCE;\nNoDisplay=true\n",
         )
         // The look: our own wallpaper ("Night") and the PC logo for the apps menu in the dock.
-        put("usr/share/backgrounds/aircursor/night.svg",
-            c.assets.open("cloudpc/aircursor-wallpaper.svg").bufferedReader().use { it.readText() })
-        put("usr/share/pixmaps/aircursor-pc.svg", PC_LOGO)
+        put("usr/share/backgrounds/aircursor/night.svg", asset(c, "aircursor-wallpaper.svg"))
+        put("usr/share/pixmaps/aircursor-pc.svg", asset(c, "aircursor-logo.svg"))
         // Firefox: fewer background processes (less RAM on a phone), no first-run pages.
         put("etc/firefox/policies/policies.json", FIREFOX_POLICIES)
         put("usr/lib/firefox/defaults/pref/aircursor-pc.js", FIREFOX_PREFS)
@@ -790,25 +791,6 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
           <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#g)"/>
           <path d="M20 46 L32 22 L44 46 M25 37 H39" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
           <circle cx="32" cy="16" r="3" fill="#fff"/>
-        </svg>
-    """.trimIndent() + "\n"
-
-    private val PC_LOGO = """
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-          <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#4f7cff"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
-          <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#g)"/>
-          <path d="M23 16 L23 46 L31 38 L36 49 L41 47 L36 36 L47 36 Z" fill="#fff"/>
-        </svg>
-    """.trimIndent() + "\n"
-
-    private val AIR_ICON = """
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-          <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#6ea8ff"/><stop offset="1" stop-color="#b48cff"/></linearGradient></defs>
-          <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#g)"/>
-          <path d="M18 44 L32 18 L46 44" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M24 36 H40" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
         </svg>
     """.trimIndent() + "\n"
 
