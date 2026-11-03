@@ -409,7 +409,7 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_store"
+private const val WHATS_NEW_ID = "whatsnew_air_brave"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
@@ -422,6 +422,14 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             UiPrefs.close(context, WHATS_NEW_ID)
             whatsNew = false
         }) {
+            Bullet("Air, like Brave: laptop-size pages and desktop YouTube, tabs with real logos, bookmarks, history")
+            Bullet("New tab page with real photos of the Earth (NASA), clock and shortcuts with real app logos")
+            Bullet("Shields: trackers and ads blocked (uBlock Origin), with a counter")
+            Bullet("Downloads: save each file in the PC, on the phone, or both – e.g. a project made with Claude")
+            Bullet("Voice assistant: tap the mic or Win+A – \"YouTube kholo\", \"search …\", \"hand control on\", \"type …\"; give it any name")
+            Bullet("Hand cursor on the PC moves at screen speed like a real mouse; it now works over Air windows too")
+            Bullet("App windows: Air Store (small window), TS Station and web apps open like apps, no address bar")
+            Bullet("Premium PC look: modern dark theme and icons, clean desktop, real-photo wallpaper, eagle logo")
             Bullet("Air Store: Apple-style store – Spotify, YouTube Music, Netflix, Photopea, AI apps and PC apps")
             Bullet("New PC look: modern dock and our own wallpaper (Windows taskbar still one tap away)")
             Bullet("Games: smoother – the PC drops to the Game resolution while a game runs")

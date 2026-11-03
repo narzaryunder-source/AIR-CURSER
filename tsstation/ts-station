@@ -21,6 +21,8 @@ $(tail -n 5 /tmp/ts-station.log)" 2>/dev/null
     exit 1
 fi
 if [ "$IN_AIR" = 1 ]; then
+    # Its own full-screen app window in Air (no tabs or address bar), like a console.
+    command -v cloudpc-app >/dev/null 2>&1 && exec cloudpc-app tsstation max "TS Station" "$URL"
     exec cloudpc-air "$URL"
 fi
 if [ -x /usr/bin/brave-browser-stable ]; then

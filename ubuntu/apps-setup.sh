@@ -42,7 +42,7 @@ for f in /usr/games/*; do [ -f "$f" ] && [ ! -e "/usr/local/bin/${f##*/}" ] && l
 # ---- Which entries are apps a person installed? ----------------------------------------------
 is_base() {   # parts of the desktop itself: no wrapper, no extra icon
     case "$1" in
-        xfce4-*|xfce-*|org.xfce.*|thunar*|Thunar*|exo-*|firefox*|aircursor-*|cloudpc-*|*url-handler*|debian-*|\
+        xfce4-*|xfce-*|org.xfce.*|thunar*|Thunar*|exo-*|firefox*|aircursor-*|cloudpc-*|airstore*|ts-station*|*url-handler*|debian-*|\
         display-im6*|vim*|gvim*|nm-*|gcr-*|org.gnome.Zenity*|zenity*|xdg-*|yelp*|python3*|htop*|info.desktop|\
         panel-*|mimeinfo*|openjdk-*|libreoffice-startcenter*|libreoffice-xsltfilter*|ca.desrt.*|*-settings.desktop|\
         org.freedesktop.*|gnome-system-monitor*|software-properties*|update-manager*|im-config*) return 0 ;;

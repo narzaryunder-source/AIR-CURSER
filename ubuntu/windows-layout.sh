@@ -34,6 +34,10 @@ add() { N=$((N + 1)); q -c $P -p /plugins/plugin-$N --create -t string -s "$1"; 
 if dpkg -s xfce4-whiskermenu-plugin >/dev/null 2>&1; then add whiskermenu; else add applicationsmenu; fi
 q -c $P -p /plugins/plugin-$N/button-title --create -t string -s " Start"
 q -c $P -p /plugins/plugin-$N/show-button-title --create -t bool -s true
+# Our eagle as the Start button.
+for START in /usr/share/pixmaps/aircursor-start.svg /usr/share/pixmaps/aircursor-pc.svg; do
+    [ -f "$START" ] && { q -c $P -p /plugins/plugin-$N/button-icon --create -t string -s "$START"; q -c $P -p /plugins/plugin-$N/show-button-icon --create -t bool -s true; break; }
+done
 add separator; q -c $P -p /plugins/plugin-$N/style --create -t uint -s 0
 for app in thunar.desktop cloudpc-air.desktop firefox.desktop xfce4-terminal.desktop airstore.desktop aircursor-store.desktop; do
     f=$(ls /usr/share/applications 2>/dev/null | grep -ix "$app" | head -n 1)

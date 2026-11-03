@@ -78,6 +78,23 @@ def svg(theme, scale=1.0, rounded=True):
     return "".join(parts)
 
 
+def svg_bare(scale=1.0, pad=4.0):
+    """The eagle alone (no tile): the PC's start button, so it differs from the Air app icon."""
+    shp = shapes(scale)
+    xs = [x for _, pts in shp for x, _ in pts]
+    ys = [y for _, pts in shp for _, y in pts]
+    x0, y0, x1, y1 = min(xs) - pad, min(ys) - pad, max(xs) + pad, max(ys) + pad
+    side = max(x1 - x0, y1 - y0)
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    parts = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="%.2f %.2f %.2f %.2f" width="256" height="256">'
+             % (cx - side / 2, cy - side / 2, side, side)]
+    for color, pts in shp:
+        d = " ".join("%.2f,%.2f" % p for p in pts)
+        parts.append('<polygon points="%s" fill="%s" stroke="%s" stroke-width="0.35" stroke-linejoin="round"/>' % (d, color, color))
+    parts.append("</svg>\n")
+    return "".join(parts)
+
+
 def main():
     for theme, name in (("aircursor", "brand_aircursor"), ("pc", "brand_pc")):
         write(name + "_bg", bg_paths(theme, rounded=False))
@@ -91,6 +108,8 @@ def main():
         f.write(svg("aircursor"))
     with open("ubuntu/air-logo.svg", "w") as f:
         f.write(svg("air"))
+    with open("ubuntu/aircursor-start.svg", "w") as f:
+        f.write(svg_bare())
     print("eagle logos written")
 
 

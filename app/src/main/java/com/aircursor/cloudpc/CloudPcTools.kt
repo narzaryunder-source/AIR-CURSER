@@ -10,12 +10,12 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 23
+    const val VERSION = 24
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
         "app-store.sh", "app-store.py", "ubuntu-extras.sh", "install-deb.sh", "windows-layout.sh", "wallpaper-gui.sh",
-        "launch.sh", "apps-setup.sh", "style.sh", "airstore.py", "airstore.html",
+        "launch.sh", "apps-setup.sh", "style.sh", "airstore.py", "airstore.html", "web-icons.py",
     )
 
     fun needsSetup(c: Context): Boolean =
@@ -122,6 +122,8 @@ object CloudPcTools {
         }
         // Air, AirCursor's browser (phone engine): the PC's default browser, Start menu, desktop icon.
         put("usr/local/bin/cloudpc-air", AIR, exec = true)
+        // App windows in Air (no tabs or address bar): Air Store, TS Station, YouTube, web apps.
+        put("usr/local/bin/cloudpc-app", APP, exec = true)
         put("usr/share/pixmaps/air-browser.svg", asset(c, "air-logo.svg"))
         val airEntry = "[Desktop Entry]\nType=Application\nName=Air\nGenericName=Web Browser\n" +
             "Comment=Fast browser on the phone's own engine – videos, AI apps, Google sign-in\n" +
@@ -138,11 +140,16 @@ object CloudPcTools {
         put("usr/share/applications/airstore.desktop",
             entry("Air Store", "airstore", "/usr/share/pixmaps/airstore.svg", "System;",
                 "Apps, music, films, AI and games – one tap to get them"))
-        // YouTube in Air (phone engine): Start menu + one desktop icon (made once).
-        val yt = entry("YouTube", "cloudpc-web https://m.youtube.com", "youtube", "AudioVideo;Video;Network;",
+        // YouTube in Air (phone engine), its own app window: Start menu + one desktop icon (made once).
+        val ytIcon = File(CloudPcEngine.rootfs(c), "usr/share/pixmaps/aircursor-web/youtube.com.png")
+            .takeIf { it.isFile }?.let { "/usr/share/pixmaps/aircursor-web/youtube.com.png" } ?: "youtube"
+        val yt = entry("YouTube", "cloudpc-web https://www.youtube.com/", ytIcon, "AudioVideo;Video;Network;",
             "YouTube, smooth – runs on the phone's own engine in a window over the PC")
         put("usr/share/applications/cloudpc-youtube.desktop", yt)
-        if (!File(CloudPcEngine.rootfs(c), "var/lib/cloudpc/youtube-icon").exists()) {
+        val ytDesk = File(CloudPcEngine.rootfs(c), "root/Desktop/YouTube.desktop")
+        if (!File(CloudPcEngine.rootfs(c), "var/lib/cloudpc/youtube-icon").exists() ||
+            (ytDesk.isFile && ytDesk.readText().contains("m.youtube.com"))
+        ) {
             put("root/Desktop/YouTube.desktop", yt, exec = true)
             put("var/lib/cloudpc/youtube-icon", "1\n")
         }
@@ -218,9 +225,17 @@ object CloudPcTools {
             "[Desktop Entry]\nType=Application\nName=AirCursor PC style\nExec=aircursor-style auto\n" +
                 "OnlyShowIn=XFCE;\nNoDisplay=true\n",
         )
-        // The look: our own wallpaper ("Night") and the PC logo for the apps menu in the dock.
+        // The look: the wallpaper (real photo "City lights" from the International Space Station,
+        // NASA, public domain; the older "Night" stays available) and the PC logo for the dock.
         put("usr/share/backgrounds/aircursor/night.svg", asset(c, "aircursor-wallpaper.svg"))
+        CloudPcEngine.writeGuestBytes(root, "usr/share/backgrounds/aircursor/city.jpg",
+            c.assets.open("cloudpc/aircursor-city.jpg").use { it.readBytes() })
+        put("usr/share/backgrounds/aircursor/CREDITS.txt",
+            "city.jpg – \"The US East Coast before dawn\", photographed by NASA astronaut Reid Wiseman from the\n" +
+                "International Space Station (ISS040-E-089021). NASA image, public domain.\n" +
+                "night.svg – AirCursor PC's own wallpaper.\n")
         put("usr/share/pixmaps/aircursor-pc.svg", asset(c, "aircursor-logo.svg"))
+        put("usr/share/pixmaps/aircursor-start.svg", asset(c, "aircursor-start.svg"))
         // Firefox: fewer background processes (less RAM on a phone), no first-run pages.
         put("etc/firefox/policies/policies.json", FIREFOX_POLICIES)
         put("usr/lib/firefox/defaults/pref/aircursor-pc.js", FIREFOX_PREFS)
@@ -231,25 +246,29 @@ object CloudPcTools {
             entry("Benchmark", "cloudpc-benchmark", "utilities-system-monitor", "System;", "Test graphics speed (FPS) with your AirBoost profile"),
         )
 
-        // Desktop icons (only added once, so the user can delete them).
+        // Desktop icons (only added once, so the user can delete them). A clean desktop: the main
+        // ones on it, the other tools in a "Tools" folder.
         val desk = "root/Desktop"
         val icons = listOf(
             "Getting-Started.desktop" to "usr/share/applications/aircursor-guide.desktop",
-            "Benchmark.desktop" to "usr/share/applications/cloudpc-benchmark.desktop",
             "Air-Store.desktop" to "usr/share/applications/airstore.desktop",
-            "Firefox.desktop" to "usr/share/applications/firefox.desktop",
-            "Terminal.desktop" to "usr/share/applications/xfce4-terminal.desktop",
-            "Change-Wallpaper.desktop" to "usr/share/applications/aircursor-wallpaper.desktop",
-            "GitHub.desktop" to "usr/share/applications/cloudpc-github.desktop",
-            "Google-Drive.desktop" to "usr/share/applications/cloudpc-gdrive.desktop",
+            "Tools/Benchmark.desktop" to "usr/share/applications/cloudpc-benchmark.desktop",
+            "Tools/Firefox.desktop" to "usr/share/applications/firefox.desktop",
+            "Tools/Terminal.desktop" to "usr/share/applications/xfce4-terminal.desktop",
+            "Tools/Change-Wallpaper.desktop" to "usr/share/applications/aircursor-wallpaper.desktop",
+            "Tools/GitHub.desktop" to "usr/share/applications/cloudpc-github.desktop",
+            "Tools/Google-Drive.desktop" to "usr/share/applications/cloudpc-gdrive.desktop",
         )
         val r = CloudPcEngine.rootfs(c)
         for ((name, src) in icons) {
             val target = File(r, "$desk/$name")
             val source = File(r, src)
+            // Already there – on the desktop itself or moved into Tools by the person or the tidy-up.
+            val there = target.exists() || File(r, "$desk/${name.substringAfterLast('/')}").exists() ||
+                File(r, "$desk/Tools/${name.substringAfterLast('/')}").exists()
             // The guide icon is ours: always refresh it. Other icons are added once (the user may delete them).
             val refresh = name == "Getting-Started.desktop" && target.exists()
-            if ((refresh || !target.exists()) && source.isFile) put("$desk/$name", source.readText(), exec = true)
+            if ((refresh || !there) && source.isFile) put("$desk/$name", source.readText(), exec = true)
         }
         for (ai in AI_APPS) {
             val rel = "$desk/AI Apps/${ai.id}.desktop"
@@ -781,6 +800,8 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
             done
         fi
         [ -n "${'$'}URL" ] || exec aircursor-store "${'$'}@"
+        # Its own small app window in Air (no tabs or address bar), like an app.
+        command -v cloudpc-app >/dev/null 2>&1 && exec cloudpc-app airstore win "Air Store" "${'$'}URL"
         exec cloudpc-air "${'$'}URL"
     """.trimIndent() + "\n"
 
@@ -946,14 +967,41 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
     /** Opens a website like an app: own window in the default browser (Brave: app window, no tabs). */
     private val WEB = """
         #!/bin/sh
+        # cloudpc-web URL [Title] – a web app (shortcuts, Start menu): its own app window in Air.
         URL="${'$'}1"
+        TITLE="${'$'}2"
         [ -n "${'$'}URL" ] || exit 1
         # Air: the phone's own browser engine shows the site over the PC (GPU, hardware video, fast
         # JavaScript, Google sign-in) – YouTube and AI chats are far too heavy for the PC's CPU-drawn
-        # browser. Off (use Brave instead): toolbar → lightning → Web apps.
+        # browser. Off (use Brave instead): toolbar → lightning → Web links.
         if [ -z "${'$'}CLOUDPC_PC_BROWSER" ] && [ ! -f /root/.config/cloudpc/web-in-pc-browser ]; then
             case "${'$'}URL" in
-                http://*|https://*) exec cloudpc-air "${'$'}URL" ;;
+                http://*|https://*)
+                    HOST=${'$'}(printf '%s' "${'$'}URL" | sed -E 's#^[a-zA-Z]+://([^/:?]+).*#\1#' | tr 'A-Z' 'a-z')
+                    case "${'$'}HOST" in
+                        music.youtube.com) K=ytmusic; T="YouTube Music" ;;
+                        *youtube.com|youtu.be) K=youtube; T=YouTube ;;
+                        *spotify.com) K=spotify; T=Spotify ;;
+                        *jiosaavn.com) K=jiosaavn; T=JioSaavn ;;
+                        *gaana.com) K=gaana; T=Gaana ;;
+                        *netflix.com) K=netflix; T=Netflix ;;
+                        *primevideo.com) K=primevideo; T="Prime Video" ;;
+                        *hotstar.com) K=hotstar; T=JioHotstar ;;
+                        *twitch.tv) K=twitch; T=Twitch ;;
+                        *whatsapp.com) K=whatsapp; T=WhatsApp ;;
+                        chatgpt.com|*.chatgpt.com) K=chatgpt; T=ChatGPT ;;
+                        claude.ai) K=claude; T=Claude ;;
+                        gemini.google.com) K=gemini; T=Gemini ;;
+                        github.com) K=github; T=GitHub ;;
+                        mail.google.com) K=gmail; T=Gmail ;;
+                        drive.google.com) K=gdrive; T="Google Drive" ;;
+                        *)
+                            K=${'$'}(printf '%s' "${'$'}HOST" | sed -E 's/^(www|m|app|open|web)\.//; s/[^a-z0-9.-]//g')
+                            T=${'$'}(printf '%s' "${'$'}K" | cut -d. -f1 | awk '{print toupper(substr(${'$'}0,1,1)) substr(${'$'}0,2)}') ;;
+                    esac
+                    [ -n "${'$'}TITLE" ] && T="${'$'}TITLE"
+                    command -v cloudpc-app >/dev/null 2>&1 && exec cloudpc-app "${'$'}K" max "${'$'}T" "${'$'}URL"
+                    exec cloudpc-air "${'$'}URL" ;;
             esac
         fi
         # Brave unless the person chose Firefox as the default browser.
@@ -962,6 +1010,23 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         fi
         command -v firefox >/dev/null && exec firefox --new-window "${'$'}URL"
         exec xdg-open "${'$'}URL"
+    """.trimIndent() + "\n"
+
+    /** cloudpc-app KEY max|win TITLE URL – an app window in Air (no tabs, no address bar). */
+    private val APP = """
+        #!/bin/sh
+        . /tmp/cloudpc-session.env 2>/dev/null
+        KEY=${'$'}(printf '%s' "${'$'}1" | tr -cd 'a-zA-Z0-9._-' | cut -c1-40)
+        SIZE="${'$'}2"
+        TITLE=${'$'}(printf '%s' "${'$'}3" | tr -d '|' | cut -c1-60)
+        URL="${'$'}4"
+        case "${'$'}SIZE" in max|win) ;; *) SIZE=max ;; esac
+        case "${'$'}URL" in http://*|https://*) ;; *) echo "usage: cloudpc-app KEY max|win TITLE URL"; exit 1 ;; esac
+        if [ -n "${'$'}CLOUDPC_PC_BROWSER" ] || [ -f /root/.config/cloudpc/web-in-pc-browser ]; then
+            CLOUDPC_PC_BROWSER=1 exec cloudpc-web "${'$'}URL"
+        fi
+        printf '%s' "aircursor-app:${'$'}{KEY:-app}|${'$'}SIZE|${'$'}{TITLE:-App}|${'$'}URL" | timeout 15 xclip -quiet -selection clipboard >/dev/null 2>&1 &
+        exit 0
     """.trimIndent() + "\n"
 
     /** Claude Code in a terminal, with sign-in in the phone's browser. */

@@ -398,6 +398,18 @@ class AirBrowser(
         })
     }
 
+    private var textureBackend = false
+
+    /**
+     * Windowed: the page is drawn inside the window (TextureView) so overlapping windows stack
+     * correctly. Maximized: a SurfaceView – the fastest way to show pages and videos.
+     */
+    fun setTextureBackend(on: Boolean) {
+        if (on == textureBackend) return
+        textureBackend = on
+        gecko.setViewBackend(if (on) GeckoView.BACKEND_TEXTURE_VIEW else GeckoView.BACKEND_SURFACE_VIEW)
+    }
+
     /** The window manager changed the size: show the right maximize/restore picture. */
     fun sizeChanged() {
         val maxed = host.isMaximized(this)

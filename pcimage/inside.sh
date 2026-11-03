@@ -25,7 +25,9 @@ apt-get $APT install \
     xfce4 xfce4-terminal xfce4-whiskermenu-plugin xfce4-notifyd xfce4-taskmanager mousepad ristretto \
     tigervnc-standalone-server dbus-x11 dbus-bin x11-xserver-utils x11-utils at-spi2-core librsvg2-common \
     fonts-dejavu-core fonts-noto-color-emoji fonts-inter adwaita-icon-theme elementary-xfce-icon-theme \
-    greybird-gtk-theme zenity wget xdg-utils libnotify-bin libglib2.0-bin
+    greybird-gtk-theme arc-theme zenity wget xdg-utils libnotify-bin libglib2.0-bin
+# Modern look: Arc-Dark windows (3 MB). Only the dark variant is used – the others go (smaller image).
+rm -rf /usr/share/themes/Arc /usr/share/themes/Arc-Darker /usr/share/themes/Arc-Lighter
 # Tools the app uses (App Store window, clipboard, sound, files).
 apt-get $APT install \
     python3-gi gir1.2-gtk-3.0 xclip xdotool xfce4-screenshooter xarchiver thunar-archive-plugin \

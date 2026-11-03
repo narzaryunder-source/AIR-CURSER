@@ -123,10 +123,7 @@ class AirWindows(
 
     fun show(w: Win) {
         w.minimized = false
-        w.frame.visibility = View.VISIBLE
         focus(w)
-        w.browser.setActive(true)
-        callbacks.windowsChanged()
     }
 
     fun focus(w: Win) {
@@ -135,13 +132,13 @@ class AirWindows(
             wins += w
         }
         w.frame.bringToFront()
+        restack()
         callbacks.windowsChanged()
     }
 
     fun minimize(w: Win) {
         w.minimized = true
-        w.browser.setActive(false)
-        w.frame.visibility = View.GONE
+        restack()
         callbacks.windowsChanged()
     }
 
@@ -150,7 +147,26 @@ class AirWindows(
         w.browser.closeAll()
         host.removeView(w.frame)
         wins.remove(w)
+        restack()
         callbacks.windowsChanged()
+    }
+
+    /**
+     * Windows fully under a maximized one are hidden and rest (their pages pause drawing): pages are
+     * drawn on separate surfaces, and only the window in front may show through.
+     */
+    private fun restack() {
+        var covered = false
+        for (w in wins.asReversed()) {
+            if (w.minimized) {
+                w.frame.visibility = View.GONE
+                w.browser.setActive(false)
+                continue
+            }
+            w.frame.visibility = if (covered) View.INVISIBLE else View.VISIBLE
+            w.browser.setActive(!covered)
+            if (w.maximized || w.videoFull) covered = true
+        }
     }
 
     fun toggleSize(w: Win) {
@@ -181,9 +197,7 @@ class AirWindows(
         for (w in wins) w.browser.setActive(false)
     }
 
-    fun resume() {
-        for (w in wins) if (!w.minimized) w.browser.setActive(true)
-    }
+    fun resume() = restack()
 
     fun closeAll() {
         for (w in wins.toList()) close(w)
@@ -248,8 +262,10 @@ class AirWindows(
         f.y = if (whole) 0f else w.y
         f.setRounded(!whole)
         f.grip?.visibility = if (whole) View.GONE else View.VISIBLE
+        w.browser.setTextureBackend(!whole)
         f.requestLayout()
         w.browser.sizeChanged()
+        restack()
     }
 
     private fun saveGeometry(w: Win) {
