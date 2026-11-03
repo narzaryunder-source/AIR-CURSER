@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Can't open this page</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #121318; color: #eceef3; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 12vh 28px 40px; }
+  .ic { width: 54px; height: 54px; border-radius: 16px; display: grid; place-items: center; font-size: 28px; background: #22252e; margin-bottom: 22px; }
+  .warn .ic { background: #3a2412; }
+  h1 { font-size: 24px; font-weight: 600; margin: 0 0 10px; letter-spacing: -.01em; }
+  p { color: #a3a8b5; font-size: 14.5px; line-height: 1.55; margin: 0 0 8px; }
+  code { color: #c9cdf8; word-break: break-all; }
+  .row { margin-top: 26px; display: flex; gap: 10px; }
+  button { border: 0; border-radius: 10px; padding: 11px 20px; font-size: 14px; cursor: pointer; background: #2a2d36; color: #fff; }
+  button.main { background: linear-gradient(135deg, #3d63ff, #8b5cf6); }
+</style>
+</head>
+<body>
+<main id="m">
+  <div class="ic" id="ic">🌐</div>
+  <h1 id="t">This site can't be reached</h1>
+  <p id="d"></p>
+  <p><code id="u"></code></p>
+  <div class="row">
+    <button class="main" id="retry" type="button">Try again</button>
+    <button id="back" type="button">Go back</button>
+  </div>
+</main>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var kind = q.get("e") || "other", url = q.get("u") || "";
+  var host = "";
+  try { host = new URL(url).host; } catch (e) {}
+  var text = {
+    host: ["Can't find " + (host || "this site"), "Check the spelling of the address, or search for it instead.", "🔎"],
+    offline: ["You're offline", "Air can't reach the internet. Check Wi-Fi or mobile data, then try again.", "📶"],
+    timeout: ["This site is taking too long", (host || "The site") + " didn't answer in time. It may be busy – try again in a moment.", "⏳"],
+    refused: [(host || "This site") + " refused to connect", "If this is an app in the PC, it may not be running yet – start it, then try again.", "🔌"],
+    security: ["This connection isn't private", "Air stopped loading " + (host || "this site") + " because its security certificate can't be trusted. Someone could be trying to steal your information.", "⚠️"],
+    unsafe: ["Dangerous site ahead", (host || "This site") + " is known for harmful software or phishing. Air blocked it to protect you.", "⛔"],
+    other: ["This page can't be opened", "Something went wrong while loading " + (host || "the page") + ".", "🌐"]
+  }[kind] || null;
+  text = text || ["This page can't be opened", "", "🌐"];
+  document.title = text[0];
+  document.getElementById("t").textContent = text[0];
+  document.getElementById("d").textContent = text[1];
+  document.getElementById("ic").textContent = text[2];
+  document.getElementById("u").textContent = url;
+  if (kind === "security" || kind === "unsafe") {
+    document.getElementById("m").className = "warn";
+    document.getElementById("retry").style.display = "none";
+    document.getElementById("back").className = "main";
+  }
+  if (kind === "host") {
+    document.getElementById("retry").textContent = "Search for it";
+    document.getElementById("retry").onclick = function () { location.href = "https://www.google.com/search?q=" + encodeURIComponent(host || url); };
+  } else {
+    document.getElementById("retry").onclick = function () { if (/^https?:/i.test(url)) location.href = url; };
+  }
+  document.getElementById("back").onclick = function () { history.back(); };
+})();
+</script>
+</body>
+</html>

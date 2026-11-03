@@ -67,6 +67,9 @@ class CloudPcDesktopActivity : ComponentActivity() {
         /** The PC opens a website in the fast window (the phone's own web engine). */
         private const val WEB_ON_PHONE = "aircursor-web:"
 
+        /** The PC opens an app window in Air: "key|max-or-win|Title|https://…" (Air Store, TS Station, YouTube…). */
+        private const val APP_ON_PHONE = "aircursor-app:"
+
         /** In the PC: web apps open in the PC's own browser instead of the fast window. */
         private const val WEB_IN_PC_FILE = "root/.config/cloudpc/web-in-pc-browser"
         private const val OFF = 0xA0101828.toInt()
@@ -93,7 +96,8 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private lateinit var side: LinearLayout
     private var lockView: PcLockScreen? = null
     private lateinit var videoPlayer: PhoneVideoPlayer
-    private var air: com.aircursor.air.AirWindow? = null
+    private var air: com.aircursor.air.AirWindows? = null
+    private var assistant: com.aircursor.assistant.AirAssistant? = null
     private var videoChip: View? = null
     private var hiddenAt = 0L
 
@@ -208,7 +212,11 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
         tools.addView(iconButton(R.drawable.ic_ui_keyboard, "Keyboard") { toggleKeyboard() })
         tools.addView(iconButton(R.drawable.ic_ui_lock, "Lock and password") { lockMenu() })
-        tools.addView(iconButton(R.drawable.ic_ui_globe, "Air browser") { openAir(null) })
+        tools.addView(iconButton(R.drawable.ic_ui_globe, "Air browser and windows") { b ->
+            val w = air
+            if (w != null && w.windows.isNotEmpty()) w.switcher(b) else openAir(null)
+        })
+        tools.addView(iconButton(R.drawable.ic_ui_mic, "Voice assistant (Win+A)") { startAssistant() })
         tools.addView(iconButton(R.drawable.ic_ui_play, "Smooth video on the phone (Win+Y)") { smoothVideo() })
         handButton = iconButton(R.drawable.ic_ui_hand, "Hand control") { toggleHand() }.also { tools.addView(it) }
         tools.addView(iconButton(R.drawable.ic_ui_paste, "Paste from phone") { pasteFromPhone() })
@@ -255,11 +263,13 @@ class CloudPcDesktopActivity : ComponentActivity() {
                     when {
                         url == "air:home" -> openAir(null)
                         // A game started from TS Station (shown in Air): Air steps aside, then comes back.
-                        url == "air:minimize" -> air?.minimize()
-                        url == "air:show" -> if (air != null) openAir(null)
+                        url == "air:minimize" -> air?.minimizeAll()
+                        url == "air:show" -> air?.showLast()
                         url.startsWith("https://") || url.startsWith("http://") -> openAir(url)
                     }
                 }
+            } else if (text.startsWith(APP_ON_PHONE)) {
+                if (lockView == null) openApp(text.removePrefix(APP_ON_PHONE).trim())
             } else if (text.startsWith(PLAY_ON_PHONE)) {
                 hideVideoChip()
                 if (lockView == null) videoPlayer.play(text.removePrefix(PLAY_ON_PHONE))
@@ -279,6 +289,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
             override fun handleOnBackPressed() {
                 when {
                     lockView != null -> finish()
+                    assistant?.isShowing == true -> assistant?.dismiss()
                     air?.back() == true -> Unit
                     videoPlayer.isOpen -> if (!videoPlayer.back()) videoPlayer.close()
                     else -> askExit()
@@ -332,9 +343,30 @@ class CloudPcDesktopActivity : ComponentActivity() {
             videoPlayer.browse(url ?: "https://www.google.com")
             return
         }
-        val w = air ?: com.aircursor.air.AirWindow(
-            this, rootLayout,
-            pickPhoneFiles = { _, done ->
+        airWindows().openBrowser(url)
+        tools.visibility = View.GONE
+    }
+
+    /** "key|max|Title|url" from the PC: an app window in Air (no tabs or address bar). */
+    private fun openApp(spec: String) {
+        val parts = spec.split('|', limit = 4)
+        if (parts.size < 4) return
+        val (key, size, title, url) = parts
+        if (!url.startsWith("http://") && !url.startsWith("https://")) return
+        if (!com.aircursor.air.AirEngine.supported()) {
+            videoPlayer.browse(url)
+            return
+        }
+        airWindows().openApp(key.ifBlank { "app" }.take(40), title.ifBlank { "App" }.take(60), url, size)
+        tools.visibility = View.GONE
+    }
+
+    private fun pcQuote(s: String) = "'" + s.replace("'", "'\\''") + "'"
+
+    private fun airWindows(): com.aircursor.air.AirWindows = air ?: com.aircursor.air.AirWindows(
+        this, rootLayout,
+        object : com.aircursor.air.AirWindows.Callbacks {
+            override fun pickPhoneFiles(multiple: Boolean, done: (List<Uri>) -> Unit) {
                 pendingAirUpload = done
                 try {
                     airUpload.launch(arrayOf("*/*"))
@@ -342,15 +374,382 @@ class CloudPcDesktopActivity : ComponentActivity() {
                     pendingAirUpload = null
                     done(emptyList())
                 }
-            },
-            openInPc = { u ->
-                val q = "'" + u.replace("'", "'\\''") + "'"
-                CloudPcService.send(this, CloudPcService.ACTION_RUN, CloudPcDesktop.inSession("CLOUDPC_PC_BROWSER=1 cloudpc-web $q"))
-                Toast.makeText(this, "Opening in the PC browser…", Toast.LENGTH_SHORT).show()
-            },
-        ).also { air = it }
-        w.open(url)
-        tools.visibility = View.GONE
+            }
+
+            override fun requestPermissions(perms: Array<String>, done: (Boolean) -> Unit) = askPermissions(perms, done)
+
+            override fun openInPcBrowser(url: String) {
+                CloudPcService.send(this@CloudPcDesktopActivity, CloudPcService.ACTION_RUN,
+                    CloudPcDesktop.inSession("CLOUDPC_PC_BROWSER=1 cloudpc-web ${pcQuote(url)}"))
+                Toast.makeText(this@CloudPcDesktopActivity, "Opening in the PC browser…", Toast.LENGTH_SHORT).show()
+            }
+
+            override fun openFileInPc(path: String) {
+                CloudPcService.send(this@CloudPcDesktopActivity, CloudPcService.ACTION_RUN,
+                    CloudPcDesktop.inSession("xdg-open ${pcQuote(path)}"))
+                Toast.makeText(this@CloudPcDesktopActivity, "Opening in the PC…", Toast.LENGTH_SHORT).show()
+            }
+
+            override fun assistant() = startAssistant()
+
+            override fun windowsChanged() = keepControlsOnTop()
+        },
+    ).also { air = it }
+
+    /** The PC toolbar, the assistant and the lock screen stay above Air's windows. */
+    private fun keepControlsOnTop() {
+        if (::side.isInitialized) side.bringToFront()
+        assistant?.bringToFront()
+        lockView?.bringToFront()
+    }
+
+    // ---- Android permissions for Air (camera / microphone) and the assistant ----
+
+    private var pendingPermissions: ((Boolean) -> Unit)? = null
+    private val permissionRequest = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
+        pendingPermissions?.invoke(res.isNotEmpty() && res.values.all { it })
+        pendingPermissions = null
+    }
+
+    private fun askPermissions(perms: Array<String>, done: (Boolean) -> Unit) {
+        val missing = perms.filter {
+            androidx.core.content.ContextCompat.checkSelfPermission(this, it) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) {
+            done(true)
+            return
+        }
+        pendingPermissions?.invoke(false)
+        pendingPermissions = done
+        try {
+            permissionRequest.launch(missing.toTypedArray())
+        } catch (_: Exception) {
+            pendingPermissions = null
+            done(false)
+        }
+    }
+
+    // ---- Voice assistant ----
+
+    private fun runPc(cmd: String) = CloudPcService.send(this, CloudPcService.ACTION_RUN, CloudPcDesktop.inSession(cmd))
+
+    /** The Air window in front (if any): voice commands for pages go there. */
+    private fun frontBrowser(): com.aircursor.air.AirBrowser? = air?.top()?.browser
+
+    /** Web apps the assistant opens by name: key, title, address, own window (else an Air tab). */
+    private val webApps = mapOf(
+        "youtube" to listOf("youtube", "YouTube", "https://www.youtube.com/", "app"),
+        "you tube" to listOf("youtube", "YouTube", "https://www.youtube.com/", "app"),
+        "youtube music" to listOf("ytmusic", "YouTube Music", "https://music.youtube.com/", "app"),
+        "yt music" to listOf("ytmusic", "YouTube Music", "https://music.youtube.com/", "app"),
+        "spotify" to listOf("spotify", "Spotify", "https://open.spotify.com/", "app"),
+        "jiosaavn" to listOf("jiosaavn", "JioSaavn", "https://www.jiosaavn.com/", "app"),
+        "saavn" to listOf("jiosaavn", "JioSaavn", "https://www.jiosaavn.com/", "app"),
+        "gaana" to listOf("gaana", "Gaana", "https://gaana.com/", "app"),
+        "netflix" to listOf("netflix", "Netflix", "https://www.netflix.com/", "app"),
+        "prime video" to listOf("primevideo", "Prime Video", "https://www.primevideo.com/", "app"),
+        "amazon prime" to listOf("primevideo", "Prime Video", "https://www.primevideo.com/", "app"),
+        "hotstar" to listOf("hotstar", "JioHotstar", "https://www.hotstar.com/", "app"),
+        "jiohotstar" to listOf("hotstar", "JioHotstar", "https://www.hotstar.com/", "app"),
+        "twitch" to listOf("twitch", "Twitch", "https://www.twitch.tv/", "app"),
+        "whatsapp" to listOf("whatsapp", "WhatsApp", "https://web.whatsapp.com/", "app"),
+        "gmail" to listOf("", "Gmail", "https://mail.google.com/", "tab"),
+        "mail" to listOf("", "Gmail", "https://mail.google.com/", "tab"),
+        "google" to listOf("", "Google", "https://www.google.com/", "tab"),
+        "chatgpt" to listOf("", "ChatGPT", "https://chatgpt.com/", "tab"),
+        "chat gpt" to listOf("", "ChatGPT", "https://chatgpt.com/", "tab"),
+        "claude" to listOf("", "Claude", "https://claude.ai/", "tab"),
+        "gemini" to listOf("", "Gemini", "https://gemini.google.com/", "tab"),
+        "deepseek" to listOf("", "DeepSeek", "https://chat.deepseek.com/", "tab"),
+        "perplexity" to listOf("", "Perplexity", "https://www.perplexity.ai/", "tab"),
+        "github" to listOf("", "GitHub", "https://github.com/", "tab"),
+        "instagram" to listOf("", "Instagram", "https://www.instagram.com/", "tab"),
+        "insta" to listOf("", "Instagram", "https://www.instagram.com/", "tab"),
+        "facebook" to listOf("", "Facebook", "https://www.facebook.com/", "tab"),
+        "twitter" to listOf("", "X", "https://x.com/", "tab"),
+        "x" to listOf("", "X", "https://x.com/", "tab"),
+        "linkedin" to listOf("", "LinkedIn", "https://www.linkedin.com/", "tab"),
+        "telegram" to listOf("", "Telegram", "https://web.telegram.org/", "tab"),
+        "discord" to listOf("", "Discord", "https://discord.com/app", "tab"),
+        "reddit" to listOf("", "Reddit", "https://www.reddit.com/", "tab"),
+        "wikipedia" to listOf("", "Wikipedia", "https://www.wikipedia.org/", "tab"),
+        "maps" to listOf("", "Google Maps", "https://www.google.com/maps", "tab"),
+        "google maps" to listOf("", "Google Maps", "https://www.google.com/maps", "tab"),
+        "drive" to listOf("", "Google Drive", "https://drive.google.com/", "tab"),
+        "google drive" to listOf("", "Google Drive", "https://drive.google.com/", "tab"),
+        "docs" to listOf("", "Google Docs", "https://docs.google.com/document/", "tab"),
+        "sheets" to listOf("", "Google Sheets", "https://docs.google.com/spreadsheets/", "tab"),
+        "slides" to listOf("", "Google Slides", "https://docs.google.com/presentation/", "tab"),
+        "translate" to listOf("", "Google Translate", "https://translate.google.com/", "tab"),
+        "google translate" to listOf("", "Google Translate", "https://translate.google.com/", "tab"),
+        "amazon" to listOf("", "Amazon", "https://www.amazon.in/", "tab"),
+        "flipkart" to listOf("", "Flipkart", "https://www.flipkart.com/", "tab"),
+        "canva" to listOf("", "Canva", "https://www.canva.com/", "tab"),
+        "figma" to listOf("", "Figma", "https://www.figma.com/", "tab"),
+        "notion" to listOf("", "Notion", "https://www.notion.so/", "tab"),
+        "photopea" to listOf("", "Photopea", "https://www.photopea.com/", "tab"),
+        "leetcode" to listOf("", "LeetCode", "https://leetcode.com/", "tab"),
+        "duolingo" to listOf("", "Duolingo", "https://www.duolingo.com/", "tab"),
+    )
+
+    private inner class AssistantBridge : com.aircursor.assistant.AirAssistant.Actions {
+        override fun openTarget(target: String): String {
+            val t = target.lowercase(java.util.Locale.ROOT).trim().removePrefix("the ").trim()
+            when (t) {
+                "air", "air browser", "browser", "chrome", "google chrome", "internet", "web browser", "brave browser" -> {
+                    openAir(null)
+                    return "Opening Air."
+                }
+                "air store", "airstore", "app store", "store", "play store", "apps store" -> {
+                    runPc("airstore")
+                    return "Opening Air Store."
+                }
+                "ts station", "t s station", "tsstation", "game station", "games", "gaming" -> {
+                    runPc("ts-station || pc-open 'TS Station'")
+                    return "Opening TS Station."
+                }
+                "files", "file", "file manager", "my files", "folders", "files app" -> {
+                    runPc("thunar")
+                    return "Opening Files."
+                }
+                "downloads", "download folder", "downloads folder" -> {
+                    runPc("thunar /root/Downloads")
+                    return "Opening Downloads."
+                }
+                "documents", "documents folder" -> {
+                    runPc("thunar /root/Documents")
+                    return "Opening Documents."
+                }
+                "terminal", "command line", "console" -> {
+                    runPc("xfce4-terminal")
+                    return "Opening the terminal."
+                }
+                "settings", "pc settings", "setting", "control panel" -> {
+                    runPc("xfce4-settings-manager")
+                    return "Opening settings."
+                }
+                "new tab" -> return browser("newtab")
+            }
+            webApps[t]?.let { (key, title, url, kind) ->
+                if (kind == "app" && com.aircursor.air.AirEngine.supported()) {
+                    airWindows().openApp(key, title, url, "max")
+                    tools.visibility = View.GONE
+                } else {
+                    openAir(url)
+                }
+                return "Opening $title."
+            }
+            val host = t.replace(" dot ", ".").replace(" ", "")
+            if (Regex("^[a-z0-9-]+(\\.[a-z0-9-]+)+(/.*)?$").matches(host)) {
+                openAir("https://$host")
+                return "Opening $host."
+            }
+            // An app in the PC by its name – or a web search when there is none.
+            val q = pcQuote(target)
+            val web = pcQuote("https://www.google.com/search?q=" + Uri.encode(target))
+            runPc("pc-open $q >/dev/null 2>&1 || cloudpc-air $web")
+            return "Opening $target."
+        }
+
+        override fun closeApp(target: String): String {
+            val t = target.lowercase(java.util.Locale.ROOT).trim()
+            val key = webApps[t]?.get(0)?.ifEmpty { null } ?: t.replace(" ", "")
+            val w = air?.windows?.firstOrNull { it.key == key || it.title.lowercase(java.util.Locale.ROOT) == t }
+            if (w != null) {
+                air?.close(w)
+                return "Closed ${w.title}."
+            }
+            return window("close")
+        }
+
+        override fun search(query: String): String {
+            val b = frontBrowser()
+            if (b != null && b.app == null) b.search(query) else openAir(com.aircursor.air.AirData.searchUrl(this@CloudPcDesktopActivity, query))
+            return "Searching for $query."
+        }
+
+        override fun youtube(query: String): String {
+            val url = "https://www.youtube.com/results?search_query=" + Uri.encode(query)
+            if (com.aircursor.air.AirEngine.supported()) {
+                val w = airWindows()
+                val yt = w.windows.firstOrNull { it.key == "youtube" }
+                if (yt != null) {
+                    w.show(yt)
+                    yt.browser.load(url)
+                } else {
+                    w.openApp("youtube", "YouTube", url, "max")
+                }
+                tools.visibility = View.GONE
+            } else {
+                openAir(url)
+            }
+            return "Playing $query on YouTube."
+        }
+
+        override fun typeText(text: String): String {
+            val b = frontBrowser()
+            if (b != null) b.typeText(text) else view?.pasteFromPhone(text)
+            return "Typed."
+        }
+
+        override fun toggle(feature: String, on: Boolean?): String = when (feature) {
+            "hand" -> {
+                val want = on ?: !HandTrackingService.isRunning
+                if (want != HandTrackingService.isRunning) toggleHand()
+                if (want) "Hand control on – show your hand to the camera." else "Hand control off."
+            }
+            "fps" -> {
+                val v = view
+                val want = on ?: !(v?.showFps ?: false)
+                v?.showFps = want
+                prefs.edit().putBoolean(KEY_FPS, want).apply()
+                updateButtons()
+                if (want) "FPS meter on." else "FPS meter off."
+            }
+            "keyboard" -> {
+                toggleKeyboard()
+                "Keyboard."
+            }
+            "game" -> {
+                val want = on ?: (AirBoost.current(this@CloudPcDesktopActivity) != AirBoost.GAME)
+                val b = if (want) AirBoost.GAME else AirBoost.BALANCED
+                AirBoost.applyNow(this@CloudPcDesktopActivity, b)
+                view?.sharpness = b.sharpen
+                if (want) "Game mode on." else "Back to balanced mode."
+            }
+            "shields" -> {
+                val p = com.aircursor.air.AirData.prefs(this@CloudPcDesktopActivity)
+                val want = on ?: !p.getBoolean(com.aircursor.air.AirData.KEY_ADS, true)
+                com.aircursor.air.AirEngine.setAdsBlocked(this@CloudPcDesktopActivity, want)
+                if (want) "Ad blocking on." else "Ad blocking off."
+            }
+            "dark" -> {
+                val want = on ?: true
+                com.aircursor.air.AirEngine.setColorScheme(
+                    this@CloudPcDesktopActivity,
+                    if (want) org.mozilla.geckoview.GeckoRuntimeSettings.COLOR_SCHEME_DARK else org.mozilla.geckoview.GeckoRuntimeSettings.COLOR_SCHEME_LIGHT,
+                )
+                if (want) "Dark pages on." else "Light pages on."
+            }
+            "torch" -> torch(on)
+            "gpu" -> {
+                val want = on ?: !AirBoost.phoneGpu(this@CloudPcDesktopActivity)
+                AirBoost.setPhoneGpu(this@CloudPcDesktopActivity, want)
+                if (want) "Phone GPU on for games." else "Phone GPU off."
+            }
+            "wifi" -> {
+                startActivity(Intent(android.provider.Settings.Panel.ACTION_WIFI))
+                "Here are the Wi-Fi settings."
+            }
+            "bluetooth" -> {
+                startActivity(Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS))
+                "Here are the Bluetooth settings."
+            }
+            "desktop" -> {
+                val p = com.aircursor.air.AirData.prefs(this@CloudPcDesktopActivity)
+                val want = on ?: !p.getBoolean(com.aircursor.air.AirData.KEY_DESKTOP, true)
+                p.edit().putBoolean(com.aircursor.air.AirData.KEY_DESKTOP, want).apply()
+                if (want) "Desktop sites on (new tabs)." else "Mobile sites on (new tabs)."
+            }
+            else -> "I can't switch that yet."
+        }
+
+        private fun torch(on: Boolean?): String {
+            val cm = getSystemService(android.hardware.camera2.CameraManager::class.java) ?: return "No flashlight here."
+            return try {
+                val id = cm.cameraIdList.firstOrNull {
+                    cm.getCameraCharacteristics(it).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                } ?: return "No flashlight here."
+                val want = on ?: !torchOn
+                cm.setTorchMode(id, want)
+                torchOn = want
+                if (want) "Flashlight on." else "Flashlight off."
+            } catch (_: Exception) {
+                "The flashlight is busy."
+            }
+        }
+
+        override fun scroll(down: Boolean): String {
+            val b = frontBrowser()
+            if (b != null) b.scrollPage(down) else view?.sendKey(if (down) com.aircursor.core.Keysyms.PAGE_DOWN else com.aircursor.core.Keysyms.PAGE_UP)
+            return if (down) "Scrolling down." else "Scrolling up."
+        }
+
+        override fun browser(action: String): String {
+            val b = frontBrowser()
+            if (b == null && action == "newtab") {
+                openAir(null)
+                air?.windows?.firstOrNull { it.key == com.aircursor.air.AirWindows.BROWSER }?.browser?.openNewTab()
+                return "New tab."
+            }
+            if (b == null) return "Open Air first."
+            when (action) {
+                "back" -> b.goBack()
+                "forward" -> b.goForward()
+                "reload" -> b.reloadOrStop()
+                "newtab" -> if (b.app == null) b.openNewTab() else openAir(null)
+                "closetab" -> b.closeCurrentTab()
+                "nexttab" -> b.nextTab(1)
+                "prevtab" -> b.nextTab(-1)
+            }
+            return when (action) {
+                "back" -> "Going back."
+                "reload" -> "Reloading."
+                "newtab" -> "New tab."
+                "closetab" -> "Tab closed."
+                else -> "Done."
+            }
+        }
+
+        override fun window(action: String): String {
+            val w = air?.top()
+            return when (action) {
+                "desktop" -> {
+                    air?.minimizeAll()
+                    "Here's the desktop."
+                }
+                "minimize" -> if (w != null) { air?.minimize(w); "Minimized." } else "Nothing to minimize."
+                "maximize" -> if (w != null) { if (!w.maximized) air?.toggleSize(w); "Full screen." } else "Open a window first."
+                "close" -> if (w != null) { air?.close(w); "Closed ${w.title}." } else "Nothing to close."
+                else -> "Done."
+            }
+        }
+
+        override fun screenshot(): String {
+            val name = "Screenshot-" + java.text.SimpleDateFormat("yyyy-MM-dd-HHmmss", java.util.Locale.ROOT).format(java.util.Date()) + ".png"
+            runPc("mkdir -p /root/Pictures && pc-screenshot /root/Pictures/$name")
+            return "Screenshot saved in the PC's Pictures."
+        }
+
+        override fun lock(): String {
+            if (!PcLock.hasPassword(this@CloudPcDesktopActivity)) return "Set a password first (toolbar → lock)."
+            showLock(PcLockScreen.Mode.SIGN_IN)
+            return "Locked."
+        }
+    }
+
+    private var torchOn = false
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.action == android.view.KeyEvent.ACTION_DOWN && lockView == null) {
+            val k = event.keyCode
+            if (k == android.view.KeyEvent.KEYCODE_ASSIST || k == android.view.KeyEvent.KEYCODE_VOICE_ASSIST ||
+                (event.isMetaPressed && k == android.view.KeyEvent.KEYCODE_A)
+            ) {
+                startAssistant()
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    private fun startAssistant() {
+        if (lockView != null) return
+        val a = assistant ?: com.aircursor.assistant.AirAssistant(this, rootLayout, AssistantBridge()).also { assistant = it }
+        askPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO)) { ok ->
+            if (ok) a.listen() else Toast.makeText(this, "The assistant needs the microphone", Toast.LENGTH_LONG).show()
+        }
+        keepControlsOnTop()
     }
 
     private var pendingAirUpload: ((List<Uri>) -> Unit)? = null
@@ -389,7 +788,8 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private fun showLock(mode: PcLockScreen.Mode) {
         lockView?.let { rootLayout.removeView(it) }
         videoPlayer.close()
-        air?.minimize()
+        air?.minimizeAll()
+        assistant?.dismiss()
         hideVideoChip()
         view?.locked = true
         if (DesktopInput.target === view) DesktopInput.target = null
@@ -935,7 +1335,8 @@ class CloudPcDesktopActivity : ComponentActivity() {
     override fun onDestroy() {
         if (::status.isInitialized) status.removeCallbacks(statusTick)
         if (::videoPlayer.isInitialized) videoPlayer.close()
-        air?.close()
+        air?.closeAll()
+        assistant?.release()
         view?.release()
         view = null
         super.onDestroy()

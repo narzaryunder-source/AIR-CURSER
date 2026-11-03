@@ -3,46 +3,226 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Air</title>
+<meta name="color-scheme" content="dark">
+<title>New tab</title>
+<script src="photos/photos.js"></script>
 <style>
-  :root { color-scheme: dark; --bg: #0b0d12; --card: #161a23; --line: rgba(255,255,255,.08); --text: #eef1f6; --muted: #9aa3b2; --accent: #6ea8ff; }
+  :root {
+    --text: #fff;
+    --muted: rgba(255, 255, 255, .74);
+    --glass: rgba(14, 16, 24, .42);
+    --glass-2: rgba(255, 255, 255, .11);
+    --line: rgba(255, 255, 255, .16);
+    --orange: #ff8a5c;
+  }
   * { box-sizing: border-box; }
-  html, body { margin: 0; min-height: 100%; background: radial-gradient(ellipse at 50% -10%, #1c2440 0%, var(--bg) 60%); color: var(--text);
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 760px; margin: 0 auto; padding: 9vh 20px 40px; text-align: center; }
-  .logo { font-size: 44px; font-weight: 800; letter-spacing: -.03em; margin: 0; }
-  .logo span { background: linear-gradient(90deg, #8ab4ff, #c79bff); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .sub { color: var(--muted); font-size: 14px; margin: 6px 0 26px; }
-  form { display: flex; gap: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 6px 6px 6px 18px; }
-  input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 16px; }
-  button { border: 0; border-radius: 999px; padding: 10px 18px; background: var(--accent); color: #0b0d12; font-weight: 700; font-size: 14px; }
-  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; margin-top: 26px; }
-  .tiles a { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px; border-radius: 16px; background: var(--card);
-    border: 1px solid var(--line); color: var(--text); text-decoration: none; font-size: 13px; }
-  .tiles a:active { transform: scale(.97); }
-  .tiles b { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-size: 18px; color: #fff; }
-  .note { color: var(--muted); font-size: 12px; margin-top: 26px; line-height: 1.5; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #05070d; color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+  body.plain { background: radial-gradient(ellipse at 30% 0%, #1b2554 0%, #0b0f22 45%, #05070d 100%); }
+  #bg { position: fixed; inset: 0; background-size: cover; background-position: center; opacity: 0;
+    transform: scale(1.035); transition: opacity .7s ease, transform 12s ease-out; }
+  #bg.on { opacity: 1; transform: scale(1); }
+  #shade { position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse 46% 42% at 50% 54%, rgba(0,0,0,.30), rgba(0,0,0,0) 72%),
+      linear-gradient(180deg, rgba(0,0,0,.50) 0%, rgba(0,0,0,.06) 28%, rgba(0,0,0,.06) 62%, rgba(0,0,0,.58) 100%); }
+
+  .top { position: fixed; top: 16px; left: 22px; right: 22px; display: flex; justify-content: space-between; align-items: flex-start; }
+  .stats { display: flex; gap: 22px; padding: 10px 16px; border-radius: 14px; background: var(--glass);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,.08); }
+  .stat b { display: block; font-size: 24px; line-height: 1.05; font-weight: 600; color: var(--orange); letter-spacing: -.01em; }
+  .stat.time b { color: #fff; }
+  .stat span { font-size: 11px; color: var(--muted); }
+  .clock { font-size: 44px; font-weight: 300; letter-spacing: -.02em; line-height: 1; text-shadow: 0 2px 14px rgba(0,0,0,.4); text-align: right; }
+  .clock small { display: block; font-size: 12.5px; font-weight: 400; color: var(--muted); letter-spacing: 0; margin-top: 6px; }
+
+  main { position: fixed; left: 0; right: 0; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; gap: 22px; }
+  .brand { display: flex; align-items: center; gap: 11px; font-size: 26px; font-weight: 700; letter-spacing: -.02em; text-shadow: 0 2px 16px rgba(0,0,0,.45); }
+  .brand img { width: 36px; height: 36px; filter: drop-shadow(0 3px 10px rgba(0,0,0,.35)); }
+  .private { font-size: 13px; color: var(--muted); padding: 6px 14px; border-radius: 16px; background: rgba(120, 80, 220, .35); backdrop-filter: blur(10px); }
+
+  form.search { width: min(600px, 82vw); display: flex; align-items: center; gap: 10px; padding: 0 7px 0 16px; height: 46px; border-radius: 23px;
+    background: rgba(255,255,255,.94); box-shadow: 0 12px 44px rgba(0,0,0,.38); }
+  form.search svg.g { flex: none; width: 18px; height: 18px; }
+  form.search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 15.5px; color: #12131a; }
+  form.search input::placeholder { color: #6b6f7d; }
+  .mic { flex: none; width: 34px; height: 34px; border-radius: 50%; border: 0; display: grid; place-items: center; cursor: pointer;
+    background: linear-gradient(135deg, #3d63ff, #9a5cf5); color: #fff; box-shadow: 0 4px 14px rgba(80, 90, 255, .45); }
+  .mic svg { width: 17px; height: 17px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(8, 80px); gap: 12px 14px; }
+  .tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 7px; text-decoration: none; color: #fff; font-size: 12px; outline: none; }
+  .tile .ic { width: 56px; height: 56px; border-radius: 16px; background: var(--glass-2); border: 1px solid var(--line);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); display: grid; place-items: center;
+    transition: transform .15s ease, background .15s ease; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+  .tile:hover .ic, .tile:focus .ic { transform: translateY(-2px); background: rgba(255,255,255,.2); }
+  .tile:active .ic { transform: scale(.96); }
+  .tile img { width: 30px; height: 30px; border-radius: 7px; }
+  .tile .letter { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font-weight: 700; font-size: 16px; color: #fff; }
+  .tile span { max-width: 82px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
+  .tile .x { position: absolute; top: -6px; right: 4px; width: 20px; height: 20px; border-radius: 50%; border: 0; padding: 0;
+    background: rgba(0,0,0,.65); color: #fff; font-size: 13px; line-height: 20px; cursor: pointer; opacity: 0; transition: opacity .12s; }
+  .tile:hover .x, .tile:focus-within .x { opacity: 1; }
+
+  .credit { position: fixed; left: 22px; bottom: 16px; font-size: 11.5px; color: var(--muted); text-shadow: 0 1px 6px rgba(0,0,0,.7); max-width: 46vw; }
+  .credit b { display: block; color: #fff; font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+  .actions { position: fixed; right: 18px; bottom: 14px; display: flex; gap: 8px; }
+  .actions button { border: 0; border-radius: 17px; height: 32px; padding: 0 13px; background: var(--glass); color: #fff; font-size: 12px; cursor: pointer;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,.1); }
+  .actions button:hover { background: rgba(30, 34, 48, .7); }
+
+  #custom { position: fixed; right: 18px; bottom: 56px; width: 260px; padding: 14px 16px; border-radius: 14px; background: rgba(18, 20, 28, .9);
+    backdrop-filter: blur(18px); border: 1px solid rgba(255,255,255,.12); display: none; font-size: 13px; }
+  #custom.open { display: block; }
+  #custom h3 { margin: 0 0 10px; font-size: 14px; }
+  #custom label { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; cursor: pointer; }
+  #custom input { width: 34px; height: 18px; accent-color: #6d7bff; }
+
+  @media (max-width: 860px) { .tiles { grid-template-columns: repeat(4, 80px); } .stats .stat.time { display: none; } }
+  @media (max-height: 470px) { .clock small, .brand { display: none; } main { gap: 16px; } .top { top: 10px; } }
+  @media (max-height: 380px) { .top, .credit { display: none; } }
 </style>
 </head>
 <body>
-<main>
-  <h1 class="logo"><span>Air</span></h1>
-  <p class="sub">Fast browsing on your phone's own engine – inside AirCursor PC</p>
-  <form action="https://www.google.com/search" method="get">
-    <input name="q" placeholder="Search Google or type a web address" autocomplete="off" autofocus>
-    <button type="submit">Search</button>
-  </form>
-  <div class="tiles">
-    <a href="https://m.youtube.com"><b style="background:#e62117">▶</b>YouTube</a>
-    <a href="https://www.google.com"><b style="background:#4285f4">G</b>Google</a>
-    <a href="https://claude.ai"><b style="background:#d97757">✳</b>Claude</a>
-    <a href="https://chatgpt.com"><b style="background:#10a37f">◎</b>ChatGPT</a>
-    <a href="https://gemini.google.com"><b style="background:#7b61ff">✦</b>Gemini</a>
-    <a href="https://github.com"><b style="background:#30363d">⌂</b>GitHub</a>
-    <a href="https://mail.google.com"><b style="background:#c5221f">✉</b>Gmail</a>
-    <a href="https://en.wikipedia.org"><b style="background:#54595d">W</b>Wikipedia</a>
+<div id="bg"></div>
+<div id="shade"></div>
+
+<div class="top">
+  <div class="stats" id="stats">
+    <div class="stat"><b id="blocked">0</b><span>Trackers &amp; ads blocked</span></div>
+    <div class="stat time"><b id="saved">0 s</b><span>Time saved</span></div>
   </div>
-  <p class="note">Downloads are saved in the PC's Downloads folder. Uploads can come from the PC or the phone.</p>
+  <div class="clock" id="clock"></div>
+</div>
+
+<main>
+  <div class="brand"><img src="../cloudpc/air-logo.svg" alt="">Air</div>
+  <div class="private" id="private" hidden>Private tab · pages here aren't saved in history</div>
+  <form class="search" id="form" autocomplete="off">
+    <svg class="g" viewBox="0 0 24 24" fill="none" stroke="#5b5f6d" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+    <input id="q" name="q" placeholder="Search the web" aria-label="Search">
+    <button class="mic" type="button" id="mic" title="Voice assistant"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+  </form>
+  <div class="tiles" id="tiles"></div>
 </main>
+
+<div class="credit" id="credit"></div>
+<div class="actions">
+  <button id="customize" type="button">Customize</button>
+</div>
+<div id="custom">
+  <h3>New tab page</h3>
+  <label>Photos of the Earth <input type="checkbox" id="o-photos"></label>
+  <label>Shortcuts <input type="checkbox" id="o-sites"></label>
+  <label>Shields counter <input type="checkbox" id="o-stats"></label>
+</div>
+
+<script>
+(function () {
+  var data = {};
+  try { data = JSON.parse(decodeURIComponent(location.hash.slice(1))) || {}; } catch (e) { data = {}; }
+  var $ = function (id) { return document.getElementById(id); };
+  var photos = window.AIR_PHOTOS || [];
+  var showPhotos = data.photos !== false, showSites = data.sites !== false, showStats = data.stats !== false;
+  var search = data.search || "https://www.google.com/search?q=%s";
+  $("q").placeholder = "Search " + (data.engine || "Google") + " or type a web address";
+  if (data["private"]) $("private").hidden = false;
+
+  // Background photo (a different one on every new tab) and its credit.
+  function photo() {
+    if (!showPhotos || !photos.length) { document.body.className = "plain"; $("bg").className = ""; $("credit").innerHTML = ""; return; }
+    document.body.className = "";
+    var p = photos[Math.abs(data.photo || 0) % photos.length];
+    var img = new Image();
+    img.onload = function () { $("bg").style.backgroundImage = "url('" + p.file + "')"; $("bg").className = "on"; };
+    img.src = p.file;
+    $("credit").innerHTML = "<b></b><span></span>";
+    $("credit").firstChild.textContent = p.title;
+    $("credit").lastChild.textContent = "Photo: " + p.credit;
+  }
+
+  // Clock like Brave's.
+  function tick() {
+    var d = new Date();
+    var t = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    $("clock").innerHTML = "";
+    $("clock").appendChild(document.createTextNode(t));
+    var s = document.createElement("small");
+    s.textContent = d.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" });
+    $("clock").appendChild(s);
+  }
+
+  // Shields counter: everything Air has blocked, and the time that saved (about 50 ms each).
+  function stats() {
+    $("stats").style.display = showStats ? "" : "none";
+    var n = Number(data.blocked || 0);
+    $("blocked").textContent = n.toLocaleString();
+    var sec = Math.round(n * 0.05);
+    $("saved").textContent = sec < 60 ? sec + " s" : sec < 3600 ? Math.round(sec / 60) + " min" : (sec / 3600).toFixed(1) + " h";
+  }
+
+  // Shortcuts with each site's real logo.
+  var colors = ["#4f6bff", "#e5484d", "#12a594", "#f76b15", "#8e4ec6", "#0090ff", "#d6409f", "#46a758"];
+  function tiles() {
+    var box = $("tiles");
+    box.innerHTML = "";
+    box.style.display = showSites ? "" : "none";
+    (data.top || []).forEach(function (s, i) {
+      var a = document.createElement("a");
+      a.className = "tile";
+      a.href = s.u;
+      a.title = s.t + " – " + s.h;
+      var ic = document.createElement("div");
+      ic.className = "ic";
+      var img = document.createElement("img");
+      img.alt = "";
+      img.src = "https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://" + encodeURIComponent(s.h) + "&size=64";
+      img.onerror = function () {
+        var l = document.createElement("div");
+        l.className = "letter";
+        l.style.background = colors[i % colors.length];
+        l.textContent = (s.t || s.h || "?").charAt(0).toUpperCase();
+        ic.replaceChild(l, img);
+      };
+      ic.appendChild(img);
+      var name = document.createElement("span");
+      name.textContent = s.t;
+      var x = document.createElement("button");
+      x.className = "x";
+      x.type = "button";
+      x.title = "Remove";
+      x.textContent = "×";
+      x.onclick = function (e) { e.preventDefault(); e.stopPropagation(); location.href = "air://hide?h=" + encodeURIComponent(s.h); };
+      a.appendChild(ic); a.appendChild(name); a.appendChild(x);
+      box.appendChild(a);
+    });
+  }
+
+  $("form").onsubmit = function (e) {
+    e.preventDefault();
+    var q = $("q").value.trim();
+    if (!q) return;
+    var looksLikeUrl = !/\s/.test(q) && /^[\w-]+(\.[\w-]+)+(:\d+)?([\/?#].*)?$/.test(q);
+    location.href = /^https?:\/\//i.test(q) ? q : looksLikeUrl ? "https://" + q : search.replace("%s", encodeURIComponent(q));
+  };
+  $("mic").onclick = function () { location.href = "air://voice"; };
+
+  // Customize: remembered by Air itself.
+  $("customize").onclick = function () { $("custom").classList.toggle("open"); };
+  function opt(id, key, get, set) {
+    var el = $(id);
+    el.checked = get();
+    el.onchange = function () { set(el.checked); location.href = "air://set?k=" + key + "&v=" + (el.checked ? 1 : 0); };
+  }
+  opt("o-photos", "photos", function () { return showPhotos; }, function (v) { showPhotos = v; photo(); });
+  opt("o-sites", "sites", function () { return showSites; }, function (v) { showSites = v; tiles(); });
+  opt("o-stats", "stats", function () { return showStats; }, function (v) { showStats = v; stats(); });
+  document.addEventListener("click", function (e) {
+    if (!$("custom").contains(e.target) && e.target !== $("customize")) $("custom").classList.remove("open");
+  });
+
+  photo(); tick(); stats(); tiles();
+  setInterval(tick, 15000);
+})();
+</script>
 </body>
 </html>
