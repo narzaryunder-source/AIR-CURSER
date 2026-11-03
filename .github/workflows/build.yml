@@ -12,6 +12,11 @@ on:
       # Live Pro plan settings and business docs: changed from the phone, no new APK needed.
       - 'cloudpc/**'
       - 'docs/**'
+      # The ready-made PC image has its own workflow (pc-image.yml).
+      - 'pcimage/**'
+      - '.github/workflows/pc-image.yml'
+      # TS Station is installed inside the PC from GitHub, not part of the APK.
+      - 'tsstation/**'
   workflow_dispatch:
 
 permissions:

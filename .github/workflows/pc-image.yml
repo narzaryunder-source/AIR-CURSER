@@ -1,0 +1,43 @@
+name: PC image
+
+# The ready-made AirCursor PC (Ubuntu arm64 + desktop + Brave + tools). Phones download it once
+# instead of installing hundreds of packages themselves.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'pcimage/**'
+      - '.github/workflows/pc-image.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pc-image
+  cancel-in-progress: false
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build the image
+        run: bash pcimage/build.sh
+
+      - name: Publish (release "pc-image", never marked as latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pc-image
+          name: AirCursor PC image
+          target_commitish: ${{ github.sha }}
+          make_latest: false
+          files: |
+            pcimage/out/*.tar.xz
+            pcimage/out/pc-image.json
+          body: |
+            Ready-made AirCursor PC (Ubuntu 24.04 arm64, XFCE desktop, Brave, tools).
+            The AirCursor app downloads this itself – nothing to do here.
