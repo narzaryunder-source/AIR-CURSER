@@ -148,6 +148,8 @@ class CloudPcDesktopActivity : ComponentActivity() {
         v.fpsLimit = AirBoost.fpsLimit(this)
         v.showFps = prefs.getBoolean(KEY_FPS, false)
         v.phoneTouch = prefs.getBoolean(KEY_PHONE_TOUCH, true)
+        // Hand cursor over Air windows, the toolbar, the assistant or a dialog: tap the phone UI there.
+        v.systemArea = { x, y -> overPhoneUi(x, y) }
         view = v
         val root = FrameLayout(this)
         rootLayout = root
@@ -395,6 +397,22 @@ class CloudPcDesktopActivity : ComponentActivity() {
             override fun windowsChanged() = keepControlsOnTop()
         },
     ).also { air = it }
+
+    /** True when phone UI (not the PC picture) is under this screen point. */
+    private fun overPhoneUi(sx: Float, sy: Float): Boolean {
+        if (!hasWindowFocus() || lockView != null) return true
+        if (!::rootLayout.isInitialized) return false
+        val loc = IntArray(2)
+        rootLayout.getLocationOnScreen(loc)
+        val x = sx - loc[0]
+        val y = sy - loc[1]
+        for (i in rootLayout.childCount - 1 downTo 0) {
+            val c = rootLayout.getChildAt(i)
+            if (c === view || c === status || c.visibility != View.VISIBLE) continue
+            if (x >= c.x && x < c.x + c.width && y >= c.y && y < c.y + c.height) return true
+        }
+        return false
+    }
 
     /** The PC toolbar, the assistant and the lock screen stay above Air's windows. */
     private fun keepControlsOnTop() {

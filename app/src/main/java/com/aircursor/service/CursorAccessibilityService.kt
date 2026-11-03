@@ -183,6 +183,10 @@ class CursorAccessibilityService : AccessibilityService() {
     fun onTrackingStopped() {
         drag.cancel()
         scroller.cancel()
+        gestureOnDesk = null
+        // The desktop draws its own pointer again (touch and mouse).
+        DesktopInput.handActive = false
+        (DesktopInput.target as? android.view.View)?.postInvalidate()
         // In PC mode the cursor stays for the keyboard; otherwise it goes away with the camera.
         if (!PcMode.isEnabled(this)) removeOverlay()
     }
@@ -299,12 +303,19 @@ class CursorAccessibilityService : AccessibilityService() {
             cursorY = out.y
         }
         view.update(out.x, out.y, out.timestampMs, out.mode, out.handPresent, out.holdKind, out.holdProgress)
-        view.hideArrow = DesktopInput.target != null
-        // PC desktop on screen: the hand cursor is its mouse (hover highlights menus).
-        DesktopInput.target?.let { desk ->
-            if (out.handPresent && !out.paused && (out.mode == CursorMode.NORMAL || out.mode == CursorMode.PRESSING)) {
-                desk.hover(out.x, out.y)
-            }
+        // PC desktop on screen: the hand cursor is its mouse (hover highlights menus) and the
+        // overlay draws the desktop's own pointer picture at display rate. Over Air windows, the
+        // toolbar or a dialog it is the phone's pointer and taps the phone UI instead.
+        val desk = DesktopInput.target
+        val toDesk = desk != null && !desk.systemAt(out.x, out.y)
+        view.hideArrow = false
+        view.pcCursor = toDesk
+        if (DesktopInput.handActive != out.handPresent) {
+            DesktopInput.handActive = out.handPresent
+            (desk as? android.view.View)?.postInvalidate()
+        }
+        if (toDesk && out.handPresent && !out.paused && (out.mode == CursorMode.NORMAL || out.mode == CursorMode.PRESSING)) {
+            desk!!.hover(out.x, out.y)
         }
         if (showFps) {
             view.debugText = ("Tracking: %.1f fps\nCamera: %.0f fps (%s)\nInference: %.0f ms (%s)\n" +
@@ -351,8 +362,29 @@ class CursorAccessibilityService : AccessibilityService() {
         return true
     }
 
+    /** A drag or scroll that started on the PC desktop stays there until it ends (and vice versa). */
+    private var gestureOnDesk: Boolean? = null
+
+    private fun deskFor(e: GestureEvent): DesktopTarget? {
+        val desk = DesktopInput.target ?: run {
+            gestureOnDesk = null
+            return null
+        }
+        val on = when (e) {
+            is GestureEvent.DragStart -> !desk.systemAt(e.x, e.y).also { gestureOnDesk = !it }
+            is GestureEvent.DragMove -> gestureOnDesk ?: !desk.systemAt(e.x, e.y)
+            is GestureEvent.DragEnd -> (gestureOnDesk ?: !desk.systemAt(e.x, e.y)).also { gestureOnDesk = null }
+            is GestureEvent.ScrollVelocity -> gestureOnDesk ?: (!desk.systemAt(e.x, e.y)).also { gestureOnDesk = it }
+            GestureEvent.ScrollEnd -> (gestureOnDesk ?: true).also { gestureOnDesk = null }
+            is GestureEvent.Tap -> !desk.systemAt(e.x, e.y)
+            is GestureEvent.LongPress -> !desk.systemAt(e.x, e.y)
+            else -> true
+        }
+        return if (on) desk else null
+    }
+
     private fun handleEvent(e: GestureEvent, view: CursorView) {
-        DesktopInput.target?.let { if (routeToDesktop(e, it, view)) return }
+        deskFor(e)?.let { if (routeToDesktop(e, it, view)) return }
         when (e) {
             is GestureEvent.Tap -> {
                 view.ripple(e.x, e.y)

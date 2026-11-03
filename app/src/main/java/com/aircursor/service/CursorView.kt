@@ -46,10 +46,7 @@ class CursorView(context: Context) : View(context) {
         }
     var debugText: String? = null
 
-    /**
-     * On the PC desktop the desktop draws its own pointer exactly where clicks land, so the
-     * overlay arrow is hidden (two arrows would look messy); rings, ripples and labels stay.
-     */
+    /** Hides the pointer (rings, ripples and labels stay). */
     var hideArrow = false
         set(value) {
             if (field != value) {
@@ -57,6 +54,20 @@ class CursorView(context: Context) : View(context) {
                 invalidate()
             }
         }
+
+    /**
+     * Over the PC desktop: draw the desktop's own pointer picture (arrow, text I-beam, hand over
+     * links…) here, on every display frame – it moves like a real mouse, without the desktop's lag.
+     */
+    var pcCursor = false
+        set(value) {
+            if (field != value) {
+                field = value
+                invalidate()
+            }
+        }
+    private val shapeDst = RectF()
+    private val shapePaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
 
     private var alphaNow = 1f
 
@@ -318,7 +329,16 @@ class CursorView(context: Context) : View(context) {
             val a = (alphaNow * 255).toInt()
             fillPaint.alpha = a
             outlinePaint.alpha = a
-            if (!hideArrow) {
+            val shape = if (pcCursor) com.aircursor.cloudpc.DesktopInput.cursorShape else null
+            if (shape != null && !hideArrow && mode != CursorMode.DRAGGING && mode != CursorMode.SCROLLING) {
+                // The desktop's pointer, a little bigger than the desktop draws it (easy to see).
+                val k = com.aircursor.cloudpc.DesktopInput.desktopScale * 1.15f * cursorScale.coerceAtLeast(0.6f)
+                val x = cx - com.aircursor.cloudpc.DesktopInput.cursorHotX * k
+                val y = cy - com.aircursor.cloudpc.DesktopInput.cursorHotY * k
+                shapeDst.set(x, y, x + shape.width * k, y + shape.height * k)
+                shapePaint.alpha = a
+                canvas.drawBitmap(shape, null, shapeDst, shapePaint)
+            } else if (!hideArrow) {
                 canvas.save()
                 canvas.translate(cx, cy)
                 canvas.drawPath(arrow, fillPaint)

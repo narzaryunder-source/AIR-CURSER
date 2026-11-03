@@ -11,6 +11,9 @@ import java.io.OutputStream
 /** Changed part of the screen after one server message. */
 data class RfbDirty(val x: Int, val y: Int, val w: Int, val h: Int, val resized: Boolean)
 
+/** The desktop's mouse pointer picture (ARGB), drawn by the phone itself – no lag. */
+class RfbCursor(val w: Int, val h: Int, val hotX: Int, val hotY: Int, val argb: IntArray)
+
 /**
  * Small VNC (RFB 3.3/3.7/3.8) client: "None" security, 32-bit true colour, Raw + CopyRect
  * + DesktopSize. Enough for a desktop on the same phone (unix socket), so no compression needed.
@@ -86,9 +89,10 @@ class RfbClient(input: InputStream, output: OutputStream) {
             writeByte(0); writeByte(8); writeByte(16)
             write(ByteArray(3))
         }
-        // No cursor pseudo-encoding: the desktop draws its own pointer into the picture,
-        // so it is always visible (touch users) and shows where clicks really land.
-        val encodings = intArrayOf(ENC_COPYRECT, ENC_RAW, ENC_DESKTOP_SIZE)
+        // Cursor pseudo-encoding: the desktop sends its pointer picture once and the phone draws it
+        // at the pointer position on every display frame – the pointer moves without waiting for
+        // the desktop to repaint (no lag), and the screen updates less while the mouse moves.
+        val encodings = intArrayOf(ENC_COPYRECT, ENC_RAW, ENC_DESKTOP_SIZE, ENC_CURSOR)
         send {
             writeByte(2)
             writeByte(0)
@@ -199,6 +203,35 @@ class RfbClient(input: InputStream, output: OutputStream) {
         requestUpdate(incremental = true)
     }
 
+    /** The pointer picture changed (an arrow, a text I-beam, a hand over links…); null = hidden. */
+    @Volatile var onCursor: ((RfbCursor?) -> Unit)? = null
+
+    private fun readCursor(hotX: Int, hotY: Int, w: Int, h: Int) {
+        val stride = (w + 7) / 8
+        if (w == 0 || h == 0) {
+            onCursor?.invoke(null)
+            return
+        }
+        if (w > 256 || h > 256) {
+            skipFully(w.toLong() * h * 4 + stride.toLong() * h)
+            return
+        }
+        val px = ByteArray(w * h * 4)
+        din.readFully(px)
+        val mask = ByteArray(stride * h)
+        din.readFully(mask)
+        val out = IntArray(w * h)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                if ((mask[y * stride + x / 8].toInt() shr (7 - x % 8)) and 1 == 0) continue
+                val i = (y * w + x) * 4
+                out[y * w + x] = (0xFF shl 24) or ((px[i].toInt() and 255) shl 16) or
+                    ((px[i + 1].toInt() and 255) shl 8) or (px[i + 2].toInt() and 255)
+            }
+        }
+        onCursor?.invoke(RfbCursor(w, h, hotX.coerceIn(0, w - 1), hotY.coerceIn(0, h - 1), out))
+    }
+
     private fun readUpdate(): RfbDirty {
         din.readUnsignedByte()
         val n = din.readUnsignedShort()
@@ -224,8 +257,8 @@ class RfbClient(input: InputStream, output: OutputStream) {
                     resized = true
                     continue
                 }
-                ENC_CURSOR -> { // the hand cursor / phone draws its own pointer: skip the shape
-                    skipFully(w.toLong() * h * 4 + ((w + 7) / 8).toLong() * h)
+                ENC_CURSOR -> {
+                    readCursor(x, y, w, h)
                     continue
                 }
                 else -> throw IOException("Unsupported VNC encoding $enc")

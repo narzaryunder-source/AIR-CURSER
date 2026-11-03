@@ -41,11 +41,28 @@ interface DesktopTarget {
     /** Air scroll: virtual finger velocity in px/s, called every tracking frame. */
     fun scroll(vx: Float, vy: Float)
     fun scrollEnd()
+
+    /**
+     * True where the screen shows something of the phone over the desktop (an Air window, the
+     * toolbar, a dialog): the hand cursor taps there like on the phone instead of the PC.
+     */
+    fun systemAt(sx: Float, sy: Float): Boolean = false
 }
 
 object DesktopInput {
     @Volatile
     var target: DesktopTarget? = null
+
+    /** The desktop's pointer picture and its hot spot (drawn by the hand cursor overlay). */
+    @Volatile var cursorShape: android.graphics.Bitmap? = null
+    @Volatile var cursorHotX = 0
+    @Volatile var cursorHotY = 0
+
+    /** Desktop pixels → screen pixels (the pointer picture is drawn at the desktop's size). */
+    @Volatile var desktopScale = 1f
+
+    /** The hand cursor is driving the desktop: the desktop view does not draw its own pointer. */
+    @Volatile var handActive = false
 }
 
 /**
@@ -77,8 +94,19 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
     /** A hand drag (pinch + move) or a finger is down: only then may the left button be held. */
     private var handDragging = false
     private var fingerDown = false
-    private var lastFbX = 0
-    private var lastFbY = 0
+    private var lastFbX = -1
+    private var lastFbY = -1
+
+    // The desktop's pointer, drawn here (touch / mouse) – the hand cursor overlay draws its own.
+    private var cursorBitmap: Bitmap? = null
+    private var cursorHotX = 0
+    private var cursorHotY = 0
+    private val cursorPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+
+    /** Where phone UI covers the desktop (set by the activity): the hand cursor taps there. */
+    var systemArea: ((Float, Float) -> Boolean)? = null
+
+    override fun systemAt(sx: Float, sy: Float): Boolean = systemArea?.invoke(sx, sy) ?: false
     @Volatile private var pendingMove = false
 
     // Sticky modifiers from the toolbar (apply to the next key)
@@ -123,6 +151,18 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
                 val c = RfbClient(s.inputStream, s.outputStream)
                 c.onClipboard = { text ->
                     if (text.isNotEmpty() && text != lastSentClipboard) post { onDesktopClipboard?.invoke(text) }
+                }
+                c.onCursor = { cur ->
+                    val bmp = cur?.let { android.graphics.Bitmap.createBitmap(it.argb, it.w, it.h, android.graphics.Bitmap.Config.ARGB_8888) }
+                    post {
+                        cursorBitmap = bmp
+                        cursorHotX = cur?.hotX ?: 0
+                        cursorHotY = cur?.hotY ?: 0
+                        DesktopInput.cursorShape = bmp
+                        DesktopInput.cursorHotX = cursorHotX
+                        DesktopInput.cursorHotY = cursorHotY
+                        invalidate()
+                    }
                 }
                 c.minFrameIntervalMs = frameIntervalMs()
                 c.handshake()
@@ -242,13 +282,28 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
         if (sharpness > 0f && android.os.Build.VERSION.SDK_INT >= 33 && canvas.isHardwareAccelerated &&
             drawSharpened(canvas, b)
         ) {
+            drawPointer(canvas, scale)
             drawFps(canvas)
             return
         }
         src.set(0, 0, b.width, b.height)
         canvas.drawBitmap(b, src, dst, paint)
+        drawPointer(canvas, scale)
         drawFps(canvas)
     }
+
+    /** The desktop's pointer at the last mouse position (not while the hand cursor drives it). */
+    private fun drawPointer(canvas: Canvas, scale: Float) {
+        DesktopInput.desktopScale = scale
+        val c = cursorBitmap ?: return
+        if (DesktopInput.handActive || lastFbX < 0) return
+        val x = dst.left + (lastFbX - cursorHotX) * scale
+        val y = dst.top + (lastFbY - cursorHotY) * scale
+        cursorDst.set(x, y, x + c.width * scale, y + c.height * scale)
+        canvas.drawBitmap(c, null, cursorDst, cursorPaint)
+    }
+
+    private val cursorDst = RectF()
 
     private val fpsTick = Runnable { invalidate() }
 
@@ -320,6 +375,11 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
 
     private fun sendPointer(x: Int, y: Int, mask: Int) {
         lastInputMs = SystemClock.uptimeMillis()
+        if (x != lastFbX || y != lastFbY) {
+            lastFbX = x
+            lastFbY = y
+            if (cursorBitmap != null && !DesktopInput.handActive) postInvalidateOnAnimation()
+        }
         val c = client ?: return
         sender.execute {
             try {
@@ -333,6 +393,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
         lastInputMs = SystemClock.uptimeMillis()
         lastFbX = x
         lastFbY = y
+        if (cursorBitmap != null && !DesktopInput.handActive) postInvalidateOnAnimation()
         val c = client ?: return
         if (pendingMove) return
         pendingMove = true
