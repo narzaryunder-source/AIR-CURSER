@@ -14,6 +14,9 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.CookieManager
+import android.webkit.URLUtil
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -36,7 +39,14 @@ import kotlin.math.roundToInt
  * play straight from the PC's folder; other video sites open in the phone's web view.
  */
 @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
-class PhoneVideoPlayer(private val activity: Activity, private val host: FrameLayout) {
+class PhoneVideoPlayer(
+    private val activity: Activity,
+    private val host: FrameLayout,
+    /** Web pages ask for files to upload: the phone's file picker. */
+    private val pickFiles: ((ValueCallback<Array<Uri>>) -> Unit)? = null,
+    /** "Open in the PC browser" from the fast window. */
+    private val openInPc: ((String) -> Unit)? = null,
+) {
     private val dp = activity.resources.displayMetrics.density
     private fun dp(v: Int) = (v * dp).roundToInt()
 
@@ -47,6 +57,8 @@ class PhoneVideoPlayer(private val activity: Activity, private val host: FrameLa
     private var fullCallback: WebChromeClient.CustomViewCallback? = null
     private var size = 1              // 0 small, 1 medium, 2 whole screen
     private var youtubeUrl: String? = null
+    private var webMode = false
+    private var titleView: TextView? = null
 
     val isOpen get() = panel != null
 
@@ -72,6 +84,30 @@ class PhoneVideoPlayer(private val activity: Activity, private val host: FrameLa
         }
     }
 
+    /**
+     * Fast web window: a website (YouTube, AI chats…) runs on the phone's own web engine – GPU,
+     * hardware video and fast JavaScript – in a window over the PC. Downloads go to the PC's
+     * Downloads folder.
+     */
+    fun browse(url: String) {
+        val host = Uri.parse(url).host?.removePrefix("www.")?.removePrefix("m.") ?: "Web"
+        open(host, web = true) { page(it, url) }
+    }
+
+    /** Back inside the web window; false when there is nothing to go back to. */
+    fun back(): Boolean {
+        val w = web ?: return false
+        if (fullView != null) {
+            exitFull()
+            return true
+        }
+        if (webMode && w.canGoBack()) {
+            w.goBack()
+            return true
+        }
+        return false
+    }
+
     fun pause() {
         web?.onPause()
         video?.pause()
@@ -95,12 +131,15 @@ class PhoneVideoPlayer(private val activity: Activity, private val host: FrameLa
         panel?.let { host.removeView(it) }
         panel = null
         youtubeUrl = null
+        titleView = null
+        webMode = false
     }
 
     // ---- the floating window ----
 
-    private fun open(title: String, fill: (FrameLayout) -> Unit) {
+    private fun open(title: String, web: Boolean = false, fill: (FrameLayout) -> Unit) {
         close()
+        webMode = web
         val p = FrameLayout(activity).apply {
             background = GradientDrawable().apply {
                 setColor(Color.BLACK)
@@ -112,11 +151,12 @@ class PhoneVideoPlayer(private val activity: Activity, private val host: FrameLa
             isClickable = true   // touches stay in the player, never reach the desktop behind
         }
         val content = FrameLayout(activity)
-        p.addView(content, FrameLayout.LayoutParams(-1, -1))
+        // Web pages start below the bar; videos use the whole window (the bar floats over them).
+        p.addView(content, FrameLayout.LayoutParams(-1, -1).apply { if (web) topMargin = dp(40) })
         p.addView(bar(title, p), FrameLayout.LayoutParams(-1, dp(40), Gravity.TOP))
         panel = p
         host.addView(p, FrameLayout.LayoutParams(1, 1))
-        size = 1
+        size = if (web) 2 else 1
         layout(firstTime = true)
         fill(content)
     }
@@ -126,10 +166,13 @@ class PhoneVideoPlayer(private val activity: Activity, private val host: FrameLa
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), 0, dp(4), 0)
-            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xCC000000.toInt(), 0x00000000))
+            background = if (webMode) GradientDrawable().apply { setColor(0xFF15171E.toInt()) }
+            else GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xCC000000.toInt(), 0x00000000))
         }
+        if (webMode) bar.addView(icon(R.drawable.ic_ui_back, "Back") { if (!back()) close() })
         bar.addView(TextView(activity).apply {
-            text = "▶  $title · phone video"
+            titleView = this
+            text = if (webMode) "⚡  $title · fast (phone engine)" else "▶  $title · phone video"
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -138,6 +181,13 @@ class PhoneVideoPlayer(private val activity: Activity, private val host: FrameLa
         bar.addView(icon(R.drawable.ic_ui_phone, "Open in the YouTube app") { openYoutubeApp() }.apply {
             visibility = View.GONE
             tag = "yt"
+        })
+        if (webMode && openInPc != null) bar.addView(icon(R.drawable.ic_ui_globe, "Open in the PC browser") {
+            val u = web?.url
+            if (u != null && (u.startsWith("https://") || u.startsWith("http://"))) {
+                close()
+                openInPc.invoke(u)
+            }
         })
         bar.addView(icon(R.drawable.ic_ui_desktop, "Bigger / smaller") {
             size = (size + 1) % 3
@@ -209,7 +259,27 @@ class PhoneVideoPlayer(private val activity: Activity, private val host: FrameLa
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         settings.mediaPlaybackRequiresUserGesture = false
+        settings.loadWithOverviewMode = true
+        settings.useWideViewPort = true
+        settings.builtInZoomControls = true
+        settings.displayZoomControls = false
+        CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+        setDownloadListener { url, ua, disposition, mime, _ -> download(url, ua, disposition, mime) }
         webChromeClient = object : WebChromeClient() {
+            override fun onReceivedTitle(view: WebView, title: String?) {
+                if (webMode && !title.isNullOrBlank()) titleView?.text = "⚡  ${title.take(60)} · fast"
+            }
+
+            override fun onShowFileChooser(
+                view: WebView,
+                callback: ValueCallback<Array<Uri>>,
+                params: FileChooserParams,
+            ): Boolean {
+                val pick = pickFiles ?: return false
+                pick(callback)
+                return true
+            }
+
             override fun onShowCustomView(view: View, callback: CustomViewCallback) {
                 exitFull()
                 fullView = view
@@ -261,7 +331,14 @@ class PhoneVideoPlayer(private val activity: Activity, private val host: FrameLa
 
     private fun page(content: FrameLayout, url: String) {
         val w = webView()
-        w.webViewClient = WebViewClient()   // stays inside the player
+        w.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val scheme = request.url.scheme ?: return false
+                if (scheme == "http" || scheme == "https") return false   // stays in the window
+                openExternal(request.url.toString())                     // app links, mail, phone…
+                return true
+            }
+        }
         content.addView(w, FrameLayout.LayoutParams(-1, -1))
         w.loadUrl(url)
     }
@@ -282,6 +359,43 @@ class PhoneVideoPlayer(private val activity: Activity, private val host: FrameLa
             true
         }
         v.setVideoURI(Uri.fromFile(f))
+    }
+
+    // ---- downloads from web windows land in the PC's Downloads folder ----
+
+    private fun download(url: String, ua: String?, disposition: String?, mime: String?) {
+        if (!url.startsWith("https://") && !url.startsWith("http://")) {
+            Toast.makeText(activity, "This download cannot be saved", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val name = URLUtil.guessFileName(url, disposition, mime).replace('/', '_')
+        val cookie = CookieManager.getInstance().getCookie(url)
+        Toast.makeText(activity, "Downloading $name to the PC (Downloads)…", Toast.LENGTH_SHORT).show()
+        Thread {
+            val ok = try {
+                val dir = File(CloudPcEngine.rootfs(activity), "root/Downloads").apply { mkdirs() }
+                var f = File(dir, name)
+                var i = 1
+                while (f.exists()) f = File(dir, name.substringBeforeLast('.', name) + " ($i)" +
+                    (if (name.contains('.')) "." + name.substringAfterLast('.') else "")).also { i++ }
+                val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                if (ua != null) conn.setRequestProperty("User-Agent", ua)
+                if (cookie != null) conn.setRequestProperty("Cookie", cookie)
+                conn.connectTimeout = 20_000
+                conn.readTimeout = 60_000
+                try {
+                    conn.inputStream.use { input -> f.outputStream().use { input.copyTo(it, 256 * 1024) } }
+                } finally {
+                    conn.disconnect()
+                }
+                true
+            } catch (_: Exception) {
+                false
+            }
+            activity.runOnUiThread {
+                Toast.makeText(activity, if (ok) "Saved in the PC: Downloads/$name" else "The download failed", Toast.LENGTH_LONG).show()
+            }
+        }.start()
     }
 
     // ---- helpers ----

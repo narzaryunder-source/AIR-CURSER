@@ -409,7 +409,7 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_47"
+private const val WHATS_NEW_ID = "whatsnew_48"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
@@ -422,6 +422,7 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             UiPrefs.close(context, WHATS_NEW_ID)
             whatsNew = false
         }) {
+            Bullet("Fast window: YouTube and AI web apps run on the phone's own engine over the PC")
             Bullet("Faster setup: the ready-made PC (370 MB) is unpacked – no long install, far fewer errors")
             Bullet("Touch like a phone: swipe scrolls with glide, hold = right click, hold + move = select")
             Bullet("Brave: much fewer programs – YouTube and AI sites load instead of hanging")

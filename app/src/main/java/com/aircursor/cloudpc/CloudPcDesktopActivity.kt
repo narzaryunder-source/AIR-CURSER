@@ -62,6 +62,12 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
         /** The PC hands a video to the phone's own player (smooth, hardware decoding). */
         private const val PLAY_ON_PHONE = "aircursor-video:"
+
+        /** The PC opens a website in the fast window (the phone's own web engine). */
+        private const val WEB_ON_PHONE = "aircursor-web:"
+
+        /** In the PC: web apps open in the PC's own browser instead of the fast window. */
+        private const val WEB_IN_PC_FILE = "root/.config/cloudpc/web-in-pc-browser"
         private const val OFF = 0xA0101828.toInt()
 
         /** Desktop size with the phone's landscape shape (even numbers for the VNC server). */
@@ -139,7 +145,24 @@ class CloudPcDesktopActivity : ComponentActivity() {
         view = v
         val root = FrameLayout(this)
         rootLayout = root
-        videoPlayer = PhoneVideoPlayer(this, root)
+        videoPlayer = PhoneVideoPlayer(
+            this, root,
+            pickFiles = { cb ->
+                pendingUpload?.onReceiveValue(null)
+                pendingUpload = cb
+                try {
+                    uploadFiles.launch(arrayOf("*/*"))
+                } catch (_: Exception) {
+                    pendingUpload = null
+                    cb.onReceiveValue(null)
+                }
+            },
+            openInPc = { url ->
+                val q = "'" + url.replace("'", "'\\''") + "'"
+                CloudPcService.send(this, CloudPcService.ACTION_RUN, CloudPcDesktop.inSession("CLOUDPC_PC_BROWSER=1 cloudpc-web $q"))
+                Toast.makeText(this, "Opening in the PC browser…", Toast.LENGTH_SHORT).show()
+            },
+        )
         root.setBackgroundColor(Color.BLACK)
         root.addView(v, FrameLayout.LayoutParams(-1, -1))
 
@@ -223,6 +246,9 @@ class CloudPcDesktopActivity : ComponentActivity() {
                 openOnPhone(text.removePrefix(OPEN_ON_PHONE).trim())
             } else if (text.startsWith(SAVE_ON_PHONE)) {
                 sendToPhone(text.removePrefix(SAVE_ON_PHONE).trim())
+            } else if (text.startsWith(WEB_ON_PHONE)) {
+                val url = text.removePrefix(WEB_ON_PHONE).trim()
+                if (lockView == null && (url.startsWith("https://") || url.startsWith("http://"))) videoPlayer.browse(url)
             } else if (text.startsWith(PLAY_ON_PHONE)) {
                 hideVideoChip()
                 if (lockView == null) videoPlayer.play(text.removePrefix(PLAY_ON_PHONE))
@@ -241,7 +267,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = when {
                 lockView != null -> finish()
-                videoPlayer.isOpen -> videoPlayer.close()
+                videoPlayer.isOpen -> if (!videoPlayer.back()) videoPlayer.close()
                 else -> askExit()
             }
         })
@@ -263,6 +289,25 @@ class CloudPcDesktopActivity : ComponentActivity() {
         }
         CloudPcService.send(this, CloudPcService.ACTION_RUN, CloudPcDesktop.inSession("cloudpc-phone-video"))
         Toast.makeText(this, "Moving the video to the phone player…", Toast.LENGTH_SHORT).show()
+    }
+
+    /** Files for a web page in the fast window (from the phone's own storage). */
+    private var pendingUpload: android.webkit.ValueCallback<Array<Uri>>? = null
+    private val uploadFiles = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        pendingUpload?.onReceiveValue(uris.toTypedArray())
+        pendingUpload = null
+    }
+
+    private fun webInPc() = File(CloudPcEngine.rootfs(this), WEB_IN_PC_FILE).exists()
+
+    private fun setWebInPc(on: Boolean) {
+        val f = File(CloudPcEngine.rootfs(this), WEB_IN_PC_FILE)
+        if (on) {
+            f.parentFile?.mkdirs()
+            f.writeText("1\n")
+        } else {
+            f.delete()
+        }
     }
 
     /** A YouTube link was copied in the PC: offer to play it smoothly here. */
@@ -530,7 +575,9 @@ class CloudPcDesktopActivity : ComponentActivity() {
             "Boost now – stop background jobs, free memory" +
             (if (gpu) "Graphics: Phone GPU (VirGL) – tap for CPU" else "Graphics: CPU – tap for Phone GPU (VirGL)") +
             (if (view?.phoneTouch != false) "Touch: phone style (swipe scrolls) – tap for mouse style"
-            else "Touch: mouse style (drag selects) – tap for phone style")
+            else "Touch: mouse style (drag selects) – tap for phone style") +
+            (if (webInPc()) "Web apps: PC browser (slow) – tap for fast window"
+            else "Web apps: fast window (phone engine) – tap for PC browser")
         AlertDialog.Builder(this)
             .setTitle("AirBoost (now: ${now.label})")
             .setItems(labels) { _, i ->
@@ -540,6 +587,17 @@ class CloudPcDesktopActivity : ComponentActivity() {
                 }
                 if (i == profiles.size + 1) {
                     boostNow()
+                    return@setItems
+                }
+                if (i == profiles.size + 4) {
+                    val inPc = !webInPc()
+                    setWebInPc(inPc)
+                    Toast.makeText(
+                        this,
+                        if (inPc) "YouTube and AI web apps open in the PC browser (Brave)"
+                        else "YouTube and AI web apps open in the fast window (phone engine)",
+                        Toast.LENGTH_LONG,
+                    ).show()
                     return@setItems
                 }
                 if (i == profiles.size + 3) {

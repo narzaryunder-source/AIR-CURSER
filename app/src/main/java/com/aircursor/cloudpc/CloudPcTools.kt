@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 19
+    const val VERSION = 20
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -116,6 +116,14 @@ object CloudPcTools {
         // VS Code: light settings for a phone (only when the person has no settings of their own yet).
         for (rel in listOf("root/.config/Code/User/settings.json", "root/.vscode-server/data/Machine/settings.json")) {
             if (!File(CloudPcEngine.rootfs(c), rel).exists()) put(rel, VSCODE_SETTINGS)
+        }
+        // YouTube in the fast window (phone engine): Start menu + one desktop icon (made once).
+        val yt = entry("YouTube", "cloudpc-web https://m.youtube.com", "youtube", "AudioVideo;Video;Network;",
+            "YouTube, smooth – runs on the phone's own engine in a window over the PC")
+        put("usr/share/applications/cloudpc-youtube.desktop", yt)
+        if (!File(CloudPcEngine.rootfs(c), "var/lib/cloudpc/youtube-icon").exists()) {
+            put("root/Desktop/YouTube.desktop", yt, exec = true)
+            put("var/lib/cloudpc/youtube-icon", "1\n")
         }
         // Smooth video: the phone's own video chip plays it in a window over the PC (Win+Y).
         put("usr/local/bin/cloudpc-phone-video", PHONE_VIDEO, exec = true)
@@ -864,6 +872,19 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         #!/bin/sh
         URL="${'$'}1"
         [ -n "${'$'}URL" ] || exit 1
+        # Fast window: the phone's own web engine shows the site over the PC (GPU, hardware video,
+        # fast JavaScript) – YouTube and AI chats are far too heavy for the PC's CPU-drawn browser.
+        # Not for Google sign-in pages (Google blocks them in app web views). Off: AirBoost menu.
+        HOST=${'$'}(printf '%s' "${'$'}URL" | sed -E 's#^[a-z]+://([^/:]+).*#\1#')
+        if [ -z "${'$'}CLOUDPC_PC_BROWSER" ] && [ ! -f /root/.config/cloudpc/web-in-pc-browser ]; then
+            case "${'$'}HOST" in
+                *.google.com|google.com|accounts.*) ;;
+                *)
+                    . /tmp/cloudpc-session.env 2>/dev/null
+                    printf '%s' "aircursor-web:${'$'}URL" | timeout 15 xclip -quiet -selection clipboard >/dev/null 2>&1 &
+                    exit 0 ;;
+            esac
+        fi
         # Brave unless the person chose Firefox as the default browser.
         if [ -x /usr/bin/brave-browser-stable ] && ! { grep -qs '^WebBrowser=firefox' /root/.config/xfce4/helpers.rc && command -v firefox >/dev/null; }; then
             exec cloudpc-launch brave-browser.desktop /usr/bin/brave-browser-stable --app="${'$'}URL"
