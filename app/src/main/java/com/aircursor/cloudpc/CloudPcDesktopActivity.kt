@@ -267,7 +267,9 @@ class CloudPcDesktopActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = when {
                 lockView != null -> finish()
-                videoPlayer.isOpen -> if (!videoPlayer.back()) videoPlayer.close()
+                videoPlayer.isOpen -> {
+                    if (!videoPlayer.back()) videoPlayer.close()
+                }
                 else -> askExit()
             }
         })
