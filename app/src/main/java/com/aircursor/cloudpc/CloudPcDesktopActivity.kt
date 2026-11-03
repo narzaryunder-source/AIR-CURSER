@@ -52,6 +52,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         private const val PREFS = "cloudpc_engine"
         private const val KEY_FPS = "show_fps"
         private const val KEY_PHONE_TOUCH = "phone_touch"
+        private const val KEY_STYLE = "pc_style"
         private const val ON = 0xEE4F46E5.toInt()
 
         /** The PC asks to open a web link in the phone's own browser (logins: fast, already signed in). */
@@ -253,6 +254,9 @@ class CloudPcDesktopActivity : ComponentActivity() {
                 if (lockView == null) {
                     when {
                         url == "air:home" -> openAir(null)
+                        // A game started from TS Station (shown in Air): Air steps aside, then comes back.
+                        url == "air:minimize" -> air?.minimize()
+                        url == "air:show" -> if (air != null) openAir(null)
                         url.startsWith("https://") || url.startsWith("http://") -> openAir(url)
                     }
                 }
@@ -623,7 +627,9 @@ class CloudPcDesktopActivity : ComponentActivity() {
             (if (view?.phoneTouch != false) "Touch: phone style (swipe scrolls) – tap for mouse style"
             else "Touch: mouse style (drag selects) – tap for phone style") +
             (if (webInPc()) "Web links: Brave in the PC (slow) – tap for Air"
-            else "Web links: Air, phone engine (fast) – tap for Brave in the PC")
+            else "Web links: Air, phone engine (fast) – tap for Brave in the PC") +
+            (if (prefs.getString(KEY_STYLE, "dock") == "windows") "PC style: Windows taskbar – tap for the modern dock"
+            else "PC style: modern dock – tap for the Windows taskbar")
         AlertDialog.Builder(this)
             .setTitle("AirBoost (now: ${now.label})")
             .setItems(labels) { _, i ->
@@ -633,6 +639,17 @@ class CloudPcDesktopActivity : ComponentActivity() {
                 }
                 if (i == profiles.size + 1) {
                     boostNow()
+                    return@setItems
+                }
+                if (i == profiles.size + 5) {
+                    val next = if (prefs.getString(KEY_STYLE, "dock") == "windows") "dock" else "windows"
+                    prefs.edit().putString(KEY_STYLE, next).apply()
+                    CloudPcService.send(this, CloudPcService.ACTION_RUN, CloudPcDesktop.inSession("aircursor-style $next"))
+                    Toast.makeText(
+                        this,
+                        if (next == "dock") "PC style: modern dock (a few seconds)" else "PC style: Windows taskbar (a few seconds)",
+                        Toast.LENGTH_SHORT,
+                    ).show()
                     return@setItems
                 }
                 if (i == profiles.size + 4) {

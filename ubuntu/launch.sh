@@ -120,6 +120,32 @@ Until then: close other windows (for example Firefox) and open $NAME again.
 # Game mode: background helpers and animations off while games run (frees CPU for FPS).
 [ $GAME = 1 ] && command -v cloudpc-light >/dev/null 2>&1 && (cloudpc-light 0 >/dev/null 2>&1 &)
 
+# Game resolution: a big desktop (Balanced / Quality profile) makes 3D games draw up to 2.8× more
+# pixels on the CPU. While the game runs the desktop is 960 wide (the Game profile, sharpened by the
+# app); afterwards it goes back. Off: create ~/.config/cloudpc/no-game-resolution
+GAME_RES=""
+if [ $GAME = 1 ] && [ ! -f /root/.config/cloudpc/no-game-resolution ] && command -v cloudpc-resize >/dev/null 2>&1; then
+    CUR=$(xrandr 2>/dev/null | awk '/ current / {gsub(",", "", $10); print $8 " " $10; exit}')
+    CW=${CUR% *}; CH=${CUR#* }
+    # A game started meanwhile by another launcher (still running) already changed it: leave it.
+    OWNER=$(cut -d' ' -f1 /tmp/cloudpc-game-res 2>/dev/null)
+    if [ -n "$OWNER" ] && kill -0 "$OWNER" 2>/dev/null; then CUR=""; fi
+    if [ -n "$CUR" ] && [ "$CW" -gt 1000 ] 2>/dev/null; then
+        NH=$(( CH * 960 / CW / 2 * 2 ))
+        if cloudpc-resize 960 "$NH" >/dev/null 2>&1; then
+            GAME_RES="$CW $CH"
+            echo "$$ $GAME_RES" > /tmp/cloudpc-game-res
+        fi
+    fi
+fi
+restore_resolution() {
+    [ -n "$GAME_RES" ] || return 0
+    rm -f /tmp/cloudpc-game-res
+    cloudpc-resize $GAME_RES >/dev/null 2>&1
+    GAME_RES=""
+}
+
+trap 'restore_resolution; rm -f "$LOG"' EXIT
 run 0
 if [ $RC -eq 137 ] && [ "$LIMIT" != off ]; then
     echo "CLOUDPC_APP: $NAME was closed by Android (program limit, $(programs) running)" | tee -a /tmp/cloudpc-app-errors.log >&2

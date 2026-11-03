@@ -409,7 +409,7 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_air"
+private const val WHATS_NEW_ID = "whatsnew_store"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
@@ -422,6 +422,9 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             UiPrefs.close(context, WHATS_NEW_ID)
             whatsNew = false
         }) {
+            Bullet("Air Store: Apple-style store – Spotify, YouTube Music, Netflix, Photopea, AI apps and PC apps")
+            Bullet("New PC look: modern dock and our own wallpaper (Windows taskbar still one tap away)")
+            Bullet("Games: smoother – the PC drops to the Game resolution while a game runs")
             Bullet("Air – our own browser on the phone's engine: fast YouTube & AI apps, Google sign-in works")
             Bullet("Faster setup: the ready-made PC (370 MB) is unpacked – no long install, far fewer errors")
             Bullet("Touch like a phone: swipe scrolls with glide, hold = right click, hold + move = select")

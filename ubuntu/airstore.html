@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Air Store</title>
+<style>
+  :root {
+    --bg: #f5f5f7; --side: #ececf0; --card: #ffffff; --text: #1d1d1f; --muted: #6e6e73; --faint: #a1a1a6;
+    --line: rgba(0,0,0,.08); --blue: #0071e3; --get: #eef1f6; --radius: 16px;
+    font-family: -apple-system, "SF Pro Text", "Inter", system-ui, "Segoe UI", Roboto, sans-serif; color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111114; --side: #1b1b1f; --card: #1f1f24; --text: #f5f5f7; --muted: #a1a1a6; --faint: #6e6e73;
+      --line: rgba(255,255,255,.08); --blue: #2997ff; --get: #2c2c33; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+  .app { display: flex; height: 100vh; }
+  /* sidebar */
+  nav { width: 200px; flex: none; background: var(--side); border-right: 1px solid var(--line); padding: 14px 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; padding: 2px 8px 12px; letter-spacing: -.01em; }
+  .brand i { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(135deg, #4f7cff, #8b5cf6); display: grid; place-items: center; color: #fff; font-style: normal; font-size: 14px; }
+  .search { margin: 0 2px 10px; padding: 7px 10px; border-radius: 9px; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: 13px; outline: none; width: calc(100% - 4px); }
+  .search:focus { border-color: var(--blue); }
+  nav button { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 8px; font-size: 13.5px; text-align: left; color: var(--text); }
+  nav button span { width: 18px; text-align: center; }
+  nav button.on { background: var(--blue); color: #fff; }
+  nav button:not(.on):hover { background: var(--line); }
+  .free { margin-top: auto; padding: 10px; font-size: 11.5px; color: var(--muted); }
+  /* main */
+  main { flex: 1; overflow-y: auto; padding: 18px 26px 40px; scroll-behavior: smooth; }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin: 2px 0 14px; }
+  h2 { font-size: 19px; font-weight: 700; letter-spacing: -.01em; margin: 22px 0 10px; display: flex; align-items: baseline; justify-content: space-between; }
+  h2 small { font-size: 13px; color: var(--blue); font-weight: 500; cursor: pointer; }
+  /* hero */
+  .hero { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(300px, 46%); gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 4px; scrollbar-width: none; }
+  .hero::-webkit-scrollbar { display: none; }
+  .feature { scroll-snap-align: start; position: relative; height: 190px; border-radius: 18px; padding: 18px; color: #fff; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; text-align: left; }
+  .feature small { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .85; }
+  .feature b { font-size: 22px; letter-spacing: -.02em; line-height: 1.15; margin: 4px 0 2px; }
+  .feature p { margin: 0; font-size: 13px; opacity: .9; }
+  .feature img { position: absolute; right: 18px; top: 18px; width: 64px; height: 64px; border-radius: 15px; box-shadow: 0 8px 24px rgba(0,0,0,.25); background: #fff; }
+  /* rows and grids */
+  .row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(230px, 31%); grid-template-rows: repeat(3, auto); gap: 0 18px; overflow-x: auto; scrollbar-width: none; }
+  .row::-webkit-scrollbar { display: none; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0 18px; }
+  .item { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); min-width: 0; cursor: pointer; }
+  .icon { width: 50px; height: 50px; border-radius: 12px; flex: none; background: var(--get) center / cover no-repeat; display: grid; place-items: center; font-weight: 700; color: #fff; overflow: hidden; border: 1px solid var(--line); }
+  .icon img { width: 100%; height: 100%; object-fit: cover; }
+  .meta { flex: 1; min-width: 0; }
+  .meta b { display: block; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .meta span { display: block; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .get { flex: none; min-width: 66px; height: 28px; padding: 0 14px; border-radius: 999px; background: var(--get); color: var(--blue); font-weight: 700; font-size: 13px; display: grid; place-items: center; }
+  .get.open { background: var(--get); }
+  .get.busy { background: none; padding: 0; min-width: 28px; }
+  .ring { width: 28px; height: 28px; transform: rotate(-90deg); }
+  .ring circle { fill: none; stroke-width: 3; }
+  .ring .bg { stroke: var(--line); } .ring .fg { stroke: var(--blue); stroke-linecap: round; transition: stroke-dashoffset .3s; }
+  .waiting { font-size: 11px; color: var(--muted); font-weight: 600; }
+  /* detail sheet */
+  .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: grid; place-items: center; z-index: 10; animation: fade .15s; }
+  .sheet[hidden] { display: none; }
+  @keyframes fade { from { opacity: 0; } }
+  .panel { width: min(760px, 94vw); max-height: 92vh; overflow-y: auto; background: var(--card); border-radius: 20px; padding: 22px; box-shadow: 0 30px 80px rgba(0,0,0,.3); }
+  .top { display: flex; gap: 16px; align-items: center; }
+  .top .icon { width: 84px; height: 84px; border-radius: 19px; font-size: 26px; }
+  .top h3 { margin: 0; font-size: 22px; letter-spacing: -.02em; }
+  .top p { margin: 3px 0 10px; color: var(--muted); font-size: 13px; }
+  .top .actions { display: flex; gap: 8px; align-items: center; }
+  .btn { height: 30px; padding: 0 18px; border-radius: 999px; background: var(--blue); color: #fff; font-weight: 700; font-size: 13px; }
+  .btn.light { background: var(--get); color: var(--blue); }
+  .btn.red { background: none; color: #e5484d; padding: 0 6px; font-weight: 600; }
+  .close { margin-left: auto; align-self: flex-start; width: 28px; height: 28px; border-radius: 50%; background: var(--get); color: var(--muted); font-size: 16px; }
+  .facts { display: flex; gap: 0; margin: 16px 0 6px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); overflow-x: auto; }
+  .facts div { flex: 1; min-width: 110px; padding: 10px 8px; text-align: center; border-right: 1px solid var(--line); }
+  .facts div:last-child { border-right: 0; }
+  .facts small { display: block; font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+  .facts b { display: block; font-size: 14px; margin-top: 3px; color: var(--muted); }
+  .shots { display: flex; gap: 10px; overflow-x: auto; padding: 8px 0; scrollbar-width: none; }
+  .shots img { height: 190px; border-radius: 12px; border: 1px solid var(--line); flex: none; }
+  .about { font-size: 13.5px; line-height: 1.55; color: var(--text); white-space: pre-line; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: rgba(29,29,31,.92); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 13px; z-index: 20; max-width: 90vw; }
+  .toast[hidden] { display: none; }
+  .empty { color: var(--muted); font-size: 14px; padding: 30px 0; }
+  .more { margin-top: 14px; }
+  /* small screens (phone in landscape) */
+  @media (max-width: 860px) {
+    nav { width: 160px; }
+    main { padding: 14px 16px 30px; }
+    .hero { grid-auto-columns: minmax(260px, 72%); }
+    .feature { height: 160px; }
+    .row { grid-auto-columns: minmax(220px, 46%); }
+  }
+  @media (max-height: 420px) {
+    .feature { height: 140px; padding: 14px; } .feature b { font-size: 18px; } .feature img { width: 52px; height: 52px; }
+    h1 { font-size: 22px; margin-bottom: 10px; } h2 { margin-top: 16px; }
+    .shots img { height: 140px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav id="nav">
+    <div class="brand"><i>A</i>Air Store</div>
+    <input id="q" class="search" placeholder="Search" autocomplete="off">
+    <button data-page="discover" class="on"><span>✦</span>Discover</button>
+    <button data-page="Music"><span>♫</span>Music</button>
+    <button data-page="Movies & TV"><span>▶</span>Movies & TV</button>
+    <button data-page="AI & Coding"><span>⌘</span>AI & Coding</button>
+    <button data-page="Photo & Video"><span>✎</span>Create</button>
+    <button data-page="Office"><span>▤</span>Work</button>
+    <button data-page="Social"><span>☺</span>Social</button>
+    <button data-page="Learn"><span>✐</span>Learn</button>
+    <button data-page="Games"><span>◆</span>Games</button>
+    <button data-page="Tools"><span>⚙</span>Tools</button>
+    <button data-page="installed"><span>✓</span>Installed</button>
+    <div class="free" id="free"></div>
+  </nav>
+  <main id="main"></main>
+</div>
+<div class="sheet" id="sheet" hidden><div class="panel" id="panel"></div></div>
+<div class="toast" id="toast" hidden></div>
+<script>
+"use strict";
+const KEY = new URLSearchParams(location.hash.slice(1)).get("k") || "";
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const S = { apps: [], page: "discover", job: {}, queue: [], search: [], open: null };
+
+async function api(path, body) {
+  const o = { headers: { "X-Key": KEY } };
+  if (body) { o.method = "POST"; o.body = JSON.stringify(body); }
+  const r = await fetch(path, o);
+  return r.json();
+}
+
+/* ---------- logos: Flathub (real app logos) or the website's own icon ---------- */
+const fh = {};
+function flathub(id) {
+  if (!id) return Promise.resolve(null);
+  if (!(id in fh)) {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem("fh:" + id) || "null"); } catch (_) { /* ignore */ }
+    fh[id] = saved ? Promise.resolve(saved) : fetch("https://flathub.org/api/v2/appstream/" + encodeURIComponent(id))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return null;
+        const shots = (d.screenshots || []).map((s) => {
+          const sz = (s.sizes || []).filter((x) => x.src && +x.width <= 752);
+          return (sz.sort((a, b) => +b.width - +a.width)[0] || (s.sizes || [])[0] || {}).src;
+        }).filter(Boolean).slice(0, 5);
+        const v = { icon: d.icon || null, shots, about: (d.description || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(), dev: d.developer_name || "" };
+        try { localStorage.setItem("fh:" + id, JSON.stringify(v)); } catch (_) { /* ignore */ }
+        return v;
+      }).catch(() => null);
+  }
+  return fh[id];
+}
+const favicon = (d) => `https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${d}&size=128`;
+const COLORS = ["#ff6b6b", "#4f7cff", "#22c55e", "#f59e0b", "#a855f7", "#14b8a6", "#ec4899"];
+function iconEl(a, big) {
+  const el = document.createElement("div");
+  el.className = "icon";
+  const fallback = () => {
+    el.textContent = a.name.slice(0, 1).toUpperCase();
+    el.style.background = COLORS[a.name.charCodeAt(0) % COLORS.length];
+  };
+  const put = (src) => {
+    const img = new Image();
+    img.onload = () => { el.textContent = ""; el.style.background = "#fff"; el.appendChild(img); };
+    img.onerror = fallback;
+    img.src = src;
+  };
+  fallback();
+  if (a.fh) flathub(a.fh).then((d) => (d && d.icon ? put(d.icon) : a.domain ? put(favicon(a.domain)) : null));
+  else if (a.domain) put(favicon(a.domain));
+  return el;
+}
+
+/* ---------- buttons: GET / OPEN / progress ring ---------- */
+function buttonFor(a) {
+  const b = document.createElement("button");
+  b.dataset.id = a.id;
+  paintButton(b, a);
+  b.addEventListener("click", (e) => { e.stopPropagation(); act(a); });
+  return b;
+}
+function paintButton(b, a) {
+  const running = S.job.state === "running" && S.job.id === a.id;
+  const waiting = S.queue.includes(a.id);
+  b.className = "get";
+  if (running) {
+    const p = Math.max(3, S.job.percent || 0), c = 2 * Math.PI * 11;
+    b.classList.add("busy");
+    b.innerHTML = `<svg class="ring" viewBox="0 0 28 28"><circle class="bg" cx="14" cy="14" r="11"/><circle class="fg" cx="14" cy="14" r="11" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - p / 100)}"/></svg>`;
+  } else if (waiting) {
+    b.innerHTML = '<span class="waiting">WAITING</span>';
+  } else {
+    b.textContent = a.installed ? "OPEN" : "GET";
+    if (a.installed) b.classList.add("open");
+  }
+}
+function refreshButtons() {
+  document.querySelectorAll("button.get[data-id]").forEach((b) => {
+    const a = find(b.dataset.id);
+    if (a) paintButton(b, a);
+  });
+  if (S.open) renderSheet(S.open);
+}
+const find = (id) => S.apps.find((a) => a.id === id) || S.search.find((a) => a.id === id);
+
+async function act(a) {
+  if (a.installed) {
+    toast(a.web ? `Opening ${a.name} in Air…` : `Opening ${a.name}…`);
+    api("/api/open", { id: a.id });
+    return;
+  }
+  if (S.job.state === "running" && S.job.id === a.id) return;
+  if (a.size >= 500 && !confirm(`${a.name} is a big download (about ${a.size} MB). On a phone this can take 10–30 minutes. Install?`)) return;
+  const r = await api("/api/install", { id: a.id });
+  if (!r.ok) { toast(r.error || "Could not start"); return; }
+  if (a.web) { toast(`${a.name} added – it is on the desktop and opens in Air`); await load(); return; }
+  toast(`Installing ${a.name}… you can keep browsing`);
+  poll();
+}
+async function remove(a) {
+  if (!confirm(`Remove ${a.name}? Your own files stay.`)) return;
+  const r = await api("/api/remove", { id: a.id });
+  if (!r.ok) { toast(r.error || "Could not remove"); return; }
+  if (a.web) { await load(); toast(`${a.name} removed`); return; }
+  poll();
+}
+let polling = false;
+async function poll() {
+  if (polling) return;
+  polling = true;
+  let last = "";
+  while (true) {
+    const j = await api("/api/job").catch(() => null);
+    if (!j) break;
+    S.job = j; S.queue = j.queue || [];
+    refreshButtons();
+    if (j.state !== "running" && !S.queue.length) {
+      const key = j.id + j.state;
+      if (j.state === "done" && key !== last) toast(`${(find(j.id) || {}).name || "App"}: ${j.text}`);
+      if (j.state === "failed") toast(`${(find(j.id) || {}).name || "App"}: ${j.text}`);
+      last = key;
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 900));
+  }
+  polling = false;
+  await load();
+}
+
+/* ---------- pages ---------- */
+function item(a) {
+  const el = document.createElement("div");
+  el.className = "item";
+  el.appendChild(iconEl(a));
+  const m = document.createElement("div");
+  m.className = "meta";
+  m.innerHTML = `<b>${esc(a.name)}</b><span>${esc(a.desc)}</span>`;
+  el.appendChild(m);
+  el.appendChild(buttonFor(a));
+  el.addEventListener("click", () => openSheet(a));
+  return el;
+}
+function list(cls, apps) {
+  const box = document.createElement("div");
+  box.className = cls;
+  apps.forEach((a) => box.appendChild(item(a)));
+  return box;
+}
+const FEATURES = [
+  { id: "web-spotify", tag: "Now in your PC", title: "Spotify", text: "Music and podcasts, smooth on the phone's engine.", bg: "linear-gradient(135deg,#1db954,#0b6b2f)" },
+  { id: "web-ytmusic", tag: "Listen", title: "YouTube Music", text: "Songs, albums and videos – in Air.", bg: "linear-gradient(135deg,#ff2d55,#8a1538)" },
+  { id: "vscode", tag: "Build", title: "Code on your phone", text: "VS Code, Python, GitHub – a real PC.", bg: "linear-gradient(135deg,#2f6bff,#7b3ff2)" },
+  { id: "web-photopea", tag: "Create", title: "Photopea", text: "Photoshop-like editing, right here.", bg: "linear-gradient(135deg,#18a497,#0d4f5c)" },
+  { id: "web-netflix", tag: "Watch", title: "Netflix", text: "Films and series in Air.", bg: "linear-gradient(135deg,#e50914,#4d0306)" },
+];
+function render() {
+  const main = $("#main");
+  main.innerHTML = "";
+  main.scrollTop = 0;
+  const q = $("#q").value.trim().toLowerCase();
+  if (q) return renderSearch(main, q);
+  if (S.page === "discover") {
+    main.insertAdjacentHTML("beforeend", "<h1>Discover</h1>");
+    const hero = document.createElement("div");
+    hero.className = "hero";
+    for (const f of FEATURES) {
+      const a = find(f.id);
+      if (!a) continue;
+      const c = document.createElement("button");
+      c.className = "feature";
+      c.style.background = f.bg;
+      c.innerHTML = `<small>${esc(f.tag)}</small><b>${esc(f.title)}</b><p>${esc(f.text)}</p>`;
+      const ic = iconEl(a); ic.style.cssText += ";position:absolute;right:18px;top:18px;width:64px;height:64px;border-radius:15px;box-shadow:0 8px 24px rgba(0,0,0,.25)";
+      c.appendChild(ic);
+      c.addEventListener("click", () => openSheet(a));
+      hero.appendChild(c);
+    }
+    main.appendChild(hero);
+    const sections = [
+      ["Essentials", S.apps.filter((a) => a.popular)],
+      ["Music", S.apps.filter((a) => a.cat === "Music"), "Music"],
+      ["AI assistants", S.apps.filter((a) => a.cat === "AI & Coding" && a.web), "AI & Coding"],
+      ["Create", S.apps.filter((a) => a.cat === "Photo & Video"), "Photo & Video"],
+      ["Movies & TV", S.apps.filter((a) => a.cat === "Movies & TV"), "Movies & TV"],
+      ["Games", S.apps.filter((a) => a.cat === "Games"), "Games"],
+    ];
+    for (const [title, apps, page] of sections) {
+      if (!apps.length) continue;
+      const h = document.createElement("h2");
+      h.innerHTML = `${esc(title)}${page ? "<small>See all</small>" : ""}`;
+      if (page) h.querySelector("small").addEventListener("click", () => go(page));
+      main.appendChild(h);
+      main.appendChild(list("row", apps.slice(0, 12)));
+    }
+    return;
+  }
+  if (S.page === "installed") {
+    main.insertAdjacentHTML("beforeend", "<h1>Installed</h1>");
+    const apps = S.apps.filter((a) => a.installed);
+    if (!apps.length) main.insertAdjacentHTML("beforeend", '<p class="empty">Nothing installed from the store yet.</p>');
+    main.appendChild(list("grid", apps));
+    return;
+  }
+  const title = { "Photo & Video": "Create", Office: "Work" }[S.page] || S.page;
+  main.insertAdjacentHTML("beforeend", `<h1>${esc(title)}</h1>`);
+  const apps = S.apps.filter((a) => a.cat === S.page);
+  const pkgs = apps.filter((a) => !a.web), webs = apps.filter((a) => a.web);
+  if (webs.length) { main.insertAdjacentHTML("beforeend", "<h2>Web apps · open in Air, no download</h2>"); main.appendChild(list("grid", webs)); }
+  if (pkgs.length) { main.insertAdjacentHTML("beforeend", "<h2>Apps for the PC</h2>"); main.appendChild(list("grid", pkgs)); }
+  if (S.page === "Games") main.insertAdjacentHTML("beforeend", '<p class="note">More games with pictures: TS Station → Store.</p>');
+}
+function renderSearch(main, q) {
+  main.insertAdjacentHTML("beforeend", `<h1>Results for “${esc(q)}”</h1>`);
+  const apps = S.apps.filter((a) => (a.name + " " + a.desc + " " + a.cat).toLowerCase().includes(q));
+  if (apps.length) main.appendChild(list("grid", apps));
+  else main.insertAdjacentHTML("beforeend", '<p class="empty">Nothing in the store matches.</p>');
+  const more = document.createElement("div");
+  more.className = "more";
+  const b = document.createElement("button");
+  b.className = "btn light";
+  b.textContent = "Search all Ubuntu apps";
+  b.addEventListener("click", async () => {
+    b.textContent = "Searching…";
+    const r = await api("/api/search?q=" + encodeURIComponent(q));
+    S.search = r.apps || [];
+    more.innerHTML = S.search.length ? "<h2>Ubuntu apps</h2>" : '<p class="empty">No Ubuntu apps found – try an English word.</p>';
+    more.appendChild(list("grid", S.search));
+  });
+  more.appendChild(b);
+  main.appendChild(more);
+}
+function go(page) {
+  S.page = page;
+  $("#q").value = "";
+  document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.page === page));
+  render();
+}
+
+/* ---------- app page ---------- */
+function openSheet(a) { S.open = a; renderSheet(a); $("#sheet").hidden = false; }
+function closeSheet() { S.open = null; $("#sheet").hidden = true; }
+function renderSheet(a0) {
+  const a = find(a0.id) || a0;
+  const p = $("#panel");
+  p.innerHTML = "";
+  const top = document.createElement("div");
+  top.className = "top";
+  top.appendChild(iconEl(a, true));
+  const t = document.createElement("div");
+  t.innerHTML = `<h3>${esc(a.name)}</h3><p>${esc(a.desc)}</p>`;
+  const acts = document.createElement("div");
+  acts.className = "actions";
+  const main = buttonFor(a);
+  main.className = main.classList.contains("busy") ? main.className : "btn" + (a.installed ? " light" : "");
+  acts.appendChild(main);
+  if (a.installed && a.removable !== false) {
+    const r = document.createElement("button");
+    r.className = "btn red"; r.textContent = "Remove";
+    r.addEventListener("click", () => remove(a));
+    acts.appendChild(r);
+  }
+  t.appendChild(acts);
+  top.appendChild(t);
+  const x = document.createElement("button");
+  x.className = "close"; x.textContent = "✕";
+  x.addEventListener("click", closeSheet);
+  top.appendChild(x);
+  p.appendChild(top);
+  const facts = document.createElement("div");
+  facts.className = "facts";
+  const kind = a.web ? "Web app" : "PC app";
+  const size = a.web ? "No download" : a.size ? `${a.size} MB` : "–";
+  const runs = a.web ? "In Air (fast)" : a.size >= 300 ? "Heavy" : "Smooth";
+  facts.innerHTML = `<div><small>Price</small><b>Free</b></div><div><small>Type</small><b>${kind}</b></div>` +
+    `<div><small>Size</small><b>${esc(size)}</b></div><div><small>Category</small><b>${esc(a.cat)}</b></div>` +
+    `<div><small>On this phone</small><b>${runs}</b></div>`;
+  p.appendChild(facts);
+  const about = document.createElement("div");
+  about.className = "about";
+  about.textContent = a.web ? `${a.desc}.\n\nOpens in Air – the phone's own fast browser engine – in a window over the PC. Sign in like on the phone (Google sign-in works). Added to the desktop and the apps menu.` : a.desc;
+  p.appendChild(about);
+  if (a.fh) {
+    flathub(a.fh).then((d) => {
+      if (!d || S.open !== a0) return;
+      if (d.shots.length) {
+        const sh = document.createElement("div");
+        sh.className = "shots";
+        d.shots.forEach((u) => { const i = new Image(); i.src = u; i.loading = "lazy"; sh.appendChild(i); });
+        p.insertBefore(sh, about);
+      }
+      if (d.about) about.textContent = d.about.slice(0, 900) + (d.about.length > 900 ? "…" : "");
+    });
+  }
+  if (!a.web) p.insertAdjacentHTML("beforeend", '<p class="note">Installs inside your AirCursor PC – it appears on the desktop and in the apps menu.</p>');
+}
+
+/* ---------- misc ---------- */
+let tt;
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(tt); tt = setTimeout(() => (t.hidden = true), 3200);
+}
+async function load() {
+  const d = await api("/api/apps");
+  S.apps = d.apps; S.job = d.job || {}; S.queue = d.queue || [];
+  $("#free").textContent = d.freeGB ? `${d.freeGB} GB free in the PC` : "";
+  if (S.open) renderSheet(S.open); else render();
+  if (S.job.state === "running" || S.queue.length) poll();
+}
+$("#nav").addEventListener("click", (e) => { const b = e.target.closest("button[data-page]"); if (b) go(b.dataset.page); });
+let qt;
+$("#q").addEventListener("input", () => { clearTimeout(qt); qt = setTimeout(render, 200); });
+$("#sheet").addEventListener("click", (e) => { if (e.target.id === "sheet") closeSheet(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
+load().catch(() => { $("#main").innerHTML = '<p class="empty">Open the Air Store from the PC (desktop or dock).</p>'; });
+</script>
+</body>
+</html>

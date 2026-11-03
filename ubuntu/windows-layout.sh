@@ -35,7 +35,7 @@ if dpkg -s xfce4-whiskermenu-plugin >/dev/null 2>&1; then add whiskermenu; else 
 q -c $P -p /plugins/plugin-$N/button-title --create -t string -s " Start"
 q -c $P -p /plugins/plugin-$N/show-button-title --create -t bool -s true
 add separator; q -c $P -p /plugins/plugin-$N/style --create -t uint -s 0
-for app in thunar.desktop firefox.desktop xfce4-terminal.desktop aircursor-store.desktop; do
+for app in thunar.desktop cloudpc-air.desktop firefox.desktop xfce4-terminal.desktop airstore.desktop aircursor-store.desktop; do
     f=$(ls /usr/share/applications 2>/dev/null | grep -ix "$app" | head -n 1)
     [ -z "$f" ] && continue
     add launcher

@@ -33,7 +33,7 @@ object ProblemReport {
         appendLine("Desktop running ${st.desktopRunning}, ready ${st.desktopReady}, busy ${st.busy}, error ${st.error ?: "–"}")
         val root = CloudPcEngine.rootfs(c)
         for ((name, lines) in listOf(
-            "tmp/cloudpc-app-errors.log" to 40, "tmp/ts-station.log" to 20, "tmp/ts-station-games.log" to 30, "tmp/pulseaudio.log" to 15,
+            "tmp/cloudpc-app-errors.log" to 40, "tmp/ts-station.log" to 20, "tmp/airstore.log" to 20, "tmp/ts-station-games.log" to 30, "tmp/pulseaudio.log" to 15,
         )) {
             val f = File(root, name)
             if (f.isFile && f.length() > 0) {

@@ -106,6 +106,8 @@ class AirBrowser(
     private val toolbar = LinearLayout(activity)
     private val address = EditText(activity)
     private val progress = View(activity)
+    private val downloads = TextView(activity)
+    private var activeDownloads = 0
     private lateinit var backBtn: ImageButton
     private lateinit var fwdBtn: ImageButton
     private lateinit var reloadBtn: ImageButton
@@ -190,6 +192,16 @@ class AirBrowser(
         addView(progress, LayoutParams(-1, dp(2)))
 
         addView(gecko, LayoutParams(-1, 0, 1f))
+        downloads.apply {
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setBackgroundColor(BAR)
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.MIDDLE
+            visibility = GONE
+        }
+        addView(downloads, LayoutParams(-1, -2))
         refreshButtons()
     }
 
@@ -716,29 +728,74 @@ class AirBrowser(
             toast("This download is empty")
             return
         }
+        // Big files over mobile data can pause for a while: do not give up after Gecko's short default.
+        response.setReadTimeoutMillis(5 * 60 * 1000L)
         val headers = response.headers.entries.associate { it.key.lowercase(Locale.ROOT) to it.value }
-        val name = URLUtil.guessFileName(response.uri, headers["content-disposition"], headers["content-type"]).replace('/', '_')
-        val pcDownloads = File(CloudPcEngine.rootfs(activity), "root/Downloads")
-        val dir = if (File(CloudPcEngine.rootfs(activity), "root").isDirectory) pcDownloads.apply { mkdirs() }
+        val name = URLUtil.guessFileName(response.uri, headers["content-disposition"], headers["content-type"])
+            .replace('/', '_').ifBlank { "download" }
+        val total = headers["content-length"]?.toLongOrNull() ?: -1L
+        val pcHome = File(CloudPcEngine.rootfs(activity), "root")
+        val inPc = pcHome.isDirectory
+        val dir = if (inPc) File(pcHome, "Downloads").apply { mkdirs() }
         else activity.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: activity.filesDir
-        toast("Downloading $name…")
+        activeDownloads++
+        showDownload("Downloading $name…")
         Thread {
+            var f = File(dir, name)
+            var i = 1
+            val base = name.substringBeforeLast('.', name)
+            val ext = if (name.contains('.')) "." + name.substringAfterLast('.') else ""
+            while (f.exists()) f = File(dir, "$base ($i)$ext").also { i++ }
+            val part = File(dir, f.name + ".part")
             val ok = try {
-                var f = File(dir, name)
-                var i = 1
-                val base = name.substringBeforeLast('.', name)
-                val ext = if (name.contains('.')) "." + name.substringAfterLast('.') else ""
-                while (f.exists()) f = File(dir, "$base ($i)$ext").also { i++ }
-                body.use { input -> f.outputStream().use { input.copyTo(it, 256 * 1024) } }
-                true
+                body.use { input ->
+                    part.outputStream().use { out ->
+                        val buf = ByteArray(256 * 1024)
+                        var done = 0L
+                        var last = 0L
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            out.write(buf, 0, n)
+                            done += n
+                            val now = System.currentTimeMillis()
+                            if (now - last > 400) {
+                                last = now
+                                val pct = if (total > 0) " – ${done * 100 / total}%" else ""
+                                post { showDownload("Downloading $name$pct (${mb(done)})") }
+                            }
+                        }
+                    }
+                }
+                part.renameTo(f)
             } catch (_: Exception) {
+                part.delete()
                 false
             }
-            activity.runOnUiThread {
-                toast(if (!ok) "The download failed" else if (dir == pcDownloads) "Saved in the PC: Downloads/$name" else "Saved: $name")
+            post {
+                activeDownloads--
+                showDownload(
+                    when {
+                        !ok -> "Download failed: $name – check the internet and try again"
+                        inPc -> "Saved in the PC: Downloads/${f.name}"
+                        else -> "Saved: ${f.name}"
+                    },
+                    hideAfter = 6000,
+                )
             }
         }.start()
     }
+
+    private fun mb(b: Long) = if (b >= 1_000_000) String.format(Locale.ROOT, "%.1f MB", b / 1e6) else "${b / 1000} KB"
+
+    private fun showDownload(text: String, hideAfter: Long = 0) {
+        downloads.text = "⬇  $text"
+        downloads.visibility = VISIBLE
+        downloads.removeCallbacks(hideDownloads)
+        if (hideAfter > 0) downloads.postDelayed(hideDownloads, hideAfter)
+    }
+
+    private val hideDownloads = Runnable { if (activeDownloads == 0) downloads.visibility = GONE }
 
     // ---- helpers ----
 

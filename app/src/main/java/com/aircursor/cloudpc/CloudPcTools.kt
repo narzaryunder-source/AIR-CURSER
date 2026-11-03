@@ -10,12 +10,12 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 21
+    const val VERSION = 23
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
         "app-store.sh", "app-store.py", "ubuntu-extras.sh", "install-deb.sh", "windows-layout.sh", "wallpaper-gui.sh",
-        "launch.sh", "apps-setup.sh",
+        "launch.sh", "apps-setup.sh", "style.sh", "airstore.py", "airstore.html",
     )
 
     fun needsSetup(c: Context): Boolean =
@@ -64,6 +64,7 @@ object CloudPcTools {
             "aircursor-install-deb" to "install-deb.sh",
             "aircursor-windows-layout" to "windows-layout.sh",
             "aircursor-wallpaper" to "wallpaper-gui.sh",
+            "aircursor-style" to "style.sh",
         )
         for ((name, script) in wrappers) {
             put("usr/local/bin/$name", "#!/bin/sh\nexport SUDO_USER=root\nexec bash /$LIB/$script \"\$@\"\n", exec = true)
@@ -129,6 +130,12 @@ object CloudPcTools {
             put("root/Desktop/Air.desktop", airEntry, exec = true)
             put("var/lib/cloudpc/air-icon", "1\n")
         }
+        // Air Store: the app store, shown in Air (phone engine); the old App Store when Air is not there.
+        put("usr/local/bin/airstore", AIRSTORE, exec = true)
+        put("usr/share/pixmaps/airstore.svg", AIRSTORE_ICON)
+        put("usr/share/applications/airstore.desktop",
+            entry("Air Store", "airstore", "/usr/share/pixmaps/airstore.svg", "System;",
+                "Apps, music, films, AI and games – one tap to get them"))
         // YouTube in Air (phone engine): Start menu + one desktop icon (made once).
         val yt = entry("YouTube", "cloudpc-web https://m.youtube.com", "youtube", "AudioVideo;Video;Network;",
             "YouTube, smooth – runs on the phone's own engine in a window over the PC")
@@ -194,7 +201,7 @@ object CloudPcTools {
         )
 
         // Menu entries
-        put("usr/share/applications/aircursor-store.desktop", entry("App Store", "aircursor-store", "system-software-install", "System;", "Apps, games and AI – install with one tap"))
+        put("usr/share/applications/aircursor-store.desktop", entry("App Store (classic)", "aircursor-store", "system-software-install", "System;", "The older app store window – Air Store is the new one"))
         put("usr/share/applications/aircursor-wallpaper.desktop", entry("Change Wallpaper", "aircursor-wallpaper", "preferences-desktop-wallpaper", "Settings;DesktopSettings;", "Change the desktop picture"))
         put(
             "usr/share/applications/aircursor-install-deb.desktop",
@@ -206,9 +213,13 @@ object CloudPcTools {
         // Windows-style taskbar on the first desktop start (the script remembers it ran).
         put(
             "etc/xdg/autostart/aircursor-windows-layout.desktop",
-            "[Desktop Entry]\nType=Application\nName=Cloud PC Windows-style layout\nExec=aircursor-windows-layout\n" +
+            "[Desktop Entry]\nType=Application\nName=AirCursor PC style\nExec=aircursor-style auto\n" +
                 "OnlyShowIn=XFCE;\nNoDisplay=true\n",
         )
+        // The look: our own wallpaper ("Night") and the PC logo for the apps menu in the dock.
+        put("usr/share/backgrounds/aircursor/night.svg",
+            c.assets.open("cloudpc/aircursor-wallpaper.svg").bufferedReader().use { it.readText() })
+        put("usr/share/pixmaps/aircursor-pc.svg", PC_LOGO)
         // Firefox: fewer background processes (less RAM on a phone), no first-run pages.
         put("etc/firefox/policies/policies.json", FIREFOX_POLICIES)
         put("usr/lib/firefox/defaults/pref/aircursor-pc.js", FIREFOX_PREFS)
@@ -224,7 +235,7 @@ object CloudPcTools {
         val icons = listOf(
             "Getting-Started.desktop" to "usr/share/applications/aircursor-guide.desktop",
             "Benchmark.desktop" to "usr/share/applications/cloudpc-benchmark.desktop",
-            "App-Store.desktop" to "usr/share/applications/aircursor-store.desktop",
+            "Air-Store.desktop" to "usr/share/applications/airstore.desktop",
             "Firefox.desktop" to "usr/share/applications/firefox.desktop",
             "Terminal.desktop" to "usr/share/applications/xfce4-terminal.desktop",
             "Change-Wallpaper.desktop" to "usr/share/applications/aircursor-wallpaper.desktop",
@@ -747,6 +758,48 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         esac
         printf '%s' "aircursor-web:${'$'}URL" | timeout 15 xclip -quiet -selection clipboard >/dev/null 2>&1 &
         exit 0
+    """.trimIndent() + "\n"
+
+    /** Air Store: the store window is a page in Air; this starts its small server in the PC first. */
+    private val AIRSTORE = """
+        #!/bin/sh
+        . /tmp/cloudpc-session.env 2>/dev/null
+        LIB=/$LIB
+        command -v cloudpc-air >/dev/null 2>&1 || exec aircursor-store "${'$'}@"
+        URL=${'$'}(head -n 1 /tmp/airstore.url 2>/dev/null)
+        # Still running from before: open it again (fast). Else start it.
+        if [ -z "${'$'}URL" ] || ! pgrep -f "python3 ${'$'}LIB/airstore.py${'$'}" >/dev/null 2>&1; then
+            pkill -f "python3 ${'$'}LIB/airstore.py${'$'}" 2>/dev/null
+            rm -f /tmp/airstore.url
+            python3 "${'$'}LIB/airstore.py" > /tmp/airstore.url 2> /tmp/airstore.log &
+            URL=""
+            for i in ${'$'}(seq 1 100); do
+                URL=${'$'}(head -n 1 /tmp/airstore.url 2>/dev/null)
+                [ -n "${'$'}URL" ] && break
+                sleep 0.1
+            done
+        fi
+        [ -n "${'$'}URL" ] || exec aircursor-store "${'$'}@"
+        exec cloudpc-air "${'$'}URL"
+    """.trimIndent() + "\n"
+
+    private val AIRSTORE_ICON = """
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+          <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#3fa9ff"/><stop offset="1" stop-color="#1a62f0"/></linearGradient></defs>
+          <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#g)"/>
+          <path d="M20 46 L32 22 L44 46 M25 37 H39" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="32" cy="16" r="3" fill="#fff"/>
+        </svg>
+    """.trimIndent() + "\n"
+
+    private val PC_LOGO = """
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+          <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#4f7cff"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
+          <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#g)"/>
+          <path d="M23 16 L23 46 L31 38 L36 49 L41 47 L36 36 L47 36 Z" fill="#fff"/>
+        </svg>
     """.trimIndent() + "\n"
 
     private val AIR_ICON = """
