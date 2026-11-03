@@ -265,12 +265,12 @@ class CloudPcDesktopActivity : ComponentActivity() {
         updateButtons()
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() = when {
-                lockView != null -> finish()
-                videoPlayer.isOpen -> {
-                    if (!videoPlayer.back()) videoPlayer.close()
+            override fun handleOnBackPressed() {
+                when {
+                    lockView != null -> finish()
+                    videoPlayer.isOpen -> if (!videoPlayer.back()) videoPlayer.close()
+                    else -> askExit()
                 }
-                else -> askExit()
             }
         })
 
