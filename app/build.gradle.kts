@@ -27,6 +27,10 @@ android {
         targetSdk = 34
         versionCode = buildNumber
         versionName = "1.0.$buildNumber"
+        // Phones only (no x86 emulator libraries): keeps the APK smaller.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     signingConfigs {
@@ -144,6 +148,9 @@ dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
     // Unpacks the ready-made AirCursor PC (tar.xz).
     implementation("org.tukaani:xz:1.9")
+    // Air browser: Mozilla's GeckoView engine (arm64 phones; same phones as AirCursor PC). A full browser
+    // engine, so Google sign-in works – unlike Android's in-app WebView. Keep it current (security).
+    implementation("org.mozilla.geckoview:geckoview-arm64-v8a:159.0.20261022150525")
 
     // Sign-in: Firebase Authentication (Google + phone OTP) and Android's Credential Manager.
     implementation(platform("com.google.firebase:firebase-bom:33.5.1"))

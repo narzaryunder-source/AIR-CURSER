@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 20
+    const val VERSION = 21
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -117,7 +117,19 @@ object CloudPcTools {
         for (rel in listOf("root/.config/Code/User/settings.json", "root/.vscode-server/data/Machine/settings.json")) {
             if (!File(CloudPcEngine.rootfs(c), rel).exists()) put(rel, VSCODE_SETTINGS)
         }
-        // YouTube in the fast window (phone engine): Start menu + one desktop icon (made once).
+        // Air, AirCursor's browser (phone engine): the PC's default browser, Start menu, desktop icon.
+        put("usr/local/bin/cloudpc-air", AIR, exec = true)
+        put("usr/share/pixmaps/air-browser.svg", AIR_ICON)
+        val airEntry = "[Desktop Entry]\nType=Application\nName=Air\nGenericName=Web Browser\n" +
+            "Comment=Fast browser on the phone's own engine – videos, AI apps, Google sign-in\n" +
+            "Exec=cloudpc-air %u\nIcon=/usr/share/pixmaps/air-browser.svg\nTerminal=false\nStartupNotify=false\n" +
+            "Categories=Network;WebBrowser;\nMimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;\n"
+        put("usr/share/applications/cloudpc-air.desktop", airEntry)
+        if (!File(CloudPcEngine.rootfs(c), "var/lib/cloudpc/air-icon").exists()) {
+            put("root/Desktop/Air.desktop", airEntry, exec = true)
+            put("var/lib/cloudpc/air-icon", "1\n")
+        }
+        // YouTube in Air (phone engine): Start menu + one desktop icon (made once).
         val yt = entry("YouTube", "cloudpc-web https://m.youtube.com", "youtube", "AudioVideo;Video;Network;",
             "YouTube, smooth – runs on the phone's own engine in a window over the PC")
         put("usr/share/applications/cloudpc-youtube.desktop", yt)
@@ -718,6 +730,35 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         done
     """.trimIndent() + "\n"
 
+    /** Air: links from the PC open in AirCursor's browser on the phone's engine (over the PC). */
+    private val AIR = """
+        #!/bin/sh
+        . /tmp/cloudpc-session.env 2>/dev/null
+        URL="${'$'}1"
+        case "${'$'}URL" in
+            "") URL="air:home" ;;
+            http://*|https://*) ;;
+            *)  # Local files and other kinds of links: the PC's own browser.
+                if [ -x /usr/bin/brave-browser-stable ]; then
+                    exec cloudpc-launch brave-browser.desktop /usr/bin/brave-browser-stable "${'$'}URL"
+                fi
+                command -v firefox >/dev/null && exec firefox "${'$'}URL"
+                exit 1 ;;
+        esac
+        printf '%s' "aircursor-web:${'$'}URL" | timeout 15 xclip -quiet -selection clipboard >/dev/null 2>&1 &
+        exit 0
+    """.trimIndent() + "\n"
+
+    private val AIR_ICON = """
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+          <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#6ea8ff"/><stop offset="1" stop-color="#b48cff"/></linearGradient></defs>
+          <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#g)"/>
+          <path d="M18 44 L32 18 L46 44" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M24 36 H40" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+        </svg>
+    """.trimIndent() + "\n"
+
     /** Windows-style keys and window snapping (set once; change them in Settings → Keyboard). */
     private val WINDOWS_KEYS = """
         #!/bin/sh
@@ -872,17 +913,12 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         #!/bin/sh
         URL="${'$'}1"
         [ -n "${'$'}URL" ] || exit 1
-        # Fast window: the phone's own web engine shows the site over the PC (GPU, hardware video,
-        # fast JavaScript) – YouTube and AI chats are far too heavy for the PC's CPU-drawn browser.
-        # Not for Google sign-in pages (Google blocks them in app web views). Off: AirBoost menu.
-        HOST=${'$'}(printf '%s' "${'$'}URL" | sed -E 's#^[a-z]+://([^/:]+).*#\1#')
+        # Air: the phone's own browser engine shows the site over the PC (GPU, hardware video, fast
+        # JavaScript, Google sign-in) – YouTube and AI chats are far too heavy for the PC's CPU-drawn
+        # browser. Off (use Brave instead): toolbar → lightning → Web apps.
         if [ -z "${'$'}CLOUDPC_PC_BROWSER" ] && [ ! -f /root/.config/cloudpc/web-in-pc-browser ]; then
-            case "${'$'}HOST" in
-                *.google.com|google.com|accounts.*) ;;
-                *)
-                    . /tmp/cloudpc-session.env 2>/dev/null
-                    printf '%s' "aircursor-web:${'$'}URL" | timeout 15 xclip -quiet -selection clipboard >/dev/null 2>&1 &
-                    exit 0 ;;
+            case "${'$'}URL" in
+                http://*|https://*) exec cloudpc-air "${'$'}URL" ;;
             esac
         fi
         # Brave unless the person chose Firefox as the default browser.

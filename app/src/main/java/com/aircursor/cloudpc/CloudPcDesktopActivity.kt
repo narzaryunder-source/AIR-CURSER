@@ -92,6 +92,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private lateinit var side: LinearLayout
     private var lockView: PcLockScreen? = null
     private lateinit var videoPlayer: PhoneVideoPlayer
+    private var air: com.aircursor.air.AirWindow? = null
     private var videoChip: View? = null
     private var hiddenAt = 0L
 
@@ -206,6 +207,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
         tools.addView(iconButton(R.drawable.ic_ui_keyboard, "Keyboard") { toggleKeyboard() })
         tools.addView(iconButton(R.drawable.ic_ui_lock, "Lock and password") { lockMenu() })
+        tools.addView(iconButton(R.drawable.ic_ui_globe, "Air browser") { openAir(null) })
         tools.addView(iconButton(R.drawable.ic_ui_play, "Smooth video on the phone (Win+Y)") { smoothVideo() })
         handButton = iconButton(R.drawable.ic_ui_hand, "Hand control") { toggleHand() }.also { tools.addView(it) }
         tools.addView(iconButton(R.drawable.ic_ui_paste, "Paste from phone") { pasteFromPhone() })
@@ -248,7 +250,12 @@ class CloudPcDesktopActivity : ComponentActivity() {
                 sendToPhone(text.removePrefix(SAVE_ON_PHONE).trim())
             } else if (text.startsWith(WEB_ON_PHONE)) {
                 val url = text.removePrefix(WEB_ON_PHONE).trim()
-                if (lockView == null && (url.startsWith("https://") || url.startsWith("http://"))) videoPlayer.browse(url)
+                if (lockView == null) {
+                    when {
+                        url == "air:home" -> openAir(null)
+                        url.startsWith("https://") || url.startsWith("http://") -> openAir(url)
+                    }
+                }
             } else if (text.startsWith(PLAY_ON_PHONE)) {
                 hideVideoChip()
                 if (lockView == null) videoPlayer.play(text.removePrefix(PLAY_ON_PHONE))
@@ -268,6 +275,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
             override fun handleOnBackPressed() {
                 when {
                     lockView != null -> finish()
+                    air?.back() == true -> Unit
                     videoPlayer.isOpen -> if (!videoPlayer.back()) videoPlayer.close()
                     else -> askExit()
                 }
@@ -312,6 +320,41 @@ class CloudPcDesktopActivity : ComponentActivity() {
         }
     }
 
+    // ---- Air, AirCursor's browser (phone engine) ----
+
+    private fun openAir(url: String?) {
+        if (!com.aircursor.air.AirEngine.supported()) {
+            // 32-bit phones: the simple fast window (Android's web view) instead.
+            videoPlayer.browse(url ?: "https://www.google.com")
+            return
+        }
+        val w = air ?: com.aircursor.air.AirWindow(
+            this, rootLayout,
+            pickPhoneFiles = { _, done ->
+                pendingAirUpload = done
+                try {
+                    airUpload.launch(arrayOf("*/*"))
+                } catch (_: Exception) {
+                    pendingAirUpload = null
+                    done(emptyList())
+                }
+            },
+            openInPc = { u ->
+                val q = "'" + u.replace("'", "'\\''") + "'"
+                CloudPcService.send(this, CloudPcService.ACTION_RUN, CloudPcDesktop.inSession("CLOUDPC_PC_BROWSER=1 cloudpc-web $q"))
+                Toast.makeText(this, "Opening in the PC browser…", Toast.LENGTH_SHORT).show()
+            },
+        ).also { air = it }
+        w.open(url)
+        tools.visibility = View.GONE
+    }
+
+    private var pendingAirUpload: ((List<Uri>) -> Unit)? = null
+    private val airUpload = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        pendingAirUpload?.invoke(uris)
+        pendingAirUpload = null
+    }
+
     /** A YouTube link was copied in the PC: offer to play it smoothly here. */
     private fun offerVideo(url: String) {
         hideVideoChip()
@@ -342,6 +385,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private fun showLock(mode: PcLockScreen.Mode) {
         lockView?.let { rootLayout.removeView(it) }
         videoPlayer.close()
+        air?.minimize()
         hideVideoChip()
         view?.locked = true
         if (DesktopInput.target === view) DesktopInput.target = null
@@ -578,8 +622,8 @@ class CloudPcDesktopActivity : ComponentActivity() {
             (if (gpu) "Graphics: Phone GPU (VirGL) – tap for CPU" else "Graphics: CPU – tap for Phone GPU (VirGL)") +
             (if (view?.phoneTouch != false) "Touch: phone style (swipe scrolls) – tap for mouse style"
             else "Touch: mouse style (drag selects) – tap for phone style") +
-            (if (webInPc()) "Web apps: PC browser (slow) – tap for fast window"
-            else "Web apps: fast window (phone engine) – tap for PC browser")
+            (if (webInPc()) "Web links: Brave in the PC (slow) – tap for Air"
+            else "Web links: Air, phone engine (fast) – tap for Brave in the PC")
         AlertDialog.Builder(this)
             .setTitle("AirBoost (now: ${now.label})")
             .setItems(labels) { _, i ->
@@ -596,8 +640,8 @@ class CloudPcDesktopActivity : ComponentActivity() {
                     setWebInPc(inPc)
                     Toast.makeText(
                         this,
-                        if (inPc) "YouTube and AI web apps open in the PC browser (Brave)"
-                        else "YouTube and AI web apps open in the fast window (phone engine)",
+                        if (inPc) "Web apps open in Brave inside the PC (Air stays in the toolbar)"
+                        else "Web apps and links open in Air (phone engine)",
                         Toast.LENGTH_LONG,
                     ).show()
                     return@setItems
@@ -838,6 +882,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         super.onResume()
         if (lockView == null) DesktopInput.target = view
         if (::videoPlayer.isInitialized) videoPlayer.resume()
+        air?.resume()
         view?.sharpness = AirBoost.current(this).sharpen
         view?.fpsLimit = AirBoost.fpsLimit(this)
         // Steady speed instead of short bursts followed by heat slow-downs (phones that support it).
@@ -852,6 +897,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
     override fun onPause() {
         if (::videoPlayer.isInitialized) videoPlayer.pause()
+        air?.pause()
         if (DesktopInput.target === view) DesktopInput.target = null
         view?.releaseAll()
         if (android.os.Build.VERSION.SDK_INT >= 24) {
@@ -872,6 +918,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     override fun onDestroy() {
         if (::status.isInitialized) status.removeCallbacks(statusTick)
         if (::videoPlayer.isInitialized) videoPlayer.close()
+        air?.close()
         view?.release()
         view = null
         super.onDestroy()

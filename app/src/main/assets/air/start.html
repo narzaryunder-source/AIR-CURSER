@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Air</title>
+<style>
+  :root { color-scheme: dark; --bg: #0b0d12; --card: #161a23; --line: rgba(255,255,255,.08); --text: #eef1f6; --muted: #9aa3b2; --accent: #6ea8ff; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: radial-gradient(ellipse at 50% -10%, #1c2440 0%, var(--bg) 60%); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 9vh 20px 40px; text-align: center; }
+  .logo { font-size: 44px; font-weight: 800; letter-spacing: -.03em; margin: 0; }
+  .logo span { background: linear-gradient(90deg, #8ab4ff, #c79bff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { color: var(--muted); font-size: 14px; margin: 6px 0 26px; }
+  form { display: flex; gap: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 6px 6px 6px 18px; }
+  input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 16px; }
+  button { border: 0; border-radius: 999px; padding: 10px 18px; background: var(--accent); color: #0b0d12; font-weight: 700; font-size: 14px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; margin-top: 26px; }
+  .tiles a { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px; border-radius: 16px; background: var(--card);
+    border: 1px solid var(--line); color: var(--text); text-decoration: none; font-size: 13px; }
+  .tiles a:active { transform: scale(.97); }
+  .tiles b { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-size: 18px; color: #fff; }
+  .note { color: var(--muted); font-size: 12px; margin-top: 26px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<main>
+  <h1 class="logo"><span>Air</span></h1>
+  <p class="sub">Fast browsing on your phone's own engine – inside AirCursor PC</p>
+  <form action="https://www.google.com/search" method="get">
+    <input name="q" placeholder="Search Google or type a web address" autocomplete="off" autofocus>
+    <button type="submit">Search</button>
+  </form>
+  <div class="tiles">
+    <a href="https://m.youtube.com"><b style="background:#e62117">▶</b>YouTube</a>
+    <a href="https://www.google.com"><b style="background:#4285f4">G</b>Google</a>
+    <a href="https://claude.ai"><b style="background:#d97757">✳</b>Claude</a>
+    <a href="https://chatgpt.com"><b style="background:#10a37f">◎</b>ChatGPT</a>
+    <a href="https://gemini.google.com"><b style="background:#7b61ff">✦</b>Gemini</a>
+    <a href="https://github.com"><b style="background:#30363d">⌂</b>GitHub</a>
+    <a href="https://mail.google.com"><b style="background:#c5221f">✉</b>Gmail</a>
+    <a href="https://en.wikipedia.org"><b style="background:#54595d">W</b>Wikipedia</a>
+  </div>
+  <p class="note">Downloads are saved in the PC's Downloads folder. Uploads can come from the PC or the phone.</p>
+</main>
+</body>
+</html>

@@ -11,6 +11,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // Air browser engine (GeckoView) – Mozilla's own repository.
+        maven { url = uri("https://maven.mozilla.org/maven2/") }
     }
 }
 

@@ -111,6 +111,31 @@ HELPER
     done
     touch "$STATE/default-browser"
 fi
+# ---- Air (AirCursor's browser, the phone's own engine) as the default browser (once) -------------
+# Links from any PC app open in Air. Change it in Settings → Default Applications.
+if [ -f "$SRC/cloudpc-air.desktop" ] && [ ! -f "$STATE/default-browser-air" ]; then
+    mkdir -p "$H/.local/share/xfce4/helpers" "$H/.config/xfce4"
+    cat > "$H/.local/share/xfce4/helpers/cloudpc-air.desktop" <<'HELPER'
+[Desktop Entry]
+NoDisplay=true
+Version=1.0
+Type=X-XFCE-Helper
+X-XFCE-Category=WebBrowser
+X-XFCE-Commands=cloudpc-air
+X-XFCE-CommandsWithParameter=cloudpc-air "%s"
+Icon=/usr/share/pixmaps/air-browser.svg
+Name=Air
+HELPER
+    rc="$H/.config/xfce4/helpers.rc"
+    touch "$rc" && sed -i '/^WebBrowser=/d' "$rc" && echo "WebBrowser=cloudpc-air" >> "$rc"
+    HOME="$H" xdg-mime default cloudpc-air.desktop x-scheme-handler/http x-scheme-handler/https \
+        text/html application/xhtml+xml >/dev/null 2>&1
+    # The pinned browser button on the taskbar becomes Air.
+    for f in "$H"/.config/xfce4/panel/launcher-*/*.desktop; do
+        [ -f "$f" ] && grep -qE '^Exec=.*(firefox|brave-browser|exo-open --launch WebBrowser)' "$f" && cp "$SRC/cloudpc-air.desktop" "$f"
+    done
+    touch "$STATE/default-browser-air"
+fi
 # Web apps made by older versions opened Firefox directly: open them in the default browser.
 for f in "$SRC"/aircursor-web-*.desktop "$H/Desktop/Web Apps"/*.desktop; do
     [ -f "$f" ] && grep -q '^Exec=firefox --new-window ' "$f" && sed -i 's|^Exec=firefox --new-window |Exec=cloudpc-web |' "$f"
