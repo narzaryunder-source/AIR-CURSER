@@ -547,6 +547,26 @@ class CloudPcDesktopActivity : ComponentActivity() {
                     return "Opening settings."
                 }
                 "new tab" -> return browser("newtab")
+                "notepad", "text editor", "notes", "editor" -> {
+                    runPc("mousepad || pc-open 'Text Editor'")
+                    return "Opening the text editor."
+                }
+                "calculator", "calc" -> {
+                    runPc("gnome-calculator || galculator || pc-open calculator")
+                    return "Opening the calculator."
+                }
+                "vs code", "vscode", "visual studio code", "code", "code editor" -> {
+                    runPc("cloudpc-vscode || pc-open code")
+                    return "Opening VS Code."
+                }
+                "task manager", "system monitor" -> {
+                    runPc("xfce4-taskmanager || pc-open 'Task Manager'")
+                    return "Opening the task manager."
+                }
+                "claude code" -> {
+                    runPc("xfce4-terminal --title='Claude Code' -x cloudpc-claude")
+                    return "Opening Claude Code."
+                }
             }
             webApps[t]?.let { (key, title, url, kind) ->
                 if (kind == "app" && com.aircursor.air.AirEngine.supported()) {
