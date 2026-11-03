@@ -187,8 +187,10 @@ class CloudPcService : Service() {
             best = maxOf(best, start + (0.98f - start) * f) // never jumps backwards
             CloudPcBus.update { it.copy(progress = best) }
         }
+        var lastError = ""
         val code = CloudPcEngine.run(this, CloudPcDesktop.INSTALL_SCRIPT, onProcess = { running = it }) { line ->
             if (line.contains("CLOUDPC_DESKTOP_OK")) ok = true
+            if (line.startsWith("E: ") || line.startsWith("Err:") || line.contains("dpkg: error")) lastError = line
             countRe.find(line)?.let { m -> total += m.groupValues[1].toInt() }
             when {
                 line.startsWith("Get:") -> { got++; show() }
@@ -203,9 +205,28 @@ class CloudPcService : Service() {
         }
         running = null
         if (installer?.cancelled == true) throw CloudPcInstaller.Cancelled()
-        if (code != 0 || !ok) throw java.io.IOException("Desktop setup stopped (code $code). Check the internet connection and tap Continue.")
+        if (code != 0 || !ok) throw java.io.IOException(setupError(code, lastError))
         java.io.File(CloudPcEngine.rootfs(this), CloudPcDesktop.MARK_DESKTOP).writeText("1\n")
         CloudPcBus.update { it.copy(title = "Desktop ready", progress = 1f) }
+    }
+
+    /** A clear reason instead of only an exit code (the last apt/dpkg error line decides). */
+    private fun setupError(code: Int, e: String): String {
+        val why = when {
+            e.contains("Temporary failure resolving") || e.contains("Could not resolve") || e.contains("Network is unreachable") ->
+                "No internet connection (or it dropped). Turn on Wi-Fi or mobile data"
+            e.contains("No space left") -> "The phone's storage is full. Free some space"
+            e.contains("Hash Sum mismatch") || e.contains("File has unexpected size") || e.contains("Mirror sync in progress") ->
+                "Ubuntu's server is updating right now. Wait 10–15 minutes"
+            e.contains("Could not get lock") -> "Another install was still running. Wait a minute"
+            e.contains("timed out") || e.contains("Connection failed") || e.contains("Failed to fetch") ->
+                "The download was too slow or broke off. Try Wi-Fi"
+            e.contains("dpkg") || e.contains("unmet dependencies") || e.contains("held broken") ->
+                "An earlier install was left half-way. Tapping Continue repairs it"
+            else -> "Setup stopped (code $code). Check the internet connection"
+        }
+        return "$why, then tap Continue setup – it continues where it stopped." +
+            if (e.isNotBlank()) "\n\nDetails: ${e.take(160)}" else ""
     }
 
     /** Starts Xvnc + XFCE as a long-running process; the viewer connects to its private socket. */

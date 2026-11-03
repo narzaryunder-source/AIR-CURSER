@@ -29,10 +29,26 @@ object CloudPcDesktop {
     /** Installs XFCE + TigerVNC (+ Firefox when possible). Takes 5–15 minutes on a phone. */
     val INSTALL_SCRIPT = """
         set -e
+        export DEBIAN_FRONTEND=noninteractive
+        APT="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
+        echo "==> Repairing an unfinished install (if any)"
+        dpkg --configure -a || true
+        apt-get ${'$'}APT -f install -y || true
+        # Up to 3 tries: a short internet drop or a mirror that is just updating must not stop the setup.
+        try() {
+            for n in 1 2 3; do
+                "${'$'}@" && return 0
+                echo "CLOUDPC_RETRY ${'$'}n: trying again in ${'$'}((n * 10)) s…"
+                rm -rf /var/lib/apt/lists/partial/* 2>/dev/null
+                sleep ${'$'}((n * 10))
+                apt-get ${'$'}APT update || true
+            done
+            return 1
+        }
         echo "==> apt-get update"
-        apt-get update
+        try apt-get ${'$'}APT update
         echo "==> Desktop (XFCE) + screen server (TigerVNC)"
-        apt-get install -y --no-install-recommends \
+        try apt-get ${'$'}APT install -y --fix-missing --no-install-recommends \
             xfce4 xfce4-terminal xfce4-whiskermenu-plugin xfce4-notifyd xfce4-taskmanager mousepad ristretto \
             tigervnc-standalone-server dbus-x11 x11-xserver-utils at-spi2-core librsvg2-common \
             fonts-dejavu-core fonts-noto-color-emoji adwaita-icon-theme elementary-xfce-icon-theme greybird-gtk-theme \
