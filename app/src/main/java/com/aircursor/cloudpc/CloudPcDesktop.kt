@@ -129,6 +129,8 @@ object CloudPcDesktop {
             done
             # Security updates for the browser, quietly (at most every 3 days).
             command -v cloudpc-security-update >/dev/null && nice -n 19 cloudpc-security-update
+            # From now on this helper is the focus boost: the app in front gets the fast cores.
+            command -v cloudpc-focus >/dev/null && exec cloudpc-focus >/dev/null 2>&1
         ) &
         wait ${'$'}XPID
     """.trimIndent() + "\n"

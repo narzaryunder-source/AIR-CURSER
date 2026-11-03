@@ -123,6 +123,25 @@
             android:taskAffinity="com.aircursor.cloudpc"
             android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"
             android:windowSoftInputMode="adjustResize|stateHidden" />
+        <!-- Share sheet → "AirCursor PC": files from any app go straight into the PC. -->
+        <activity
+            android:name=".cloudpc.ShareToPcActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="@string/ubuntu_pc_label"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Material.Dialog.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
 
         <service
             android:name=".cloudpc.CloudPcService"

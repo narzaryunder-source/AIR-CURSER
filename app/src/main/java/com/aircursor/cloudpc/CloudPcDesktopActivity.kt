@@ -58,6 +58,9 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
         /** Files → right-click → Send to phone: the PC names a file, the phone asks where to save it. */
         private const val SAVE_ON_PHONE = "aircursor-save:"
+
+        /** The PC hands a video to the phone's own player (smooth, hardware decoding). */
+        private const val PLAY_ON_PHONE = "aircursor-video:"
         private const val OFF = 0xA0101828.toInt()
 
         /** Desktop size with the phone's landscape shape (even numbers for the VNC server). */
@@ -81,6 +84,8 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private lateinit var rootLayout: FrameLayout
     private lateinit var side: LinearLayout
     private var lockView: PcLockScreen? = null
+    private lateinit var videoPlayer: PhoneVideoPlayer
+    private var videoChip: View? = null
     private var hiddenAt = 0L
 
     // Start screen: the latest step from the log, and one automatic restart if the desktop hangs.
@@ -132,6 +137,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         view = v
         val root = FrameLayout(this)
         rootLayout = root
+        videoPlayer = PhoneVideoPlayer(this, root)
         root.setBackgroundColor(Color.BLACK)
         root.addView(v, FrameLayout.LayoutParams(-1, -1))
 
@@ -175,6 +181,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
         tools.addView(iconButton(R.drawable.ic_ui_keyboard, "Keyboard") { toggleKeyboard() })
         tools.addView(iconButton(R.drawable.ic_ui_lock, "Lock and password") { lockMenu() })
+        tools.addView(iconButton(R.drawable.ic_ui_play, "Smooth video on the phone (Win+Y)") { smoothVideo() })
         handButton = iconButton(R.drawable.ic_ui_hand, "Hand control") { toggleHand() }.also { tools.addView(it) }
         tools.addView(iconButton(R.drawable.ic_ui_paste, "Paste from phone") { pasteFromPhone() })
         tools.addView(iconButton(R.drawable.ic_ui_folder, "Files") { filesMenu() })
@@ -214,16 +221,27 @@ class CloudPcDesktopActivity : ComponentActivity() {
                 openOnPhone(text.removePrefix(OPEN_ON_PHONE).trim())
             } else if (text.startsWith(SAVE_ON_PHONE)) {
                 sendToPhone(text.removePrefix(SAVE_ON_PHONE).trim())
+            } else if (text.startsWith(PLAY_ON_PHONE)) {
+                hideVideoChip()
+                if (lockView == null) videoPlayer.play(text.removePrefix(PLAY_ON_PHONE))
             } else {
                 getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("AirCursor PC", text))
-                Toast.makeText(this, "Copied to phone", Toast.LENGTH_SHORT).show()
+                if (PhoneVideoPlayer.youtubeId(text) != null && lockView == null) {
+                    offerVideo(text.trim())
+                } else {
+                    Toast.makeText(this, "Copied to phone", Toast.LENGTH_SHORT).show()
+                }
             }
         }
         setContentView(root)
         updateButtons()
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() = if (lockView != null) finish() else askExit()
+            override fun handleOnBackPressed() = when {
+                lockView != null -> finish()
+                videoPlayer.isOpen -> videoPlayer.close()
+                else -> askExit()
+            }
         })
 
         // Windows-style: password screen (or the first-start question) in front, desktop starting behind it.
@@ -233,10 +251,49 @@ class CloudPcDesktopActivity : ComponentActivity() {
         }
     }
 
+    // ---- Smooth video on the phone's own video chip ----
+
+    /** Toolbar button / Win+Y in the PC: the video in the browser pauses there and plays here. */
+    private fun smoothVideo() {
+        if (videoPlayer.isOpen) {
+            videoPlayer.close()
+            return
+        }
+        CloudPcService.send(this, CloudPcService.ACTION_RUN, CloudPcDesktop.inSession("cloudpc-phone-video"))
+        Toast.makeText(this, "Moving the video to the phone player…", Toast.LENGTH_SHORT).show()
+    }
+
+    /** A YouTube link was copied in the PC: offer to play it smoothly here. */
+    private fun offerVideo(url: String) {
+        hideVideoChip()
+        val chip = TextView(this).apply {
+            text = "▶  Play smoothly on the phone"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setPadding(dp(18), dp(10), dp(18), dp(10))
+            background = round(ON, 22)
+            elevation = dp(8).toFloat()
+            setOnClickListener {
+                hideVideoChip()
+                videoPlayer.play("0|$url")
+            }
+        }
+        videoChip = chip
+        rootLayout.addView(chip, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(14) })
+        chip.postDelayed({ if (videoChip === chip) hideVideoChip() }, 8000)
+    }
+
+    private fun hideVideoChip() {
+        videoChip?.let { rootLayout.removeView(it) }
+        videoChip = null
+    }
+
     // ---- Password lock ----
 
     private fun showLock(mode: PcLockScreen.Mode) {
         lockView?.let { rootLayout.removeView(it) }
+        videoPlayer.close()
+        hideVideoChip()
         view?.locked = true
         if (DesktopInput.target === view) DesktopInput.target = null
         side.visibility = View.GONE
@@ -703,6 +760,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (lockView == null) DesktopInput.target = view
+        if (::videoPlayer.isInitialized) videoPlayer.resume()
         view?.sharpness = AirBoost.current(this).sharpen
         view?.fpsLimit = AirBoost.fpsLimit(this)
         // Steady speed instead of short bursts followed by heat slow-downs (phones that support it).
@@ -716,6 +774,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        if (::videoPlayer.isInitialized) videoPlayer.pause()
         if (DesktopInput.target === view) DesktopInput.target = null
         view?.releaseAll()
         if (android.os.Build.VERSION.SDK_INT >= 24) {
@@ -735,6 +794,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (::status.isInitialized) status.removeCallbacks(statusTick)
+        if (::videoPlayer.isInitialized) videoPlayer.close()
         view?.release()
         view = null
         super.onDestroy()

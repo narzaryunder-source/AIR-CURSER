@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 17
+    const val VERSION = 18
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -111,6 +111,17 @@ object CloudPcTools {
         put("etc/pulse/client.conf.d/50-cloudpc.conf", "default-server = unix:/tmp/pulse-native\nautospawn = no\nenable-shm = no\n")
         // Files, GitHub, Google Drive
         put("usr/local/bin/cloudpc-send-to-phone", SEND_TO_PHONE, exec = true)
+        // Focus boost: the app in front gets the phone's fast cores (started with the desktop).
+        put("usr/local/bin/cloudpc-focus", FOCUS_BOOST, exec = true)
+        // VS Code: light settings for a phone (only when the person has no settings of their own yet).
+        for (rel in listOf("root/.config/Code/User/settings.json", "root/.vscode-server/data/Machine/settings.json")) {
+            if (!File(r0, rel).exists()) put(rel, VSCODE_SETTINGS)
+        }
+        // Smooth video: the phone's own video chip plays it in a window over the PC (Win+Y).
+        put("usr/local/bin/cloudpc-phone-video", PHONE_VIDEO, exec = true)
+        put("usr/share/applications/cloudpc-phone-video.desktop",
+            entry("Smooth video (phone)", "cloudpc-phone-video", "video-display", "AudioVideo;Video;",
+                "Play the video from the browser smoothly on the phone's video chip (Win+Y)"))
         put("usr/local/bin/cloudpc-github", GITHUB, exec = true)
         put("usr/local/bin/cloudpc-gdrive", GDRIVE, exec = true)
         put("usr/share/applications/cloudpc-github.desktop",
@@ -133,9 +144,10 @@ object CloudPcTools {
                 ?: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<actions>\n</actions>\n"
             else -> uca.readText()
         }
-        if (!ucaText.contains("aircursor-send-to-phone") && ucaText.contains("</actions>")) {
-            put("root/.config/Thunar/uca.xml", ucaText.replace("</actions>", UCA_SEND + "</actions>"))
-        }
+        var ucaNew = ucaText
+        if (!ucaNew.contains("aircursor-send-to-phone")) ucaNew = ucaNew.replace("</actions>", UCA_SEND + "</actions>")
+        if (!ucaNew.contains("aircursor-play-on-phone")) ucaNew = ucaNew.replace("</actions>", UCA_VIDEO + "</actions>")
+        if (ucaNew != ucaText && ucaNew.contains("</actions>")) put("root/.config/Thunar/uca.xml", ucaNew)
         // Older Google Drive icon opened a terminal: use the new window.
         val oldDrive = File(r0, "root/Desktop/Google-Drive.desktop")
         if (oldDrive.isFile && oldDrive.readText().contains("google-drive")) {
@@ -568,13 +580,149 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         "\t<description>Save a copy on the phone</description>\n\t<patterns>*</patterns>\n\t<directories/>\n" +
         "\t<audio-files/>\n\t<image-files/>\n\t<other-files/>\n\t<text-files/>\n\t<video-files/>\n</action>\n"
 
+    private const val UCA_VIDEO = "<action>\n\t<icon>video-display</icon>\n\t<name>Play smoothly on the phone</name>\n" +
+        "\t<unique-id>aircursor-play-on-phone</unique-id>\n\t<command>cloudpc-phone-video %f</command>\n" +
+        "\t<description>Play the video on the phone's video chip</description>\n\t<patterns>*</patterns>\n" +
+        "\t<video-files/>\n</action>\n"
+
+    /**
+     * Video → the phone's own player. Without an argument: the browser window in front gives its
+     * address (Ctrl+L, Ctrl+C), its video is paused (MPRIS) and the phone continues at the same second.
+     */
+    private val PHONE_VIDEO = """
+        #!/bin/bash
+        . /tmp/cloudpc-session.env 2>/dev/null
+        say() { notify-send -a "AirCursor PC" -i video-display "Smooth video" "${'$'}1" >/dev/null 2>&1 & }
+        send() { printf '%s' "aircursor-video:${'$'}1" | timeout 15 xclip -quiet -selection clipboard >/dev/null 2>&1 & }
+        ARG="${'$'}1"
+        if [ -n "${'$'}ARG" ] && [ -f "${'$'}ARG" ]; then
+            send "0|file://${'$'}(readlink -f "${'$'}ARG")"
+            exit 0
+        fi
+        case "${'$'}ARG" in
+            http://*|https://*) send "0|${'$'}ARG"; exit 0 ;;
+        esac
+        WID=${'$'}(xdotool getactivewindow 2>/dev/null)
+        NAME=${'$'}(xdotool getwindowname "${'$'}WID" 2>/dev/null)
+        case "${'$'}NAME" in
+            *Brave*|*Firefox*|*Chromium*|*Chrome*) ;;
+            *) say "Open the video in Brave or Firefox first, then press Win+Y (or the ▶ button in the toolbar)."; exit 1 ;;
+        esac
+        # The page's address, from the address bar.
+        xdotool key --clearmodifiers ctrl+l; sleep 0.25
+        xdotool key --clearmodifiers ctrl+c; sleep 0.3
+        xdotool key --clearmodifiers Escape
+        URL=${'$'}(timeout 2 xclip -o -selection clipboard 2>/dev/null | head -n 1)
+        case "${'$'}URL" in
+            http://*|https://*) ;;
+            *) say "Could not read the page address. Copy the video link and press Win+Y again."; exit 1 ;;
+        esac
+        # Pause it in the browser and remember where it was (media controls over the session bus).
+        POS=0
+        for P in ${'$'}(dbus-send --session --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus                 org.freedesktop.DBus.ListNames 2>/dev/null | grep -o 'org\.mpris\.MediaPlayer2\.[A-Za-z0-9._-]*'); do
+            ST=${'$'}(dbus-send --session --print-reply --dest="${'$'}P" /org/mpris/MediaPlayer2 org.freedesktop.DBus.Properties.Get                 string:org.mpris.MediaPlayer2.Player string:PlaybackStatus 2>/dev/null | grep -o 'Playing')
+            [ -n "${'$'}ST" ] || continue
+            US=${'$'}(dbus-send --session --print-reply --dest="${'$'}P" /org/mpris/MediaPlayer2 org.freedesktop.DBus.Properties.Get                 string:org.mpris.MediaPlayer2.Player string:Position 2>/dev/null | grep -o 'int64 [0-9]*' | cut -d' ' -f2)
+            [ -n "${'$'}US" ] && POS=${'$'}(( US / 1000000 ))
+            dbus-send --session --type=method_call --dest="${'$'}P" /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Pause 2>/dev/null
+        done
+        send "${'$'}POS|${'$'}URL"
+        exit 0
+    """.trimIndent() + "\n"
+
+    /** VS Code on a phone: no animations, no background update / telemetry work, fewer watched files. */
+    private val VSCODE_SETTINGS = """
+        {
+            "workbench.reduceMotion": "on",
+            "editor.smoothScrolling": false,
+            "workbench.list.smoothScrolling": false,
+            "terminal.integrated.smoothScrolling": false,
+            "editor.cursorSmoothCaretAnimation": "off",
+            "editor.minimap.enabled": false,
+            "workbench.startupEditor": "none",
+            "workbench.enableExperiments": false,
+            "telemetry.telemetryLevel": "off",
+            "update.mode": "none",
+            "extensions.autoUpdate": false,
+            "extensions.autoCheckUpdates": false,
+            "git.autofetch": false,
+            "search.followSymlinks": false,
+            "typescript.tsserver.maxTsServerMemory": 1536,
+            "files.watcherExclude": {
+                "**/node_modules/**": true,
+                "**/.git/objects/**": true,
+                "**/.venv/**": true,
+                "**/__pycache__/**": true,
+                "**/dist/**": true,
+                "**/build/**": true
+            }
+        }
+    """.trimIndent() + "\n"
+
+    /**
+     * Focus boost: phones have 2–4 fast and 4–6 power-saving cores. The app in front may use every
+     * core; apps in the background (other windows started from the menu) move to the power-saving
+     * cores, so the fast ones are free for what you use. Only CPU placement changes (can be undone
+     * any time), never priorities. Off: create ~/.config/cloudpc/no-focus-boost
+     */
+    private val FOCUS_BOOST = """
+        #!/bin/bash
+        . /tmp/cloudpc-session.env 2>/dev/null
+        exec 9>/tmp/cloudpc-focus.lock
+        flock -n 9 || exit 0
+        command -v taskset >/dev/null && command -v xdotool >/dev/null || exit 0
+        CORES=""
+        for d in /sys/devices/system/cpu/cpu[0-9]*; do
+            f=${'$'}(cat "${'$'}d/cpufreq/cpuinfo_max_freq" 2>/dev/null) || continue
+            CORES="${'$'}CORES ${'$'}{d##*cpu}:${'$'}f"
+        done
+        MIN=${'$'}(for x in ${'$'}CORES; do echo "${'$'}{x#*:}"; done | sort -n | head -n 1)
+        MAX=${'$'}(for x in ${'$'}CORES; do echo "${'$'}{x#*:}"; done | sort -n | tail -n 1)
+        [ -n "${'$'}MIN" ] && [ "${'$'}MIN" != "${'$'}MAX" ] || exit 0     # all cores alike: nothing to gain
+        LITTLE=${'$'}(for x in ${'$'}CORES; do [ "${'$'}{x#*:}" = "${'$'}MIN" ] && echo "${'$'}{x%%:*}"; done | paste -sd, -)
+        EVERY=${'$'}(for x in ${'$'}CORES; do echo "${'$'}{x%%:*}"; done | paste -sd, -)
+        declare -A PLACED
+        LAST=""
+        while sleep 2; do
+            if [ -f /root/.config/cloudpc/no-focus-boost ]; then
+                for p in "${'$'}{!PLACED[@]}"; do [ "${'$'}{PLACED[${'$'}p]}" = L ] && taskset -a -p -c "${'$'}EVERY" "${'$'}p" >/dev/null 2>&1; done
+                PLACED=(); LAST=""; sleep 30; continue
+            fi
+            W=${'$'}(xdotool getactivewindow getwindowpid 2>/dev/null)
+            [ -n "${'$'}W" ] && [ "${'$'}W" != "${'$'}LAST" ] || continue
+            LAST=${'$'}W
+            # Every app started from the menu runs under its own cloudpc-launch: one group per app.
+            while read -r pid kind; do
+                [ "${'$'}{PLACED[${'$'}pid]}" = "${'$'}kind" ] && continue
+                if [ "${'$'}kind" = L ]; then cpus=${'$'}LITTLE; else cpus=${'$'}EVERY; fi
+                taskset -a -p -c "${'$'}cpus" "${'$'}pid" >/dev/null 2>&1 && PLACED[${'$'}pid]=${'$'}kind
+            done < <(ps -eo pid=,ppid=,args= | awk -v act="${'$'}W" '
+                { pp[${'$'}1] = ${'$'}2; a = ${'$'}0; sub(/^ *[0-9]+ +[0-9]+ +/, "", a); launch[${'$'}1] = (a ~ /cloudpc\/launch\.sh/) }
+                END {
+                    for (p in pp) { r = ""; q = p; n = 0
+                        while ((q in pp) && n < 64) { if (launch[q]) { r = q; break }; q = pp[q]; n++ }
+                        root[p] = r }
+                    mine = root[act]
+                    for (p in pp) if (root[p] != "" && !launch[p]) print p, (root[p] == mine ? "B" : "L")
+                }')
+            # Forget programs that have ended.
+            for p in "${'$'}{!PLACED[@]}"; do [ -d "/proc/${'$'}p" ] || unset "PLACED[${'$'}p]"; done
+        done
+    """.trimIndent() + "\n"
+
     /** Windows-style keys and window snapping (set once; change them in Settings → Keyboard). */
     private val WINDOWS_KEYS = """
         #!/bin/sh
         STAMP=/var/lib/cloudpc/windows-keys-1
-        [ -f "${'$'}STAMP" ] && exit 0
         . /tmp/cloudpc-session.env 2>/dev/null
         k() { xfconf-query -c xfce4-keyboard-shortcuts -p "${'$'}1" --create -t string -s "${'$'}2"; }
+        mkdir -p /var/lib/cloudpc
+        # Keys added later: each set once (the person can change them in Settings → Keyboard).
+        if [ ! -f /var/lib/cloudpc/windows-keys-2 ]; then
+            k "/commands/custom/<Super>y" "cloudpc-phone-video"
+            touch /var/lib/cloudpc/windows-keys-2
+        fi
+        [ -f "${'$'}STAMP" ] && exit 0
         k "/commands/custom/<Super>e" "thunar"
         k "/commands/custom/<Super>r" "xfce4-appfinder --collapsed"
         k "/commands/custom/<Super>i" "xfce4-settings-manager"
