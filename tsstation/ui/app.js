@@ -23,6 +23,45 @@ const iconUrl = (id) => `/api/icon/${enc(id)}?k=${KEY}`;
 const artUrl = (id) => `/api/art/${enc(id)}?k=${KEY}`;
 const storeArtUrl = (id, hd) => `/api/storeart/${enc(id)}?k=${KEY}${hd ? "&hd=1" : ""}`;
 const storeIconUrl = (id) => `/api/storeicon/${enc(id)}?k=${KEY}`;
+
+/* Game pictures straight from Flathub (the browser loads them itself – works even when the PC's
+   own downloads do not); the PC's cached copy is the second choice. */
+const fhCache = {};
+function flathubShot(fh, hd) {
+  if (!fh) return Promise.resolve(null);
+  const key = fh + (hd ? ":hd" : ":sd");
+  if (!(key in fhCache)) {
+    let saved = null;
+    try { saved = localStorage.getItem("fh:" + key); } catch (_) { /* no storage */ }
+    fhCache[key] = saved ? Promise.resolve(saved) : fetch("https://flathub.org/api/v2/appstream/" + enc(fh))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const want = hd ? 1248 : 752;
+        for (const shot of (d && d.screenshots) || []) {
+          const sizes = (shot.sizes || []).filter((x) => x.src);
+          const fit = sizes.filter((x) => +x.width <= want);
+          const best = (fit.length ? fit : sizes).sort((a, b) => +b.width - +a.width)[0];
+          if (best) {
+            try { localStorage.setItem("fh:" + key, best.src); } catch (_) { /* no storage */ }
+            return best.src;
+          }
+        }
+        return null;
+      })
+      .catch(() => { delete fhCache[key]; return null; });
+  }
+  return fhCache[key];
+}
+async function firstArt(urls) {
+  for (const u of urls) {
+    if (!u) continue;
+    const ok = await probe(u);
+    if (ok) return ok;
+  }
+  return null;
+}
+const gameArt = (g, hd) => () => flathubShot(g.fh, hd).then((f) => firstArt([f, artUrl(g.id)]));
+const storeArt = (s, hd) => () => flathubShot(s.fh, hd).then((f) => firstArt([f, storeArtUrl(s.id, hd)]));
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const size = (mb) => (mb >= 1 ? `${mb} MB` : "< 1 MB");
 
@@ -81,7 +120,7 @@ function iconColor(url) {
 }
 const rgb = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
 function paintArt(el, art, icon, again = true) {
-  probe(art).then((url) => {
+  (typeof art === "function" ? art() : probe(art)).then((url) => {
     if (url) { el.style.background = ""; el.style.backgroundImage = `url("${url}")`; el.classList.add("has-art"); return; }
     if (again) setTimeout(() => { if (el.isConnected) paintArt(el, art, icon, false); }, 20000);
     iconColor(icon).then((c) => {
@@ -110,7 +149,7 @@ function tile(g) {
     <span class="fav">${STAR}</span><span class="t-name"></span><span class="t-src"></span>`;
   t.querySelector(".t-name").textContent = g.name;
   t.querySelector(".t-src").textContent = g.source || "";
-  paintArt(t.querySelector(".art"), artUrl(g.id), iconUrl(g.id));
+  paintArt(t.querySelector(".art"), gameArt(g, false), iconUrl(g.id));
   return t;
 }
 function addTile() {
@@ -174,7 +213,7 @@ function showHero(g) {
   $("#heroAbout").textContent = g ? (g.about || "") : "Open the Store to install free games – racing, building, shooters, strategy and more.";
   $("#btnPlay span").textContent = g ? "Play Game" : "Open Store";
   clearTimeout(heroTimer);
-  heroTimer = setTimeout(() => setBackground(g ? artUrl(g.id) : null, g ? iconUrl(g.id) : null), 90);   // fast scrolling skips pictures
+  heroTimer = setTimeout(() => setBackground(g ? gameArt(g, true) : null, g ? iconUrl(g.id) : null), 90);   // fast scrolling skips pictures
 }
 function bgLayer() {
   const a = $("#bgA"), b = $("#bgB");
@@ -186,8 +225,13 @@ async function setBackground(art, icon) {
   const tok = ++heroToken;
   // Picture already here: show it straight away. Otherwise the game's colours first (never a black
   // screen), and the picture fades in as soon as it has been downloaded.
-  const known = art && probedOk[art];
-  if (!known) {
+  // art: a picture address, or a function that finds one (Flathub first, then the PC's copy).
+  const resolve = typeof art === "function" ? art : () => (art ? probe(art) : Promise.resolve(null));
+  let early = null;
+  const pending = resolve().then((u) => (early = u));
+  await Promise.race([pending, new Promise((r) => setTimeout(r, 120))]);
+  if (tok !== heroToken) return;
+  if (!early) {
     const c = icon ? await iconColor(icon) : [26, 30, 42];
     if (tok !== heroToken) return;
     const [next, prev] = bgLayer();
@@ -197,7 +241,7 @@ async function setBackground(art, icon) {
     if (icon) Object.assign(next.style, { backgroundImage: `url("${icon}"), ${next.style.backgroundImage}`, backgroundSize: "30%, cover", backgroundRepeat: "no-repeat", backgroundPosition: "76% 42%, center" });
     showLayer(next, prev);
   }
-  const url = art ? await probe(art) : null;
+  const url = early || (await pending);
   if (!url || tok !== heroToken) return;
   const [next, prev] = bgLayer();
   next.removeAttribute("style");
@@ -271,7 +315,7 @@ const PLAY_ICON = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
 function openDetails(g) {
   const s = g.store ? storeById(g.store) : null;
   state.details = { game: g, back: state.details ? state.details.back : document.activeElement };
-  detailsArt(artUrl(g.id), iconUrl(g.id));
+  detailsArt(gameArt(g, true), iconUrl(g.id));
   $("#dEyebrow").textContent = g.genre || "Game";
   setLogo($("#dTitle"), g.name);
   $("#dChips").innerHTML = metaHtml(g);
@@ -291,7 +335,7 @@ function openStoreDetails(s) {
   const g = gameForStore(s.id);
   if (s.installed && g) { openDetails(g); return; }
   state.details = { store: s, back: state.details ? state.details.back : document.activeElement };
-  detailsArt(storeArtUrl(s.id, true), storeIconUrl(s.id));
+  detailsArt(storeArt(s, true), storeIconUrl(s.id));
   $("#dEyebrow").textContent = `TS Store · ${s.genre}`;
   setLogo($("#dTitle"), s.name);
   $("#dChips").innerHTML = `<span class="src">TS Store</span><span class="dot${s.installed ? "" : " warn"}">${s.installed ? "Installed" : "Not installed"}</span>` +
@@ -310,7 +354,7 @@ function openStoreDetails(s) {
 }
 function detailsArt(art, icon) {
   const el = $("#dArt"); el.removeAttribute("style"); el.className = "details-art";
-  probe(art).then(async (url) => {
+  (typeof art === "function" ? art() : probe(art)).then(async (url) => {
     if (url) { el.style.backgroundImage = `url("${url}")`; return; }
     const c = await iconColor(icon);
     el.className = "details-art fallback";
@@ -339,7 +383,7 @@ function storeCard(s) {
     <div class="s-body"><span class="s-name"></span><span class="s-info"><span class="fit fit-${esc(s.fit)}">${esc(s.fit)}</span>
     <span>${esc(s.genre)}</span><span>${size(s.mb)}</span></span><span class="s-act"></span></div>`;
   b.querySelector(".s-name").textContent = s.name;
-  paintArt(b.querySelector(".s-art"), storeArtUrl(s.id), storeIconUrl(s.id));
+  paintArt(b.querySelector(".s-art"), storeArt(s, false), storeIconUrl(s.id));
   cardState(b, s);
   return b;
 }
@@ -377,7 +421,7 @@ function storeHero(s) {
   $("#storeHeroTitle").textContent = s.name;
   $("#storeHeroAbout").textContent = `${s.about}  ·  ${s.genre} · ${size(s.mb)} · runs ${s.fit.toLowerCase()}`;
   const el = $("#storeHeroArt");
-  probe(storeArtUrl(s.id, true)).then((u) => { if (state.storeHero === s.id) el.style.backgroundImage = u ? `url("${u}")` : "none"; });
+  storeArt(s, true)().then((u) => { if (state.storeHero === s.id) el.style.backgroundImage = u ? `url("${u}")` : "none"; });
 }
 async function install(s) {
   if (!s) return;

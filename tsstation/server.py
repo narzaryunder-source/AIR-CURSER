@@ -199,8 +199,11 @@ def _cached_download(name, url_fn):
     miss = os.path.join(CACHE, "art", name + ".none")
     if os.path.exists(miss) and time.time() - os.path.getmtime(miss) < 3 * 86400:
         return None
+    urls = list(url_fn())
+    if not urls:
+        return None     # nothing known yet (or no internet to ask): try again next time
     offline = False
-    for url in url_fn():
+    for url in urls:
         try:
             data = fetch(url)
             if not (data[:4] == b"\x89PNG" or data[:3] == b"\xff\xd8\xff" or data[8:12] == b"WEBP"):
@@ -324,6 +327,7 @@ def find_games():
                 "genre": st["genre"] if st else genre(cats),
                 "source": "Added by you" if d == MY_GAMES else ("TS Store" if st else "Ubuntu"),
                 "store": st["id"] if st else "",
+                "fh": st["fh"] if st else "",
                 "fit": st["fit"] if st else "",
             })
     return games
@@ -534,13 +538,32 @@ def xdo(*args):
         return ""
 
 
+IN_AIR = os.environ.get("TS_IN_AIR") == "1"
+
+
+def tell_air(what):
+    """TS Station shown in Air (the phone's browser over the PC): ask it to step aside / come back."""
+    try:
+        p = subprocess.Popen(["xclip", "-quiet", "-selection", "clipboard"], stdin=subprocess.PIPE,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        p.stdin.write(("aircursor-web:air:" + what).encode())
+        p.stdin.close()
+        threading.Timer(15, lambda: p.poll() is None and p.kill()).start()
+    except Exception:
+        pass
+
+
 def _watch_game(proc, name):
     """While the game runs, TS Station steps aside; when it closes, TS Station comes back."""
     time.sleep(2.5)
     if proc.poll() is None:
+        if IN_AIR:
+            tell_air("minimize")
         for wid in xdo("search", "--name", "^TS Station$").split():
             xdo("windowminimize", wid)
     proc.wait()
+    if IN_AIR:
+        tell_air("show")
     for wid in xdo("search", "--name", "^TS Station$").split()[:1]:
         xdo("windowactivate", wid)
 
@@ -727,7 +750,7 @@ def store_list():
     have = installed_packages()
     out = []
     for e in STORE:
-        d = {k: e[k] for k in ("id", "name", "genre", "about", "mb", "fit")}
+        d = {k: e[k] for k in ("id", "name", "genre", "about", "mb", "fit", "fh")}
         d["installed"] = e["id"] in have
         out.append(d)
     return out

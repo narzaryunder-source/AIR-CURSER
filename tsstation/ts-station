@@ -4,7 +4,10 @@
 DIR=/opt/ts-station
 pkill -f "python3 $DIR/server.py$" 2>/dev/null
 rm -f /tmp/ts-station.url
-python3 "$DIR/server.py" > /tmp/ts-station.url 2> /tmp/ts-station.log &
+# Shown in Air (the phone's own browser engine, over the PC) when it is there: much smoother.
+IN_AIR=0
+command -v cloudpc-air >/dev/null 2>&1 && IN_AIR=1
+TS_IN_AIR=$IN_AIR python3 "$DIR/server.py" > /tmp/ts-station.url 2> /tmp/ts-station.log &
 URL=""
 for i in $(seq 1 60); do
     URL=$(head -n 1 /tmp/ts-station.url 2>/dev/null)
@@ -16,6 +19,9 @@ if [ -z "$URL" ]; then
 
 $(tail -n 5 /tmp/ts-station.log)" 2>/dev/null
     exit 1
+fi
+if [ "$IN_AIR" = 1 ]; then
+    exec cloudpc-air "$URL"
 fi
 if [ -x /usr/bin/brave-browser-stable ]; then
     exec cloudpc-launch brave-browser.desktop /usr/bin/brave-browser-stable --app="$URL" --start-fullscreen
