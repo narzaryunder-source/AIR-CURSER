@@ -115,7 +115,7 @@ object CloudPcTools {
         put("usr/local/bin/cloudpc-focus", FOCUS_BOOST, exec = true)
         // VS Code: light settings for a phone (only when the person has no settings of their own yet).
         for (rel in listOf("root/.config/Code/User/settings.json", "root/.vscode-server/data/Machine/settings.json")) {
-            if (!File(r0, rel).exists()) put(rel, VSCODE_SETTINGS)
+            if (!File(CloudPcEngine.rootfs(c), rel).exists()) put(rel, VSCODE_SETTINGS)
         }
         // Smooth video: the phone's own video chip plays it in a window over the PC (Win+Y).
         put("usr/local/bin/cloudpc-phone-video", PHONE_VIDEO, exec = true)

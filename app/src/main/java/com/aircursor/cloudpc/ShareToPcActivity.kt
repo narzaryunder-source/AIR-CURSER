@@ -40,8 +40,8 @@ class ShareToPcActivity : ComponentActivity() {
             Intent.ACTION_SEND_MULTIPLE ->
                 IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)?.let { uris += it }
         }
-        val text = intent?.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { uris.isEmpty() && it.isNotBlank() }
-        if (uris.isEmpty() && text == null) {
+        val sharedText = intent?.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { uris.isEmpty() && it.isNotBlank() }
+        if (uris.isEmpty() && sharedText == null) {
             Toast.makeText(this, "Nothing to send", Toast.LENGTH_SHORT).show()
             finish()
             return
@@ -64,10 +64,10 @@ class ShareToPcActivity : ComponentActivity() {
             val dir = File(CloudPcEngine.rootfs(this), "root/Downloads/${CloudPcTools.FROM_PHONE}").apply { mkdirs() }
             var ok = 0
             var bytes = 0L
-            if (text != null) {
+            if (sharedText != null) {
                 val stamp = SimpleDateFormat("yyyy-MM-dd HH.mm", Locale.US).format(Date())
                 try {
-                    uniqueFile(dir, "Shared text $stamp.txt").writeText(text + "\n")
+                    uniqueFile(dir, "Shared text $stamp.txt").writeText(sharedText + "\n")
                     ok++
                 } catch (_: Exception) {
                 }
@@ -84,7 +84,7 @@ class ShareToPcActivity : ComponentActivity() {
                 }
             }
             runOnUiThread {
-                val total = uris.size + (if (text != null) 1 else 0)
+                val total = uris.size + (if (sharedText != null) 1 else 0)
                 val msg = if (ok == total) "$ok sent to AirCursor PC → Downloads/${CloudPcTools.FROM_PHONE}"
                 else "$ok of $total sent (some could not be read)"
                 Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show()
