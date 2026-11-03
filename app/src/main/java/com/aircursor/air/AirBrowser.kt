@@ -81,7 +81,7 @@ class AirBrowser(
 ) : FrameLayout(activity) {
 
     /** An app window: [key] identifies it ("airstore", "youtube"…), [url] is its start page. */
-    class App(val key: String, val title: String, val url: String, val iconRes: Int = R.drawable.ic_air_eagle)
+    class App(val key: String, val title: String, var url: String, val iconRes: Int = R.drawable.ic_air_eagle)
 
     interface Host {
         fun pickPhoneFiles(multiple: Boolean, done: (List<Uri>) -> Unit)

@@ -94,8 +94,10 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
     /** A hand drag (pinch + move) or a finger is down: only then may the left button be held. */
     private var handDragging = false
     private var fingerDown = false
-    private var lastFbX = -1
-    private var lastFbY = -1
+    private var lastFbX = 0
+    private var lastFbY = 0
+    /** The pointer has been placed at least once (before that, no pointer is drawn). */
+    private var pointerSeen = false
 
     // The desktop's pointer, drawn here (touch / mouse) – the hand cursor overlay draws its own.
     private var cursorBitmap: Bitmap? = null
@@ -296,7 +298,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
     private fun drawPointer(canvas: Canvas, scale: Float) {
         DesktopInput.desktopScale = scale
         val c = cursorBitmap ?: return
-        if (DesktopInput.handActive || lastFbX < 0) return
+        if (DesktopInput.handActive || !pointerSeen) return
         val x = dst.left + (lastFbX - cursorHotX) * scale
         val y = dst.top + (lastFbY - cursorHotY) * scale
         cursorDst.set(x, y, x + c.width * scale, y + c.height * scale)
@@ -375,7 +377,8 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
 
     private fun sendPointer(x: Int, y: Int, mask: Int) {
         lastInputMs = SystemClock.uptimeMillis()
-        if (x != lastFbX || y != lastFbY) {
+        if (!pointerSeen || x != lastFbX || y != lastFbY) {
+            pointerSeen = true
             lastFbX = x
             lastFbY = y
             if (cursorBitmap != null && !DesktopInput.handActive) postInvalidateOnAnimation()
@@ -393,6 +396,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
         lastInputMs = SystemClock.uptimeMillis()
         lastFbX = x
         lastFbY = y
+        pointerSeen = true
         if (cursorBitmap != null && !DesktopInput.handActive) postInvalidateOnAnimation()
         val c = client ?: return
         if (pendingMove) return

@@ -66,6 +66,12 @@ class AirWindows(
         val existing = wins.firstOrNull { it.key == key }
         if (existing != null) {
             show(existing)
+            // The app's own server started again (Air Store, TS Station: a new port): load it there.
+            val app = existing.browser.app
+            if (app != null && origin(app.url) != origin(url)) {
+                app.url = url
+                existing.browser.load(url)
+            }
             return
         }
         val icon = when (key) {
@@ -373,6 +379,12 @@ class AirWindows(
             if (ev.actionMasked == MotionEvent.ACTION_DOWN) win?.let { if (wins.lastOrNull() !== it) focus(it) }
             return super.onInterceptTouchEvent(ev)
         }
+    }
+
+    private fun origin(u: String) = try {
+        Uri.parse(u).let { "${it.scheme}://${it.authority}" }
+    } catch (_: Exception) {
+        u
     }
 
     companion object {
