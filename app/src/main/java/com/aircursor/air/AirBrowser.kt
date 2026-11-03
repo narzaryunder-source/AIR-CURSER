@@ -249,7 +249,7 @@ class AirBrowser(
         drag.setOnClickListener { }
         s.addView(drag, LinearLayout.LayoutParams(0, -1, 1f))
         addWindowButtons(s)
-        s.addOnLayoutChangeListener { _, l, _, r, _, ol, _, or, _ -> if (r - l != or - ol) renderTabs() }
+        s.addOnLayoutChangeListener { _, l, _, r, _, ol, _, or, _ -> if (r - l != or - ol) post { renderTabs() } }
         column.addView(s, LinearLayout.LayoutParams(-1, ui.u(35)))
 
         // toolbar: ← → ⟳ [ 🔒 address ☆ ] Shields ⬇ 🎤 ≡

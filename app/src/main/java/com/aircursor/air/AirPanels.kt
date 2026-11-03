@@ -105,7 +105,8 @@ internal class AirPanels(private val b: AirBrowser) {
             isVerticalScrollBarEnabled = false
             addView(l)
         }, LinearLayout.LayoutParams(-1, 0, 1f))
-        val w = (b.content.width * 0.48f).roundToInt().coerceIn(ui.u(300), ui.u(400)).coerceAtMost(b.content.width)
+        val cw = b.content.width.takeIf { it > 0 } ?: a.resources.displayMetrics.widthPixels
+        val w = (cw * 0.48f).roundToInt().coerceIn(ui.u(300), ui.u(400)).coerceAtMost(cw)
         b.content.addView(p, FrameLayout.LayoutParams(w, -1, Gravity.END))
         panel = p
         refresh()

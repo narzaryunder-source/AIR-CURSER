@@ -3,9 +3,8 @@ name: Build APK
 on:
   push:
     branches: [ main ]
-    # The Ubuntu scripts are not part of the APK: no new release for them.
+    # The PC scripts in ubuntu/ are bundled in the APK, so they do make a new release.
     paths-ignore:
-      - 'ubuntu/**'
       # BrightMax has its own workflow (brightmax.yml).
       - 'brightmax/**'
       - '.github/workflows/brightmax.yml'
