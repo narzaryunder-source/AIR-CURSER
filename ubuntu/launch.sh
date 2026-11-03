@@ -62,6 +62,12 @@ run() {   # $1 = 1 for the safe second try
             # Browsers: keep WebGL working (websites' "verify you are human" checks need it), draw
             # pages on the CPU; no warning bar about the sandbox flag. Second try: no GPU at all.
             cmd+=(--no-sandbox --test-type)
+            # Fewer browser programs: one per site (Chromium's "site isolation") makes YouTube and AI
+            # sites start 6–12 programs – too much CPU, and Android closes programs above its limit,
+            # so pages never finish loading. A few shared ones are much faster here. No smooth-scroll
+            # animation (every wheel step drawn at once: feels quicker with a CPU-drawn screen).
+            cmd+=(--renderer-process-limit=3 --disable-site-isolation-trials
+                --disable-features=IsolateOrigins,site-per-process,BackForwardCache --disable-smooth-scrolling)
             if [ "$safe" = 0 ]; then
                 cmd+=(--no-zygote --ignore-gpu-blocklist --disable-gpu-compositing)
             else

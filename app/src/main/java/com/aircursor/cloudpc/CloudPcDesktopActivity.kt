@@ -51,6 +51,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     companion object {
         private const val PREFS = "cloudpc_engine"
         private const val KEY_FPS = "show_fps"
+        private const val KEY_PHONE_TOUCH = "phone_touch"
         private const val ON = 0xEE4F46E5.toInt()
 
         /** The PC asks to open a web link in the phone's own browser (logins: fast, already signed in). */
@@ -134,6 +135,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         v.sharpness = AirBoost.current(this).sharpen
         v.fpsLimit = AirBoost.fpsLimit(this)
         v.showFps = prefs.getBoolean(KEY_FPS, false)
+        v.phoneTouch = prefs.getBoolean(KEY_PHONE_TOUCH, true)
         view = v
         val root = FrameLayout(this)
         rootLayout = root
@@ -526,7 +528,9 @@ class CloudPcDesktopActivity : ComponentActivity() {
         val labels = profiles.map { "${it.label} – ${it.about}" }.toTypedArray() +
             "Steady FPS: ${AirBoost.fpsLabel(fps)} – tap to change" +
             "Boost now – stop background jobs, free memory" +
-            (if (gpu) "Graphics: Phone GPU (VirGL) – tap for CPU" else "Graphics: CPU – tap for Phone GPU (VirGL)")
+            (if (gpu) "Graphics: Phone GPU (VirGL) – tap for CPU" else "Graphics: CPU – tap for Phone GPU (VirGL)") +
+            (if (view?.phoneTouch != false) "Touch: phone style (swipe scrolls) – tap for mouse style"
+            else "Touch: mouse style (drag selects) – tap for phone style")
         AlertDialog.Builder(this)
             .setTitle("AirBoost (now: ${now.label})")
             .setItems(labels) { _, i ->
@@ -536,6 +540,18 @@ class CloudPcDesktopActivity : ComponentActivity() {
                 }
                 if (i == profiles.size + 1) {
                     boostNow()
+                    return@setItems
+                }
+                if (i == profiles.size + 3) {
+                    val phone = view?.phoneTouch == false
+                    view?.phoneTouch = phone
+                    prefs.edit().putBoolean(KEY_PHONE_TOUCH, phone).apply()
+                    Toast.makeText(
+                        this,
+                        if (phone) "Phone style: swipe scrolls, tap clicks, hold = right click, hold + move = select / drag"
+                        else "Mouse style: drag selects, hold = right click, two fingers scroll",
+                        Toast.LENGTH_LONG,
+                    ).show()
                     return@setItems
                 }
                 if (i == profiles.size + 2) {
@@ -733,13 +749,14 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private fun askExit() {
         AlertDialog.Builder(this)
             .setTitle("AirCursor PC")
-            .setItems(arrayOf("Keep running in the background", "Stop the desktop", "Cancel")) { _, which ->
+            .setItems(arrayOf("Keep running in the background", "Stop the desktop", "Send a problem report", "Cancel")) { _, which ->
                 when (which) {
                     0 -> finish()
                     1 -> {
                         CloudPcService.send(this, CloudPcService.ACTION_DESKTOP_STOP)
                         finish()
                     }
+                    2 -> ProblemReport.share(this)
                 }
             }
             .show()

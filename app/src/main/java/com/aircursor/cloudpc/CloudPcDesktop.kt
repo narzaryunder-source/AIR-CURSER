@@ -84,6 +84,9 @@ object CloudPcDesktop {
         sleep 0.3
         rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 "${'$'}SOCK"
         rm -rf /root/.cache/sessions
+        # Each phone has its own machine id (the ready-made PC ships without one).
+        [ -s /etc/machine-id ] || dbus-uuidgen > /etc/machine-id 2>/dev/null
+        mkdir -p /var/lib/dbus; [ -s /var/lib/dbus/machine-id ] || cp /etc/machine-id /var/lib/dbus/machine-id 2>/dev/null
         # Panel: start with the normal layout instead of the "first start" question.
         P=/root/.config/xfce4/xfconf/xfce-perchannel-xml
         if [ ! -f "${'$'}P/xfce4-panel.xml" ] && [ -f /etc/xdg/xfce4/panel/default.xml ]; then

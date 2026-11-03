@@ -73,6 +73,40 @@ object CloudPcEngine {
     fun setNoSeccomp(c: Context, v: Boolean) =
         c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_NO_SECCOMP, v).apply()
 
+    /**
+     * Compatibility mode makes everything 2–5× slower, and one failed test (for example a slow
+     * first start) used to switch it on for good. Test the fast mode again (a few times at most):
+     * returns true when it works and was switched back on.
+     */
+    fun recheckFastMode(c: Context): Boolean {
+        if (!noSeccomp(c)) return false
+        val prefs = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val tries = prefs.getInt("fast_rechecks", 0)
+        if (tries >= 3) return false
+        prefs.edit().putInt("fast_rechecks", tries + 1).apply()
+        setNoSeccomp(c, false)
+        val ok = try {
+            quickTest(c)
+        } catch (_: Exception) {
+            false
+        }
+        if (ok) prefs.edit().putInt("fast_rechecks", 0).apply() else setNoSeccomp(c, true)
+        return ok
+    }
+
+    private fun quickTest(c: Context): Boolean {
+        val p = start(c, "echo CLOUDPC_OK")
+        val out = StringBuffer()
+        val reader = Thread { p.inputStream.bufferedReader().forEachLine { out.append(it).append('\n') } }
+        reader.start()
+        if (!p.waitFor(25, java.util.concurrent.TimeUnit.SECONDS)) {
+            p.destroyForcibly()
+            return false
+        }
+        reader.join(2000)
+        return p.exitValue() == 0 && out.lines().any { it.trim() == "CLOUDPC_OK" }
+    }
+
     /** Creates the helper folders/links proot needs. Run before every start (the APK path changes on updates). */
     fun prepare(c: Context): Pair<ProotPaths, List<String>> {
         val b = base(c)

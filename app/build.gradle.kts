@@ -143,6 +143,8 @@ dependencies {
 
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
     implementation("androidx.documentfile:documentfile:1.0.1")
+    // Unpacks the ready-made AirCursor PC (tar.xz).
+    implementation("org.tukaani:xz:1.9")
 
     // Sign-in: Firebase Authentication (Google + phone OTP) and Android's Credential Manager.
     implementation(platform("com.google.firebase:firebase-bom:33.5.1"))

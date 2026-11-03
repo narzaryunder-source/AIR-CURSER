@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 18
+    const val VERSION = 19
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -864,10 +864,12 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         #!/bin/sh
         URL="${'$'}1"
         [ -n "${'$'}URL" ] || exit 1
-        if grep -qs '^WebBrowser=brave-browser' /root/.config/xfce4/helpers.rc && [ -x /usr/bin/brave-browser-stable ]; then
+        # Brave unless the person chose Firefox as the default browser.
+        if [ -x /usr/bin/brave-browser-stable ] && ! { grep -qs '^WebBrowser=firefox' /root/.config/xfce4/helpers.rc && command -v firefox >/dev/null; }; then
             exec cloudpc-launch brave-browser.desktop /usr/bin/brave-browser-stable --app="${'$'}URL"
         fi
-        exec firefox --new-window "${'$'}URL"
+        command -v firefox >/dev/null && exec firefox --new-window "${'$'}URL"
+        exec xdg-open "${'$'}URL"
     """.trimIndent() + "\n"
 
     /** Claude Code in a terminal, with sign-in in the phone's browser. */

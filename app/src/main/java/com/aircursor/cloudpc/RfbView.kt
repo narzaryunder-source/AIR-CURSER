@@ -18,6 +18,7 @@ import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.VelocityTracker
 import android.view.ViewConfiguration
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
@@ -542,7 +543,59 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
         lastScrollMs = 0L
     }
 
-    // ---- Touch: tap = click, hold = right click, drag = drag, two fingers = scroll ----
+    // ---- Touch ----
+    // Phone style (default): swipe = scroll (keeps gliding after a flick), tap = click,
+    // hold = right click, hold then move = drag / select text, two fingers = scroll.
+    // Mouse style: drag = drag (select), hold = right click, two fingers = scroll.
+
+    var phoneTouch = true
+    private var scrolling = false
+    private var lastX = 0f
+    private var lastY = 0f
+    private var accX = 0f
+    private var accY = 0f
+    private var velocity: VelocityTracker? = null
+    private var flingV = 0f
+    private var flingHV = 0f
+    private var flingLast = 0L
+
+    /** Finger distance (view pixels) for one wheel step: about 50 desktop pixels. */
+    private fun wheelStep(): Float {
+        val b = bitmap ?: return 60f
+        return (50f * dst.width() / b.width).coerceAtLeast(12f)
+    }
+
+    /** Turns finger movement into wheel steps; finger up = content up (like a phone). */
+    private fun scrollBy(dx: Float, dy: Float) {
+        val step = wheelStep()
+        accY += dy
+        accX += dx
+        var n = 0
+        while (accY >= step && n < 12) { wheel(lastFbX, lastFbY, RfbClient.WHEEL_UP); accY -= step; n++ }
+        while (accY <= -step && n < 12) { wheel(lastFbX, lastFbY, RfbClient.WHEEL_DOWN); accY += step; n++ }
+        while (accX >= step && n < 16) { wheel(lastFbX, lastFbY, WHEEL_LEFT); accX -= step; n++ }
+        while (accX <= -step && n < 16) { wheel(lastFbX, lastFbY, WHEEL_RIGHT); accX += step; n++ }
+        if (n > 0) lastInputMs = SystemClock.uptimeMillis()
+    }
+
+    private val fling = object : Runnable {
+        override fun run() {
+            val now = SystemClock.uptimeMillis()
+            val dt = ((now - flingLast).coerceIn(1L, 50L)) / 1000f
+            flingLast = now
+            scrollBy(flingHV * dt, flingV * dt)
+            val decay = Math.pow(0.05, dt.toDouble()).toFloat()   // slows down like a phone list
+            flingV *= decay
+            flingHV *= decay
+            if (abs(flingV) > 120f || abs(flingHV) > 120f) postOnAnimation(this) else stopFling()
+        }
+    }
+
+    private fun stopFling() {
+        removeCallbacks(fling)
+        flingV = 0f
+        flingHV = 0f
+    }
 
     private val slop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private var downX = 0f
@@ -553,11 +606,14 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
     private var lastTwoY = 0f
     private var lastTwoX = 0f
     private val longPress = Runnable {
-        if (!dragging && !twoFinger) {
+        if (!dragging && !twoFinger && !scrolling) {
             longPressed = true
-            val (x, y) = viewToFb(downX, downY)
-            clickAt(x, y, RfbClient.BUTTON_RIGHT)
             performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            // Phone style: wait – lifting the finger is a right click, moving it drags.
+            if (!phoneTouch) {
+                val (x, y) = viewToFb(downX, downY)
+                clickAt(x, y, RfbClient.BUTTON_RIGHT)
+            }
         }
     }
 
@@ -616,18 +672,28 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (locked) return false
         if (e.isFromSource(InputDevice.SOURCE_MOUSE) && handleMouse(e)) return true
+        if (phoneTouch) {
+            if (velocity == null) velocity = VelocityTracker.obtain()
+            velocity?.addMovement(e)
+        }
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                stopFling()
                 fingerDown = true
                 requestFocus()
                 downX = e.x
                 downY = e.y
+                lastX = e.x
+                lastY = e.y
+                accX = 0f
+                accY = 0f
                 dragging = false
+                scrolling = false
                 longPressed = false
                 twoFinger = false
                 val (x, y) = viewToFb(e.x, e.y)
                 sendMoveCoalesced(x, y)
-                postDelayed(longPress, 550)
+                postDelayed(longPress, if (phoneTouch) 450L else 550L)
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 removeCallbacks(longPress)
@@ -644,10 +710,42 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
                 if (twoFinger && e.pointerCount >= 2) {
                     val y = (e.getY(0) + e.getY(1)) / 2f
                     val x = (e.getX(0) + e.getX(1)) / 2f
-                    val step = 40f * resources.displayMetrics.density / 2f
-                    while (y - lastTwoY >= step) { wheel(lastFbX, lastFbY, RfbClient.WHEEL_UP); lastTwoY += step }
-                    while (lastTwoY - y >= step) { wheel(lastFbX, lastFbY, RfbClient.WHEEL_DOWN); lastTwoY -= step }
-                    if (abs(x - lastTwoX) >= step * 2) lastTwoX = x
+                    if (phoneTouch) {
+                        scrollBy(x - lastTwoX, y - lastTwoY)
+                        lastTwoX = x
+                        lastTwoY = y
+                    } else {
+                        val step = 40f * resources.displayMetrics.density / 2f
+                        while (y - lastTwoY >= step) { wheel(lastFbX, lastFbY, RfbClient.WHEEL_UP); lastTwoY += step }
+                        while (lastTwoY - y >= step) { wheel(lastFbX, lastFbY, RfbClient.WHEEL_DOWN); lastTwoY -= step }
+                        if (abs(x - lastTwoX) >= step * 2) lastTwoX = x
+                    }
+                } else if (!twoFinger && phoneTouch) {
+                    val moved = hypot(e.x - downX, e.y - downY) > slop
+                    when {
+                        longPressed -> {
+                            // Hold, then move: drag (select text, move a window).
+                            if (!dragging && moved) {
+                                dragging = true
+                                val (x0, y0) = viewToFb(downX, downY)
+                                sendPointer(x0, y0, buttons)
+                                buttons = buttons or RfbClient.BUTTON_LEFT
+                                sendPointer(x0, y0, buttons)
+                            }
+                            if (dragging) {
+                                val (x, y) = viewToFb(e.x, e.y)
+                                sendMoveCoalesced(x, y)
+                            }
+                        }
+                        scrolling -> scrollBy(e.x - lastX, e.y - lastY)
+                        moved -> {
+                            removeCallbacks(longPress)
+                            scrolling = true
+                            scrollBy(e.x - downX, e.y - downY)
+                        }
+                    }
+                    lastX = e.x
+                    lastY = e.y
                 } else if (!twoFinger && !longPressed) {
                     if (!dragging && hypot(e.x - downX, e.y - downY) > slop) {
                         removeCallbacks(longPress)
@@ -671,10 +769,29 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
                         buttons = buttons and RfbClient.BUTTON_LEFT.inv()
                         sendPointer(x, y, buttons)
                     }
-                    !longPressed && !twoFinger -> clickAt(x, y, RfbClient.BUTTON_LEFT)
+                    phoneTouch && scrolling -> {
+                        // A flick keeps the page gliding, like a phone list.
+                        velocity?.computeCurrentVelocity(1000)
+                        val vy = velocity?.yVelocity ?: 0f
+                        val vx = velocity?.xVelocity ?: 0f
+                        if (abs(vy) > 600f || abs(vx) > 600f) {
+                            flingV = vy
+                            flingHV = vx
+                            flingLast = SystemClock.uptimeMillis()
+                            postOnAnimation(fling)
+                        }
+                    }
+                    phoneTouch && longPressed && !twoFinger -> {
+                        val (rx, ry) = viewToFb(downX, downY)
+                        clickAt(rx, ry, RfbClient.BUTTON_RIGHT)
+                    }
+                    !longPressed && !twoFinger && !scrolling -> clickAt(x, y, RfbClient.BUTTON_LEFT)
                 }
                 dragging = false
+                scrolling = false
                 fingerDown = false
+                velocity?.recycle()
+                velocity = null
             }
             MotionEvent.ACTION_CANCEL -> {
                 removeCallbacks(longPress)
@@ -683,7 +800,10 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
                     sendPointer(lastFbX, lastFbY, buttons)
                 }
                 dragging = false
+                scrolling = false
                 fingerDown = false
+                velocity?.recycle()
+                velocity = null
             }
         }
         return true

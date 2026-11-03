@@ -165,7 +165,7 @@ fun CloudPcScreen(onBack: () -> Unit, onNeedPro: () -> Unit = {}) {
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "About 450 MB download and 5–15 minutes. Wi-Fi recommended. Everything stays on this phone.",
+                    "One download of the ready-made PC and a few minutes to unpack. Wi-Fi recommended. Everything stays on this phone.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -310,6 +310,9 @@ fun CloudPcScreen(onBack: () -> Unit, onNeedPro: () -> Unit = {}) {
                 }
                 NavRow(R.drawable.ic_ui_info, if (showLog) "Hide log" else "Show log", "Technical details", tint = Brand.Sky) {
                     showLog = !showLog
+                }
+                NavRow(R.drawable.ic_ui_mail, "Send a problem report", "Phone, settings and log as text – share it", tint = Brand.Sky) {
+                    com.aircursor.cloudpc.ProblemReport.share(context)
                 }
                 NavRow(
                     R.drawable.ic_ui_trash, "Remove AirCursor PC", "Deletes the desktop and its files from this phone",

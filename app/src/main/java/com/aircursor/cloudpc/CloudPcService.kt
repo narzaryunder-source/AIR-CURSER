@@ -150,7 +150,9 @@ class CloudPcService : Service() {
         try {
             if (!CloudPcEngine.isReady(this)) inst.install()
             if (inst.cancelled) throw CloudPcInstaller.Cancelled()
-            if (!CloudPcDesktop.isInstalled(this)) installDesktop(0.3f)
+            // Desktop missing (an earlier step-by-step install stopped): the ready-made PC replaces it,
+            // else the desktop is installed package by package as before.
+            if (!CloudPcDesktop.isInstalled(this) && !inst.installImage()) installDesktop(0.3f)
             CloudPcBus.line("==> AirCursor PC is ready", force = true)
             CloudPcBus.update { it.copy(title = "Ready", progress = 1f) }
         } finally {
@@ -253,6 +255,9 @@ class CloudPcService : Service() {
         }
         Thread({
             try {
+                if (CloudPcEngine.recheckFastMode(this)) {
+                    CloudPcBus.line("==> Fast engine mode is on again (compatibility mode had slowed everything down)", force = true)
+                }
                 CloudPcDesktop.writeStartScript(this)
                 // Tell the PC whether Android's 32-program limit is lifted (the app launcher explains it),
                 // and keep the game settings (steady FPS) in step with the app.
