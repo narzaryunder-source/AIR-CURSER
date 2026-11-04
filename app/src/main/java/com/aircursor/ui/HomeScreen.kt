@@ -409,7 +409,7 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_air_brave"
+private const val WHATS_NEW_ID = "whatsnew_arrow_logo"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
@@ -422,6 +422,7 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             UiPrefs.close(context, WHATS_NEW_ID)
             whatsNew = false
         }) {
+            Bullet("New AirCursor logo: the blue air-arrow (AirCursor PC in violet); Air keeps its eagle")
             Bullet("Air, like Brave: laptop-size pages and desktop YouTube, tabs with real logos, bookmarks, history")
             Bullet("New tab page with real photos of the Earth (NASA), clock and shortcuts with real app logos")
             Bullet("Shields: trackers and ads blocked (uBlock Origin), with a counter")

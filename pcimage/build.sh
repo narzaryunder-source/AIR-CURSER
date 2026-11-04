@@ -1,6 +1,7 @@
 #!/bin/bash
 # Builds the ready-made AirCursor PC (Ubuntu arm64 + desktop + Brave + tools) on GitHub's arm64
 # computer. Output in pcimage/out: aircursor-pc-<V>-arm64.tar.xz and pc-image.json (for the app).
+# The workflow publishes both to the "pc-image" release; the app reads pc-image.json for the newest one.
 set -euo pipefail
 cd "$(dirname "$0")"
 V=$(cat VERSION)

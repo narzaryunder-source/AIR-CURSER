@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Builds every AirCursor eagle logo from tools/eagle_shapes.py (one design, many uses):
-Android adaptive icons (AirCursor, AirCursor PC), in-app logos, the small Air icon, and the
-SVG logos used inside the PC (dock menu, Air browser). Run from the repository root."""
+"""Builds the Air browser's eagle from tools/eagle_shapes.py: the small Air icon (tabs, app
+windows) and the SVG logo used inside the PC and on the new tab page. Run from the repository root.
+(AirCursor and AirCursor PC use the arrow logo: tools/make_logo.py.)"""
 import os
 import sys
 
@@ -96,20 +96,10 @@ def svg_bare(scale=1.0, pad=4.0):
 
 
 def main():
-    for theme, name in (("aircursor", "brand_aircursor"), ("pc", "brand_pc")):
-        write(name + "_bg", bg_paths(theme, rounded=False))
-        write(name + "_fg", eagle_paths(0.8))
-        write(name + "_mono", eagle_paths(0.8, mono=True))
-    write("logo_aircursor", bg_paths("aircursor", True) + eagle_paths(1.0), w=48)
-    write("logo_pc", bg_paths("pc", True) + eagle_paths(1.0), w=48)
     write("ic_air_eagle", eagle_paths(1.15), w=24)
     os.makedirs("ubuntu", exist_ok=True)
-    with open("ubuntu/aircursor-logo.svg", "w") as f:
-        f.write(svg("aircursor"))
     with open("ubuntu/air-logo.svg", "w") as f:
         f.write(svg("air"))
-    with open("ubuntu/aircursor-start.svg", "w") as f:
-        f.write(svg_bare())
     print("eagle logos written")
 
 
