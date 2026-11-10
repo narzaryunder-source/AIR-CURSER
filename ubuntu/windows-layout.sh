@@ -39,7 +39,7 @@ for START in /usr/share/pixmaps/aircursor-start.svg /usr/share/pixmaps/aircursor
     [ -f "$START" ] && { q -c $P -p /plugins/plugin-$N/button-icon --create -t string -s "$START"; q -c $P -p /plugins/plugin-$N/show-button-icon --create -t bool -s true; break; }
 done
 add separator; q -c $P -p /plugins/plugin-$N/style --create -t uint -s 0
-for app in thunar.desktop cloudpc-air.desktop firefox.desktop xfce4-terminal.desktop airstore.desktop aircursor-store.desktop; do
+for app in thunar.desktop cloudpc-air.desktop firefox.desktop xfce4-terminal.desktop airstore.desktop; do
     f=$(ls /usr/share/applications 2>/dev/null | grep -ix "$app" | head -n 1)
     [ -z "$f" ] && continue
     add launcher

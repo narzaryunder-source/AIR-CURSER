@@ -26,8 +26,11 @@ object AirEngine {
     const val PAGES = "resource://android/assets/air/"
     const val START = PAGES + "start.html"
 
-    /** CSS pixels across the long side of the screen, like the PC desktop. */
-    const val DESKTOP_WIDTH = 1280f
+    /**
+     * CSS pixels across the long side of the screen: a laptop-sized page, a little smaller than
+     * before (1280) so more fits on the phone's screen.
+     */
+    const val DESKTOP_WIDTH = 1400f
 
     private const val TAG = "AirEngine"
     private const val UBLOCK_ID = "uBlock0@raymondhill.net"

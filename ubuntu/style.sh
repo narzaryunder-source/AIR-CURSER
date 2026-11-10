@@ -63,9 +63,11 @@ tidy() {
     [ -d "$d" ] || return 0
     mkdir -p "$t"
     for f in Benchmark.desktop Firefox.desktop firefox.desktop Terminal.desktop Change-Wallpaper.desktop GitHub.desktop \
-        Google-Drive.desktop aircursor-store.desktop; do
+        Google-Drive.desktop; do
         [ -f "$d/$f" ] && [ ! -e "$t/$f" ] && mv "$d/$f" "$t/$f"
     done
+    # Only Air Store: the old App Store icons go.
+    for f in App-Store.desktop aircursor-store.desktop; do rm -f "$d/$f" "$t/$f"; done
     [ -f "$d/Air-Store.desktop" ] && rm -f "$d/airstore.desktop"
     [ -f "$d/YouTube.desktop" ] && rm -f "$d/cloudpc-youtube.desktop"
     rmdir "$t" 2>/dev/null
@@ -147,10 +149,7 @@ q -c $P -p /plugins/plugin-$N/button-icon --create -t string -s "$START"
 q -c $P -p /plugins/plugin-$N/show-button-icon --create -t bool -s true
 q -c $P -p /plugins/plugin-$N/menu-width --create -t int -s 560
 q -c $P -p /plugins/plugin-$N/menu-height --create -t int -s 480
-for f in thunar.desktop cloudpc-air.desktop cloudpc-youtube.desktop airstore.desktop aircursor-store.desktop \
-    xfce4-terminal.desktop; do
-    # Air Store replaces the old App Store in the dock when both exist.
-    [ "$f" = aircursor-store.desktop ] && [ -f /usr/share/applications/airstore.desktop ] && continue
+for f in thunar.desktop cloudpc-air.desktop cloudpc-youtube.desktop airstore.desktop xfce4-terminal.desktop; do
     launcher "$f"
 done
 add separator; q -c $P -p /plugins/plugin-$N/style --create -t uint -s 1

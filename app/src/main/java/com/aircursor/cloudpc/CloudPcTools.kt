@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 25
+    const val VERSION = 26
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -210,7 +210,10 @@ object CloudPcTools {
         )
 
         // Menu entries
-        put("usr/share/applications/aircursor-store.desktop", entry("App Store (classic)", "aircursor-store", "system-software-install", "System;", "The older app store window – Air Store is the new one"))
+        // The old App Store is gone from menus and the desktop: only Air Store. It stays hidden as the
+        // fallback for phones where Air cannot run (airstore opens it there).
+        put("usr/share/applications/aircursor-store.desktop",
+            entry("App Store (fallback)", "aircursor-store", "system-software-install", "System;", "Fallback for Air Store") + "NoDisplay=true\n")
         put("usr/share/applications/aircursor-wallpaper.desktop", entry("Change Wallpaper", "aircursor-wallpaper", "preferences-desktop-wallpaper", "Settings;DesktopSettings;", "Change the desktop picture"))
         put(
             "usr/share/applications/aircursor-install-deb.desktop",
@@ -269,6 +272,10 @@ object CloudPcTools {
             // The guide icon is ours: always refresh it. Other icons are added once (the user may delete them).
             val refresh = name == "Getting-Started.desktop" && target.exists()
             if ((refresh || !there) && source.isFile) put("$desk/$name", source.readText(), exec = true)
+        }
+        // Old App Store icons made by earlier versions go (the Air Store icon stays).
+        for (old in listOf("App-Store.desktop", "aircursor-store.desktop", "Tools/App-Store.desktop", "Tools/aircursor-store.desktop")) {
+            File(r, "$desk/$old").takeIf { it.isFile && it.readText().contains("aircursor-store") }?.delete()
         }
         for (ai in AI_APPS) {
             val rel = "$desk/AI Apps/${ai.id}.desktop"
@@ -940,7 +947,7 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
           `pc-open "LibreOffice Writer"`, `pc-open ~/site/index.html`).
         - `xdotool` – click and type in apps (DISPLAY=:1), e.g. `xdotool mousemove 400 300 click 1`,
           `xdotool type "hello"`, `xdotool key ctrl+s`. Take a screenshot first to find positions.
-        - Install software with `apt-get install -y <package>` (no sudo needed). App Store apps:
+        - Install software with `apt-get install -y <package>` (no sudo needed). Air Store apps:
           `ubuntu-extras install <id>` (vscode, coding, python, games, luanti, brave, …).
         - Projects: Python 3, git, gcc; Node.js after `ubuntu-extras install coding`. GUI programs you
           build show up on the desktop when started (use `pc-open` or start them in the background).
@@ -1036,7 +1043,7 @@ ${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
         mkdir -p /root/Projects
         cd /root/Projects || cd /root || exit 1
         if ! command -v claude >/dev/null 2>&1; then
-            echo "Claude Code is not installed yet: App Store → AI & Coding → Claude Code → Install."
+            echo "Claude Code is not installed yet: Air Store → AI & Coding → Claude Code → Install."
             exec bash
         fi
         # Claude may use the PC's own tools without asking each time (they only look or open things).

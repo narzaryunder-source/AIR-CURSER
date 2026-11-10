@@ -271,7 +271,7 @@ class CloudPcService : Service() {
                 applyGpu()
                 AudioBridge.start(this)
                 if (CloudPcTools.needsSetup(this)) {
-                    CloudPcBus.line("==> Updating desktop tools (App Store, layout, AI apps)…", force = true)
+                    CloudPcBus.line("==> Updating desktop tools (Air Store, layout, AI apps)…", force = true)
                     CloudPcEngine.run(this, CloudPcTools.PACKAGES_SCRIPT, onProcess = { desktop = it }) { CloudPcBus.line(it) }
                     CloudPcTools.writeFiles(this)
                 }
