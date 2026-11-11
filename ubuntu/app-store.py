@@ -59,8 +59,8 @@ def pkg(id, name, desc, cat, size, domain, icon, popular=False):
     return App(id, name, desc, cat, size, [domain], ["pkg:" + id], ["pkg:" + id], icon, popular=popular)
 CATALOG = [
     # AI & coding
-    App("vscode", "VS Code", "Code editor from Microsoft. On most phones it opens in Firefox (VS Code Server)", AI, 110,
-        ["code.visualstudio.com"], ["pkg:code"], ["desk:code.desktop", "pkg:code"], "applications-development", popular=True),
+    App("vscode", "VS Code", "Code editor (code-server) – opens in Air, smooth on the phone's engine (one download)", AI, 240,
+        ["code.visualstudio.com"], ["cmd:code-server"], ["desk:cloudpc-vscode.desktop"], "applications-development", popular=True),
     App("claude", "Claude Code", "AI coding assistant in the terminal (Claude account needed)", AI, 80,
         ["claude.ai"], ["cmd:claude"], ["desk:cloudpc-ai-claude-code.desktop", "term:cloudpc-claude"], "utilities-terminal"),
     App("coding", "Coding tools", "Git, Python, Node.js and the C/C++ compiler in one step", AI, 200,

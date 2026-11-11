@@ -409,7 +409,7 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_store_only"
+private const val WHATS_NEW_ID = "whatsnew_vscode_heavy"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
@@ -422,6 +422,8 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             UiPrefs.close(context, WHATS_NEW_ID)
             whatsNew = false
         }) {
+            Bullet("VS Code now runs like the guide (code-server) and opens in Air: smooth, signs in by itself")
+            Bullet("Blender, Kdenlive, OpenShot, Krita: automatic speed mode while they run, plus a light Blender viewport preset")
             Bullet("Only Air Store now – the old App Store is gone. 50+ new apps: Meet, Zoom, Teams, OBS, OpenShot, chess, courses…")
             Bullet("Air pages a little smaller, so more fits on the screen")
             Bullet("New AirCursor logo: the blue air-arrow (AirCursor PC in violet); Air keeps its eagle")

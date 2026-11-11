@@ -116,7 +116,7 @@ val copyCloudPcTools by tasks.registering(Copy::class) {
         include(
             "app-store.sh", "app-store.py", "ubuntu-extras.sh", "install-deb.sh", "windows-layout.sh", "wallpaper-gui.sh",
             "launch.sh", "apps-setup.sh", "style.sh", "aircursor-wallpaper.svg", "airstore.py", "airstore.html",
-            "aircursor-logo.svg", "air-logo.svg", "web-icons.py", "aircursor-city.jpg", "aircursor-start.svg",
+            "aircursor-logo.svg", "air-logo.svg", "web-icons.py", "aircursor-city.jpg", "aircursor-start.svg", "vscode.sh",
         )
     }
     into(layout.buildDirectory.dir("generated/cloudpc-assets/cloudpc"))

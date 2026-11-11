@@ -17,6 +17,14 @@ field() { grep -m1 "^$1=" "$SRC" 2>/dev/null | cut -d= -f2-; }
 NAME=$(field Name); NAME=${NAME:-${ID%.desktop}}
 ICON=$(field Icon)
 GAME=0; field Categories | grep -qi 'game' && GAME=1
+# Heavy apps (3D, video and photo tools) get the same speed profile as games – smaller desktop while
+# they run, background helpers off, OpenGL on its own thread – but no FPS overlay.
+HEAVY=0
+case "${ID,,} ${NAME,,}" in
+    *blender*|*kdenlive*|*openshot*|*shotcut*|*krita*|*obs-studio*|*com.obsproject*|*darktable*|*godot*|*scribus*|*stellarium*)
+        HEAVY=1; GAME=1 ;;
+esac
+GAME_W=960; [ $HEAVY = 1 ] && GAME_W=1120
 
 # Which argument is the program? (skip "env VAR=value")
 ARGS=("$@")
@@ -73,6 +81,10 @@ run() {   # $1 = 1 for the safe second try
             else
                 cmd+=(--disable-gpu --in-process-gpu)
             fi
+        elif [ $i -eq $P ] && [ $HEAVY = 1 ] && [[ "${ARGS[$i]}" == *blender* ]] && [ ! -f /root/.config/cloudpc/no-blender-preset ]; then
+            # Blender on a phone's CPU-drawn screen: the cheap viewport settings (each one only if this
+            # Blender version has it). Turn off: create ~/.config/cloudpc/no-blender-preset
+            cmd+=(--python-expr $'import bpy\nP = bpy.context.preferences\nfor o, k, v in ((P.system, "viewport_aa", "OFF"), (P.system, "anisotropic_filter", "FILTER_0"), (P.system, "use_overlay_smooth_wire", False), (P.system, "memory_cache_limit", 1024), (P.edit, "undo_steps", 16), (P.view, "smooth_view", 0), (P.view, "show_splash", False)):\n    try:\n        setattr(o, k, v)\n    except Exception:\n        pass\n')
         elif [ $i -eq $P ] && [ $ELECTRON = 1 ]; then
             # Electron apps – first try: no zygote and no GPU process = 3 programs fewer, software
             # drawing. Second try: Chromium's normal start (only the sandbox off).
@@ -92,7 +104,7 @@ run() {   # $1 = 1 for the safe second try
         if [ "$(cat /etc/cloudpc/gpu-mode 2>/dev/null)" = virgl ] && [ -S /tmp/.virgl_test ]; then
             gpu=(GALLIUM_DRIVER=virpipe MESA_GL_VERSION_OVERRIDE=4.0)
         fi
-        if command -v mangohud >/dev/null 2>&1 && [ ! -f /root/.config/cloudpc/no-game-overlay ]; then
+        if [ $HEAVY = 0 ] && command -v mangohud >/dev/null 2>&1 && [ ! -f /root/.config/cloudpc/no-game-overlay ]; then
             env "${gpu[@]}" mesa_glthread=true MANGOHUD_CONFIGFILE=/etc/cloudpc/MangoHud.conf \
                 mangohud --dlsym "${cmd[@]}" </dev/null >"$LOG" 2>&1
         else
@@ -130,9 +142,9 @@ if [ $GAME = 1 ] && [ ! -f /root/.config/cloudpc/no-game-resolution ] && command
     # A game started meanwhile by another launcher (still running) already changed it: leave it.
     OWNER=$(cut -d' ' -f1 /tmp/cloudpc-game-res 2>/dev/null)
     if [ -n "$OWNER" ] && kill -0 "$OWNER" 2>/dev/null; then CUR=""; fi
-    if [ -n "$CUR" ] && [ "$CW" -gt 1000 ] 2>/dev/null; then
-        NH=$(( CH * 960 / CW / 2 * 2 ))
-        if cloudpc-resize 960 "$NH" >/dev/null 2>&1; then
+    if [ -n "$CUR" ] && [ "$CW" -gt "$GAME_W" ] 2>/dev/null; then
+        NH=$(( CH * GAME_W / CW / 2 * 2 ))
+        if cloudpc-resize "$GAME_W" "$NH" >/dev/null 2>&1; then
             GAME_RES="$CW $CH"
             echo "$$ $GAME_RES" > /tmp/cloudpc-game-res
         fi

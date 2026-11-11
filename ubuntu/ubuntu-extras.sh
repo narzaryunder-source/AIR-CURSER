@@ -18,27 +18,29 @@ ok() { printf '\033[1;32m%s\033[0m\n' "$*"; }
 bad() { printf '\033[1;31m%s\033[0m\n' "$*"; }
 
 install_vscode() {
-    echo "Installing VS Code (ARM64)..."
-    local deb=/tmp/vscode-arm64.deb
-    if wget -O "$deb" "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-arm64" &&
-        apt-get install -y "$deb"; then
-        if command -v cloudpc-apps >/dev/null 2>&1; then
-            cloudpc-apps   # AirCursor PC: launcher, flags and data folder are set up there
-            ok "VS Code installed (desktop icon, Start menu, or type: code)"
-            rm -f "$deb"
-            return
-        fi
-        # Electron apps need --no-sandbox inside proot
-        sed -i 's|^Exec=/usr/share/code/code |Exec=/usr/local/bin/vscode |' \
-            /usr/share/applications/code*.desktop 2>/dev/null || true
-        # As root (built-in Cloud PC) VS Code also needs its own data folder.
-        printf '#!/bin/sh\nif [ "$(id -u)" = 0 ]; then exec /usr/share/code/code --no-sandbox --user-data-dir=/root/.vscode-root "$@"; fi\nexec /usr/share/code/code --no-sandbox "$@"\n' > /usr/local/bin/vscode
-        chmod +x /usr/local/bin/vscode
-        ok "VS Code installed (menu: Development > Visual Studio Code, or run: vscode)"
+    # code-server = VS Code in the browser (the CodeWithHarry guide's way). One download (about 240 MB).
+    echo "Installing VS Code (code-server)..."
+    local arch tag url tgz=/tmp/code-server.tar.gz
+    case "$(uname -m)" in
+        aarch64|arm64) arch=arm64 ;;
+        x86_64) arch=amd64 ;;
+        *) bad "VS Code needs a 64-bit phone"; return ;;
+    esac
+    tag=$(wget -qO- https://api.github.com/repos/coder/code-server/releases/latest 2>/dev/null |
+        grep -m1 '"tag_name"' | sed 's/[^0-9.]*\([0-9][0-9.]*\).*/\1/')
+    [ -n "$tag" ] || tag=4.16.1   # the version of the guide, if GitHub's answer does not come
+    url="https://github.com/coder/code-server/releases/download/v$tag/code-server-$tag-linux-$arch.tar.gz"
+    rm -rf /opt/code-server.new && mkdir -p /opt/code-server.new
+    if wget -O "$tgz" "$url" && tar -xzf "$tgz" -C /opt/code-server.new --strip-components=1; then
+        rm -rf /opt/code-server
+        mv /opt/code-server.new /opt/code-server
+        ln -sf /opt/code-server/bin/code-server /usr/local/bin/code-server
+        ok "VS Code installed (code-server $tag)"
     else
-        bad "VS Code install failed"
+        rm -rf /opt/code-server.new
+        bad "VS Code install failed – check the internet and try again"
     fi
-    rm -f "$deb"
+    rm -f "$tgz"
 }
 
 install_node() {
@@ -219,7 +221,7 @@ install_id() {
 remove_id() {
     local pkgs=""
     case "$1" in
-        vscode) pkgs="code" ;;
+        vscode) rm -rf /opt/code-server; rm -f /usr/local/bin/code-server; dpkg -s code >/dev/null 2>&1 && pkgs="code" ;;
         libreoffice) pkgs=$(dpkg-query -W -f='${Package}\n' 'libreoffice*' 2>/dev/null | tr '\n' ' ') ;;
         claude) npm uninstall -g @anthropic-ai/claude-code; return ;;
         ollama) rm -rf /usr/local/bin/ollama /usr/local/bin/ai-chat /usr/local/lib/ollama /usr/share/ollama; return ;;

@@ -95,7 +95,7 @@
   <p><b>Minetest</b> (Minecraft-like), car games <b>SuperTuxKart</b>, <b>Trigger Rally</b> and <b>TORCS</b>, plus Neverball, Tux Racer, OpenArena and the <b>Games pack</b> (SuperTux, X-Moto, 2048, Chess, Solitaire, OpenTTD…). Games show an FPS counter in the top left corner and are held at a steady 60 FPS at most. <kbd>Right Shift</kbd>+<kbd>F12</kbd> hides the counter. Choose AirBoost → <b>Game</b> and set graphics to <b>Low</b> inside 3D games.</p>
   <h3>Apps from a website (.deb)</h3>
   <p>Download the <b>ARM64</b> (aarch64) <code>.deb</code> file in Firefox (for example VS Code from code.visualstudio.com) and tap it in the Downloads folder. It installs, gets a desktop icon and works like an Air Store app.</p>
-  <div class="tip">If an app does not open, AirCursor PC tries again with safe settings and then shows what went wrong. Big apps (LibreOffice, GIMP, VS Code, Blender) need up to a minute the first time – an "Opening…" message appears.</div>
+  <div class="tip">If an app does not open, AirCursor PC tries again with safe settings and then shows what went wrong. Big apps (LibreOffice, GIMP, VS Code, Blender) need up to a minute the first time. Blender, Kdenlive, OpenShot, Krita and other heavy apps get the speed mode automatically (smaller desktop while they run) – an "Opening…" message appears.</div>
   <div class="warn">Windows programs (<code>.exe</code>) do not run here – this is Linux. Most popular programs have a Linux version in Air Store.</div>
 </section>
 
@@ -239,7 +239,7 @@
     <tr><th>Problem</th><th>Fix</th></tr>
     <tr><td>Black or frozen screen</td><td>Toolbar → close → "Stop desktop", then open it again.</td></tr>
     <tr><td>Slow</td><td>Toolbar → <b>AirBoost</b> → <b>Game</b>, then <b>Boost now</b>.</td></tr>
-    <tr><td>VS Code shows "window terminated unexpectedly (code 5)"</td><td>Most phones give apps too little address space for the desktop VS Code window. AirCursor PC then opens VS Code as Microsoft's VS Code Server in Firefox – same editor, terminal and extensions. Just tap the VS Code icon again; the first start downloads about 70 MB.</td></tr>
+    <tr><td>VS Code does not open</td><td>VS Code runs as code-server and opens in Air. The first start installs it (one download, about 240 MB) – keep the internet on. If it still fails: Air Store → VS Code → Remove, then Get again.</td></tr>
     <tr><td>Login page keeps spinning (Claude, Google…)</td><td>Reload the page once, or use "Continue with Google". For Claude Code use <b>AI Apps → Claude Code</b>: the sign-in then opens in your phone's browser.</td></tr>
     <tr><td>VS Code, a game or Firefox closes at once</td><td>Android lets an app run only 32 programs. AirCursor → AirCursor PC → <b>Let big apps run</b>: turn on Developer options → <b>Disable child process restrictions</b> (Android 14+), then restart the phone.</td></tr>
     <tr><td>New app not on the desktop</td><td>Start menu → All apps, or search by its name in the Start menu.</td></tr>

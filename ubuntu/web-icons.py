@@ -23,6 +23,7 @@ KNOWN = {
     "GitHub.desktop": "github.com",
     "cloudpc-gdrive.desktop": "drive.google.com",
     "Google-Drive.desktop": "drive.google.com",
+    "cloudpc-vscode.desktop": "code.visualstudio.com",
 }
 URL = re.compile(r"(https?://[^\s\"']+)")
 

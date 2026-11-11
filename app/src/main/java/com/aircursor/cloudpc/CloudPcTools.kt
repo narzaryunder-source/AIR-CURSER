@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 26
+    const val VERSION = 27
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -99,7 +99,9 @@ object CloudPcTools {
         put("usr/local/bin/cloudpc-resize", RESIZE, exec = true)
         put("usr/local/bin/cloudpc-security-update", SECURITY_UPDATE, exec = true)
         put("usr/local/bin/cloudpc-benchmark", BENCHMARK, exec = true)
-        put("usr/local/bin/cloudpc-vscode", VSCODE, exec = true)
+        put("usr/local/bin/cloudpc-vscode", asset(c, "vscode.sh"), exec = true)
+        put("usr/share/applications/cloudpc-vscode.desktop",
+            entry("VS Code", "cloudpc-vscode %F", "code", "Development;TextEditor;", "Code editor (code-server) in Air – smooth on the phone's engine"))
         // Logins in the phone's own browser (fast, Google sign-in works): Claude Code and any tool
         // that opens a web page through these names.
         put("usr/local/bin/cloudpc-open-on-phone", OPEN_ON_PHONE, exec = true)
@@ -403,54 +405,7 @@ object CloudPcTools {
      * Then VS Code runs as Microsoft's own VS Code Server and opens in Firefox: same editor,
      * terminal and extensions. A random key keeps other apps on the phone out.
      */
-    private val VSCODE = """
-        #!/bin/bash
-        . /tmp/cloudpc-session.env 2>/dev/null
-        export LANG=C.UTF-8
-        CODE=/usr/share/code
-        CONF=/root/.config/cloudpc-vscode
-        mkdir -p "${'$'}CONF" && chmod 700 "${'$'}CONF"
-        MODE=${'$'}(cat "${'$'}CONF/mode" 2>/dev/null)
-        if [ -z "${'$'}MODE" ]; then
-            BITS=${'$'}(awk '!/vsyscall/ { split(${'$'}1, a, "-"); if (length(a[2]) > m) m = length(a[2]) } END { print m }' /proc/self/maps)
-            if [ "${'$'}{BITS:-12}" -le 10 ]; then MODE=web; else MODE=desktop; fi
-        fi
-        # The desktop window crashed here before ("renderer process gone")? Then use the browser mode.
-        if [ "${'$'}MODE" = desktop ] && grep -rqsi "process gone" /root/.config/Code/logs 2>/dev/null; then
-            MODE=web
-            echo web > "${'$'}CONF/mode"
-        fi
-        if [ "${'$'}MODE" = desktop ]; then
-            exec "${'$'}CODE/code" "${'$'}@"
-        fi
-        PORT=8765
-        [ -s "${'$'}CONF/token" ] || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > "${'$'}CONF/token"
-        TOKEN=${'$'}(cat "${'$'}CONF/token")
-        FOLDER=/root
-        for a in "${'$'}@"; do
-            case "${'$'}a" in --*|"") continue ;; esac
-            if [ -d "${'$'}a" ]; then FOLDER=${'$'}(readlink -f "${'$'}a"); elif [ -f "${'$'}a" ]; then FOLDER=${'$'}(dirname "${'$'}(readlink -f "${'$'}a")"); fi
-        done
-        up() { (exec 3<>"/dev/tcp/127.0.0.1/${'$'}PORT") 2>/dev/null; }
-        if ! up; then
-            notify-send -a "AirCursor PC" -i code "Starting VS Code…" \
-                "The first start downloads the VS Code editor (about 70 MB). Keep the internet on." >/dev/null 2>&1 &
-            T="${'$'}CODE/bin/code-tunnel"
-            [ -x "${'$'}T" ] || T="${'$'}CODE/bin/code"
-            cd /root || exit 1
-            nohup "${'$'}T" serve-web --host 127.0.0.1 --port "${'$'}PORT" --connection-token "${'$'}TOKEN" \
-                --accept-server-license-terms > /tmp/vscode-web.log 2>&1 &
-            for i in ${'$'}(seq 1 180); do up && break; sleep 1; done
-            if ! up; then
-                zenity --error --no-markup --width=560 --title="VS Code" \
-                    --text="VS Code could not start. Check the internet and try again.
 
-${'$'}(tail -n 6 /tmp/vscode-web.log)" >/dev/null 2>&1
-                exit 1
-            fi
-        fi
-        exec cloudpc-web "http://127.0.0.1:${'$'}PORT/?tkn=${'$'}TOKEN&folder=${'$'}FOLDER"
-    """.trimIndent() + "\n"
 
     /** Opens a web link in the phone's browser: the AirCursor app watches the clipboard for this marker. */
     private val OPEN_ON_PHONE = """
