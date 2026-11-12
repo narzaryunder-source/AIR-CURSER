@@ -147,6 +147,8 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
         val (w, h) = desktopSize(this)
         CloudPcService.startDesktop(this, w, h)
+        // Pro: Air Drive gets the licence key (or loses it when the plan ended).
+        Thread { com.aircursor.pro.ProAccess.linkDrive(applicationContext) }.start()
 
         val v = RfbView(this, CloudPcDesktop.socketPath(this))
         v.sharpness = AirBoost.current(this).sharpen

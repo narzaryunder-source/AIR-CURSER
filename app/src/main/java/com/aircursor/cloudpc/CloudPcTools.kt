@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 29
+    const val VERSION = 30
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -100,6 +100,9 @@ object CloudPcTools {
         put("usr/local/bin/cloudpc-security-update", SECURITY_UPDATE, exec = true)
         put("usr/local/bin/cloudpc-benchmark", BENCHMARK, exec = true)
         put("usr/local/bin/cloudpc-vscode", asset(c, "vscode.sh"), exec = true)
+        put("usr/local/bin/cloudpc-airdrive", asset(c, "airdrive.sh"), exec = true)
+        put("usr/share/applications/cloudpc-airdrive.desktop",
+            entry("Air Drive", "cloudpc-airdrive", "folder-remote", "Network;FileTransfer;", "Pro: 100 GB private cloud drive, encrypted in your PC"))
         put("usr/share/applications/cloudpc-vscode.desktop",
             entry("VS Code", "cloudpc-vscode %F", "code", "Development;TextEditor;", "Code editor (code-server) in Air – smooth on the phone's engine"))
         // Logins in the phone's own browser (fast, Google sign-in works): Claude Code and any tool
@@ -565,7 +568,7 @@ object CloudPcTools {
         sync_now() {
             local extra=""
             [ -f "${'$'}MARK" ] || extra="--resync"
-            ( rclone bisync "${'$'}DIR" "${'$'}REMOTE" ${'$'}extra --create-empty-src-dirs -v 2>&1 | sed -u 's/^/# /'
+            ( rclone bisync "${'$'}DIR" "${'$'}REMOTE" ${'$'}extra -v 2>&1 | sed -u 's/^/# /'
               echo "${'$'}{PIPESTATUS[0]}" > /tmp/gdrive-sync.rc ) |
                 zenity --progress --pulsate --auto-close --width=560 --title="${'$'}T" --text="Syncing…"
             if [ "${'$'}(cat /tmp/gdrive-sync.rc 2>/dev/null)" = 0 ]; then

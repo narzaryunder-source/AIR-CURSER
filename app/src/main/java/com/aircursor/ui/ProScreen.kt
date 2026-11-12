@@ -55,9 +55,11 @@ fun ProScreen(onBack: () -> Unit) {
     var key by remember { mutableStateOf("") }
     var ownerTaps by remember { mutableIntStateOf(0) }
 
+    var seats by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { ProAccess.refresh(context) }
         version++
+        seats = withContext(Dispatchers.IO) { ProAccess.seatsLeft(context) }
     }
 
     Surface(Modifier.fillMaxSize()) {
@@ -88,6 +90,14 @@ fun ProScreen(onBack: () -> Unit) {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
                         Text("Plans", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        if (config.driveUrl.isNotEmpty()) {
+                            Text("☁️ Air Drive: ${config.driveGb} GB private cloud storage (encrypted in your PC)")
+                        }
+                        val s = seats
+                        Text(
+                            if (s != null) "👥 Sirf ${s.second} log: ${s.first} jagah baaki" else "👥 Sirf ${config.seatsTotal} log ke liye",
+                            fontWeight = FontWeight.SemiBold,
+                        )
                         Text("• Monthly: ₹${config.priceMonthly} / 30 din")
                         Text("• Yearly: ₹${config.priceYearly} / 365 din (sasta)")
                         Spacer(Modifier.height(8.dp))

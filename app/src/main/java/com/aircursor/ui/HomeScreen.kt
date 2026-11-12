@@ -409,7 +409,7 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_air_logo_games"
+private const val WHATS_NEW_ID = "whatsnew_air_drive"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
@@ -422,6 +422,8 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             UiPrefs.close(context, WHATS_NEW_ID)
             whatsNew = false
         }) {
+            Bullet("Pro: Air Drive – 100 GB private cloud storage, encrypted inside your PC (only 40 places)")
+            Bullet("Google Drive sync in the PC works again")
             Bullet("Air has a new logo: a globe with a swirl of air – a real browser look")
             Bullet("27 new games in Air Store: Hedgewars, Wesnoth, OpenTTD, Warzone 2100, Solitaire, Chess, Sudoku… and web games like Krunker, Slither.io, skribbl.io")
             Bullet("AirCursor PC looks like a Mac: menu bar on top, dock with live dots, all-apps screen with search – drawn by the phone, so it stays smooth")

@@ -24,6 +24,11 @@ data class ProConfig(
     val payeeName: String = "Cloud PC",
     val whatsapp: String = "",
     val publicKey: String = "",
+    /** Air Drive service (the owner's Cloudflare Worker); empty = no cloud drive yet. */
+    val driveUrl: String = "",
+    val driveGb: Int = 100,
+    /** Pro places on sale (the service enforces it; the Pro screen shows how many are left). */
+    val seatsTotal: Int = 40,
 ) {
     companion object {
         fun parse(json: String): ProConfig? = try {
@@ -37,6 +42,9 @@ data class ProConfig(
                 payeeName = o.optString("payeeName", "Cloud PC").trim(),
                 whatsapp = o.optString("whatsapp", "").filter { it.isDigit() },
                 publicKey = o.optString("publicKey", "").trim(),
+                driveUrl = o.optString("driveUrl", "").trim().trimEnd('/').takeIf { it.startsWith("https://") } ?: "",
+                driveGb = o.optInt("driveGb", 100),
+                seatsTotal = o.optInt("seatsTotal", 40),
             )
         } catch (e: Exception) {
             null
@@ -142,6 +150,48 @@ object ProAccess {
     }
 
     fun allowed(c: Context): Boolean = status(c).allowed
+
+    /** Pro places left, from the Air Drive service (call from a background thread); null = unknown. */
+    fun seatsLeft(c: Context): Pair<Int, Int>? {
+        val url = config(c).driveUrl.ifEmpty { return null }
+        return try {
+            val conn = URL("$url/v1/seats").openConnection() as HttpURLConnection
+            conn.connectTimeout = 6000
+            conn.readTimeout = 6000
+            val o = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+            conn.disconnect()
+            o.getInt("left") to o.getInt("total")
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Air Drive in the PC: while Pro runs (and the owner has set up the drive), the PC gets the
+     * licence key and the service address – in the PC's private settings folder, readable by the
+     * PC user only. Otherwise both are removed.
+     */
+    fun linkDrive(c: Context) {
+        val dir = java.io.File(com.aircursor.cloudpc.CloudPcEngine.rootfs(c), "root/.config/cloudpc")
+        val lic = java.io.File(dir, "pro-license")
+        val url = java.io.File(dir, "airdrive-url")
+        val cfg = config(c)
+        val key = savedLicense(c)
+        if (status(c) is ProStatus.Active && key.isNotEmpty() && cfg.driveUrl.isNotEmpty()) {
+            try {
+                dir.mkdirs()
+                lic.writeText(key + "\n")
+                url.writeText(cfg.driveUrl + "\n")
+                lic.setReadable(false, false)
+                lic.setReadable(true, true)
+            } catch (e: Exception) {
+                Log.w("ProAccess", "drive link failed", e)
+            }
+        } else {
+            lic.delete()
+            url.delete()
+        }
+    }
 
     // ---- Owner tools: the seller key lives only on the owner's phone ----
 
