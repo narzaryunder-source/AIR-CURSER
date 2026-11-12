@@ -46,6 +46,7 @@ import com.aircursor.cloudpc.CloudPcDesktopActivity
 import com.aircursor.cloudpc.CloudPcEngine
 import com.aircursor.cloudpc.CloudPcService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private fun gb(bytes: Long) = "%.1f GB".format(bytes / 1_000_000_000.0)
@@ -74,6 +75,42 @@ fun CloudPcScreen(onBack: () -> Unit, onNeedPro: () -> Unit = {}) {
     var showLog by remember { mutableStateOf(false) }
     var showTermux by remember { mutableStateOf(false) }
     var confirmRemove by remember { mutableStateOf(false) }
+    // Backup / restore: a line of progress, and the file picked for a restore (asked first).
+    var backupInfo by remember { mutableStateOf<String?>(null) }
+    var backupBusy by remember { mutableStateOf(false) }
+    var restoreUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    fun stopDesktopFirst() {
+        if (CloudPcBus.state.value.desktopRunning) {
+            CloudPcService.send(context, CloudPcService.ACTION_DESKTOP_STOP)
+            var waited = 0
+            while (CloudPcBus.state.value.desktopRunning && waited < 20) {
+                Thread.sleep(500); waited++
+            }
+            Thread.sleep(1500)
+        }
+    }
+
+    fun mb(b: Long) = if (b >= 1L shl 30) "%.1f GB".format(b / 1073741824.0) else "${b / 1048576} MB"
+
+    val backupPick = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/gzip"),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        backupBusy = true
+        backupInfo = "Preparing the backup…"
+        scope.launch(Dispatchers.IO) {
+            stopDesktopFirst()
+            val r = com.aircursor.cloudpc.PcBackup.backup(context, uri, { n -> backupInfo = "Saving… ${mb(n)}" }) { }
+            backupInfo = if (r.ok) "✅ Backup saved (${mb(r.bytes)}). Keep it safe – it restores your PC on any phone."
+            else "Backup did not finish: ${r.message}"
+            backupBusy = false
+        }
+    }
+    val restorePick = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri -> if (uri != null) restoreUri = uri }
 
     LaunchedEffect(state.version, state.busy, state.desktopRunning) {
         withContext(Dispatchers.IO) {
@@ -308,6 +345,23 @@ fun CloudPcScreen(onBack: () -> Unit, onNeedPro: () -> Unit = {}) {
                         PrimaryButton("Run", onClick = { runCmd(command) }, enabled = command.isNotBlank(), icon = R.drawable.ic_ui_play)
                     }
                 }
+                if (ready && desktopInstalled) {
+                    NavRow(R.drawable.ic_ui_download, "Back up the PC",
+                        "Home folder, settings and the list of apps – one file, saved where you choose", tint = Brand.Success) {
+                        if (!backupBusy) {
+                            val day = java.time.LocalDate.now().toString()
+                            backupPick.launch("AirCursor-PC-backup-$day.tar.gz")
+                        }
+                    }
+                    NavRow(R.drawable.ic_ui_upload, "Restore from a backup",
+                        "Brings back your files and installs your apps again", tint = Brand.Sky) {
+                        if (!backupBusy) restorePick.launch(arrayOf("application/gzip", "application/x-gzip", "application/octet-stream", "*/*"))
+                    }
+                    backupInfo?.let { msg ->
+                        if (backupBusy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 6.dp))
+                        Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 NavRow(R.drawable.ic_ui_info, if (showLog) "Hide log" else "Show log", "Technical details", tint = Brand.Sky) {
                     showLog = !showLog
                 }
@@ -332,6 +386,39 @@ fun CloudPcScreen(onBack: () -> Unit, onNeedPro: () -> Unit = {}) {
             ) { showTermux = !showTermux }
             if (showTermux) UbuntuCard(onNeedPro = onNeedPro)
         }
+    }
+
+    restoreUri?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { restoreUri = null },
+            title = { Text("Restore this backup?") },
+            text = {
+                Text(
+                    "Files in the backup replace the same files in your PC's Home folder (other files stay). " +
+                        "The desktop stops for a moment; then the apps from the backup are installed again " +
+                        "(internet needed, it can take a while).",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    restoreUri = null
+                    backupBusy = true
+                    backupInfo = "Restoring…"
+                    showLog = true
+                    scope.launch(Dispatchers.IO) {
+                        stopDesktopFirst()
+                        val r = com.aircursor.cloudpc.PcBackup.restore(context, uri, { n -> backupInfo = "Restoring… ${mb(n)}" }) { l ->
+                            CloudPcBus.line(l)
+                        }
+                        CloudPcBus.flush()
+                        backupInfo = if (r.ok) "✅ Restored. Start the PC – your files and apps are back."
+                        else "Restore did not finish: ${r.message}"
+                        backupBusy = false
+                    }
+                }) { Text("Restore") }
+            },
+            dismissButton = { TextButton(onClick = { restoreUri = null }) { Text("Cancel") } },
+        )
     }
 
     if (confirmRemove) {

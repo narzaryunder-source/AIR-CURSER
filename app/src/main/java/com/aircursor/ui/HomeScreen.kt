@@ -409,7 +409,7 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_air_drive"
+private const val WHATS_NEW_ID = "whatsnew_lock_backup_widgets"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
@@ -422,6 +422,10 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             UiPrefs.close(context, WHATS_NEW_ID)
             whatsNew = false
         }) {
+            Bullet("New lock screen (blurred wallpaper, big clock) and a start screen with logo and progress bar")
+            Bullet("Back up your whole PC to one file and restore it on any phone: AirCursor PC → Back up the PC")
+            Bullet("Desktop widgets: clock, weather, storage, battery – they hide when a window is open")
+            Bullet("A short tour on the first start, in Hindi or English")
             Bullet("Pro: Air Drive – 100 GB private cloud storage, encrypted inside your PC (only 40 places)")
             Bullet("Google Drive sync in the PC works again")
             Bullet("Air has a new logo: a globe with a swirl of air – a real browser look")

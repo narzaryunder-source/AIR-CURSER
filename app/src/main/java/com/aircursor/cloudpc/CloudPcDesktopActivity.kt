@@ -91,6 +91,9 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
     private var view: RfbView? = null
     private lateinit var status: TextView
+    /** The start screen (logo + progress) until the desktop's first picture; later a small card. */
+    private lateinit var boot: LinearLayout
+    private var bootDone = false
     private lateinit var tools: LinearLayout
     private val stickyButtons = HashMap<Int, View>()
     private var handButton: View? = null
@@ -104,6 +107,16 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private var assistant: com.aircursor.assistant.AirAssistant? = null
     private var videoChip: View? = null
     private var shell: AirShell? = null
+    private var tour: PcTour? = null
+
+    /** The five-card tour: once, after the first picture, never over the lock screen. */
+    private fun showTour(force: Boolean = false) {
+        if (tour != null || lockView != null || !bootDone) return
+        if (!force && PcTour.done(this)) return
+        val t = PcTour(this) { tour = null }
+        tour = t
+        rootLayout.addView(t, FrameLayout.LayoutParams(-1, -1))
+    }
     private var hiddenAt = 0L
 
     // Start screen: the latest step from the log, and one automatic restart if the desktop hangs.
@@ -113,7 +126,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private val statusTick = object : Runnable {
         override fun run() {
             val base = baseStatus
-            if (base != null && status.visibility == View.VISIBLE) {
+            if (base != null && boot.visibility == View.VISIBLE) {
                 val last = CloudPcBus.log.value.lastOrNull { it.isNotBlank() }?.trim()?.take(90)
                 status.text = if (last != null) "$base\n\n$last" else base
                 val st = CloudPcBus.state.value
@@ -182,14 +195,30 @@ class CloudPcDesktopActivity : ComponentActivity() {
         root.addView(v, FrameLayout.LayoutParams(-1, -1))
 
         status = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTextColor(0xB3FFFFFF.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
             gravity = Gravity.CENTER
-            setPadding(dp(28), dp(18), dp(28), dp(18))
-            background = round(0xE6131A2E.toInt(), 18)
+            maxLines = 4
             text = "Starting AirCursor PC…"
         }
-        root.addView(status, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        // Start screen like a computer starting: our logo, a thin progress bar, the step below.
+        boot = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.BLACK)
+            isClickable = true
+            addView(android.widget.ImageView(this@CloudPcDesktopActivity).apply {
+                setImageResource(R.drawable.logo_pc)
+                scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            }, LinearLayout.LayoutParams(dp(92), dp(92)))
+            addView(android.widget.ProgressBar(this@CloudPcDesktopActivity, null, android.R.attr.progressBarStyleHorizontal).apply {
+                isIndeterminate = true
+                indeterminateTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+                progressBackgroundTintList = android.content.res.ColorStateList.valueOf(0x33FFFFFF)
+            }, LinearLayout.LayoutParams(dp(180), dp(6)).apply { topMargin = dp(34) })
+            addView(status, LinearLayout.LayoutParams(dp(420), -2).apply { topMargin = dp(18) })
+        }
+        root.addView(boot, FrameLayout.LayoutParams(-1, -1))
 
         tools = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -269,6 +298,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
             override fun assistant() = startAssistant()
             override fun boostMenu() = this@CloudPcDesktopActivity.boostMenu()
             override fun exit() = askExit()
+            override fun tour() = showTour(force = true)
             override fun changed() = keepControlsOnTop()
         })
         root.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or, ob ->
@@ -279,7 +309,25 @@ class CloudPcDesktopActivity : ComponentActivity() {
             if (msg != null && baseStatus == null) connectingSince = SystemClock.uptimeMillis()
             baseStatus = msg
             status.text = msg ?: ""
-            status.visibility = if (msg == null) View.GONE else View.VISIBLE
+            if (msg == null && !bootDone) {
+                // First picture: the start screen fades away; later messages use a small card.
+                bootDone = true
+                boot.animate().alpha(0f).setDuration(350).withEndAction {
+                    boot.visibility = View.GONE
+                    boot.alpha = 1f
+                    boot.setBackgroundColor(Color.TRANSPARENT)
+                    boot.isClickable = false
+                    for (i in 0 until boot.childCount) if (boot.getChildAt(i) !== status) boot.getChildAt(i).visibility = View.GONE
+                    status.setTextColor(Color.WHITE)
+                    status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                    status.setPadding(dp(28), dp(18), dp(28), dp(18))
+                    status.background = round(0xE6131A2E.toInt(), 18)
+                    status.layoutParams = LinearLayout.LayoutParams(-2, -2)
+                    showTour()
+                }.start()
+            } else if (bootDone) {
+                boot.visibility = if (msg == null) View.GONE else View.VISIBLE
+            }
         }
         connectingSince = SystemClock.uptimeMillis()
         status.post(statusTick)
@@ -323,6 +371,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
             override fun handleOnBackPressed() {
                 when {
                     lockView != null -> finish()
+                    tour != null -> tour?.finish()
                     assistant?.isShowing == true -> assistant?.dismiss()
                     shell?.closeGrid() == true -> Unit
                     air?.back() == true -> Unit
@@ -332,6 +381,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
             }
         })
 
+        boot.bringToFront()
         // Windows-style: password screen (or the first-start question) in front, desktop starting behind it.
         when {
             PcLock.hasPassword(this) -> showLock(PcLockScreen.Mode.SIGN_IN)
@@ -447,7 +497,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         val y = sy - loc[1]
         for (i in rootLayout.childCount - 1 downTo 0) {
             val c = rootLayout.getChildAt(i)
-            if (c === view || c === status || c.visibility != View.VISIBLE) continue
+            if (c === view || c === boot || c.visibility != View.VISIBLE) continue
             if (x >= c.x && x < c.x + c.width && y >= c.y && y < c.y + c.height) return true
         }
         return false
@@ -458,6 +508,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         shell?.bringToFront()
         if (::side.isInitialized) side.bringToFront()
         assistant?.bringToFront()
+        if (::boot.isInitialized && !bootDone) boot.bringToFront()
         lockView?.bringToFront()
     }
 
@@ -889,6 +940,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         side.visibility = View.VISIBLE
         DesktopInput.target = view
         view?.requestFocus()
+        showTour()
     }
 
     private fun lockMenu() {

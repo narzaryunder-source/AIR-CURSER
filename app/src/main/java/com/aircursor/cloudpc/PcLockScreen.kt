@@ -36,8 +36,9 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * The Windows-style screen in front of AirCursor PC: the PC's own wallpaper with the time, and
- * either the password box (sign in) or the first-start question "Protect your PC with a password".
+ * The lock screen in front of AirCursor PC (Mac-like): the PC's own wallpaper, softly blurred,
+ * the date and a big clock at the top, the person's picture, name and password box at the bottom
+ * – or the first-start question "Protect your PC with a password".
  * The desktop keeps starting behind it, so after signing in it is (nearly) ready.
  */
 @SuppressLint("ViewConstructor")
@@ -97,9 +98,9 @@ class PcLockScreen(
         val column = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(24), dp(20), dp(24), dp(36))
+            setPadding(dp(24), dp(22), dp(24), dp(40))
         }
-        scroll.addView(column, LayoutParams(-1, -2))
+        scroll.addView(column, LayoutParams(-1, -1))
         addView(scroll, LayoutParams(-1, -1))
         // The on-screen keyboard: keep the boxes above it (the window itself is not resized here).
         ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
@@ -111,11 +112,16 @@ class PcLockScreen(
 
         clockBox.orientation = LinearLayout.VERTICAL
         clockBox.gravity = Gravity.CENTER_HORIZONTAL
-        clock.style(54f, bold = false, light = true)
-        date.style(16f)
-        clockBox.addView(clock)
+        // Date small above a big clock, like a Mac.
+        clock.style(68f, bold = true)
+        clock.alpha = 0.92f
+        date.style(17f, bold = true)
+        date.alpha = 0.9f
         clockBox.addView(date)
-        column.addView(clockBox, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(18) })
+        clockBox.addView(clock)
+        column.addView(clockBox, LinearLayout.LayoutParams(-2, -2))
+        // The sign-in sits near the bottom; the space between grows with the screen.
+        if (mode == Mode.SIGN_IN) column.addView(View(context), LinearLayout.LayoutParams(1, 0, 1f).apply { topMargin = dp(18) })
 
         when (mode) {
             Mode.SIGN_IN -> buildSignIn(column)
@@ -142,13 +148,17 @@ class PcLockScreen(
 
     private fun buildSignIn(column: LinearLayout) {
         column.addView(avatar(PcLock.name(context)))
-        column.addView(TextView(context).apply { style(20f, bold = true); text = PcLock.name(context) },
-            LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(10); bottomMargin = dp(14) })
+        column.addView(TextView(context).apply { style(17f, bold = true); text = PcLock.name(context) },
+            LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(8); bottomMargin = dp(12) })
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = pill(0x33FFFFFF, 0x66FFFFFF)
-            setPadding(dp(14), 0, dp(4), 0)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(22).toFloat()
+                setColor(0x38FFFFFF)
+                setStroke(dp(1), 0x4DFFFFFF)
+            }
+            setPadding(dp(16), 0, dp(4), 0)
         }
         val field = passwordField("Password")
         field.background = null
@@ -159,9 +169,9 @@ class PcLockScreen(
             contentDescription = "Sign in"
             setPadding(dp(8), dp(8), dp(8), dp(8))
         }
-        row.addView(field, LinearLayout.LayoutParams(0, dp(46), 1f))
-        row.addView(go, LinearLayout.LayoutParams(dp(38), dp(38)))
-        column.addView(row, LinearLayout.LayoutParams(dp(300), -2))
+        row.addView(field, LinearLayout.LayoutParams(0, dp(44), 1f))
+        row.addView(go, LinearLayout.LayoutParams(dp(36), dp(36)))
+        column.addView(row, LinearLayout.LayoutParams(dp(250), -2))
         val err = TextView(context).apply { style(13f); setTextColor(0xFFFFB4B4.toInt()); visibility = View.GONE; gravity = Gravity.CENTER }
         error = err
         column.addView(err, LinearLayout.LayoutParams(dp(300), -2).apply { topMargin = dp(10) })
@@ -339,12 +349,12 @@ class PcLockScreen(
         setTextColor(Color.WHITE)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 30f)
         typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
-        background = GradientDrawable().apply {
+        background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+            intArrayOf(0xFF5B8CFF.toInt(), 0xFF8E5BFF.toInt())).apply {
             shape = GradientDrawable.OVAL
-            setColor(0x40FFFFFF)
-            setStroke(dp(2), 0x80FFFFFF.toInt())
+            setStroke(dp(2), 0x59FFFFFF)
         }
-        layoutParams = LinearLayout.LayoutParams(dp(78), dp(78))
+        layoutParams = LinearLayout.LayoutParams(dp(72), dp(72))
     }
 
     private fun hideKeyboard(v: View) {
@@ -370,12 +380,16 @@ class PcLockScreen(
         val w = max(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
         Thread {
             val bmp = try {
-                wallpaperFile(c)?.let { decode(it, w) }
+                wallpaperFile(c)?.let { decode(it, if (android.os.Build.VERSION.SDK_INT >= 31) w else w / 24) }
             } catch (_: Throwable) {
                 null
             }
             if (bmp != null) post {
                 wallpaper.setImageBitmap(bmp)
+                if (android.os.Build.VERSION.SDK_INT >= 31) {
+                    wallpaper.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(
+                        28 * dp, 28 * dp, android.graphics.Shader.TileMode.CLAMP))
+                }
                 wallpaper.alpha = 0f
                 wallpaper.animate().alpha(1f).setDuration(250).start()
             }

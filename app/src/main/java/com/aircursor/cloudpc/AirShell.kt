@@ -67,6 +67,7 @@ class AirShell(
         fun boostMenu()
         fun exit()
         fun changed()
+        fun tour()
     }
 
     class App(
@@ -111,6 +112,8 @@ class AirShell(
     private val dockH get() = ui.u(58)
     private val dockGap get() = ui.u(6)
     private val autoHide get() = prefs.getBoolean("dock_autohide", false)
+
+    private lateinit var widgets: ShellWidgets
 
     private val tick = object : Runnable {
         override fun run() {
@@ -193,8 +196,10 @@ class AirShell(
         host.addView(handle, FrameLayout.LayoutParams(ui.u(90), ui.u(5), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
             bottomMargin = ui.u(3)
         })
+        widgets = ShellWidgets(activity, host, ui, barH)
         main.post(tick)
     }
+
 
     fun destroy() = main.removeCallbacks(tick)
 
@@ -233,6 +238,8 @@ class AirShell(
             rebuildDock()
         }
         updateBar()
+        // Widgets on the empty desktop only (no PC window, no Air window, no apps grid).
+        widgets.update(pcWins.isEmpty() && actions.airWindows()?.top() == null && grid == null)
         applyInsets()   // cheap; tells the PC only when the space changes (e.g. after an AirBoost resize)
         if (autoHide && dockBox.visibility == View.VISIBLE && grid == null && now > dockShownUntil) hideDock()
     }
@@ -268,7 +275,10 @@ class AirShell(
         bar.visibility = if (on) View.VISIBLE else View.GONE
         if (on && !autoHide) dockBox.visibility = View.VISIBLE else dockBox.visibility = View.GONE
         handle.visibility = if (on && autoHide) View.VISIBLE else View.GONE
-        if (!on) closeGrid()
+        if (!on) {
+            closeGrid()
+            widgets.update(false)
+        }
         lastMargins = ""
         applyInsets()
         actions.changed()
@@ -317,8 +327,10 @@ class AirShell(
             AirUi.Item("All apps", R.drawable.ic_ui_tabs) { openGrid(false) },
             AirUi.Item("AirBoost and PC style…", R.drawable.ic_ui_bolt, separatorBefore = true) { actions.boostMenu() },
             AirUi.Item("Hide the dock automatically", R.drawable.ic_ui_minimize, checked = autoHide) { setAutoHide(!autoHide) },
+            AirUi.Item("Widgets on the desktop", R.drawable.ic_ui_sun, checked = widgets.on) { widgets.setOn(!widgets.on) },
             AirUi.Item("Toolbar (keys, files, hand control)", R.drawable.ic_ui_menu) { actions.showToolbar() },
-            AirUi.Item("Lock", R.drawable.ic_ui_lock, separatorBefore = true) { actions.lock() },
+            AirUi.Item("How to use (tour)", R.drawable.ic_ui_help, separatorBefore = true) { actions.tour() },
+            AirUi.Item("Lock", R.drawable.ic_ui_lock) { actions.lock() },
             AirUi.Item("Turn off AirCursor PC", R.drawable.ic_ui_close) { actions.exit() },
         ), 270)
     }
@@ -603,6 +615,7 @@ class AirShell(
 
     fun bringToFront() {
         if (!enabled) return
+        widgets.view.bringToFront()
         bar.bringToFront()
         dockBox.bringToFront()
         handle.bringToFront()
