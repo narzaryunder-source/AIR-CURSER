@@ -28,12 +28,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
-import com.aircursor.pro.ProAccess
 import com.aircursor.ubuntu.UbuntuMode
 
 /** Termux mode (older setup): starts the Termux Ubuntu desktop + Termux:X11 + hand cursor. */
 @Composable
-fun UbuntuCard(onNeedPro: () -> Unit) {
+fun UbuntuCard() {
     val context = LocalContext.current
     var tick by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { tick++ }
@@ -71,10 +70,6 @@ fun UbuntuCard(onNeedPro: () -> Unit) {
     }
 
     fun run(action: String) {
-        if (action == "start" && !ProAccess.allowed(context)) {
-            onNeedPro()
-            return
-        }
         if (!allowed) {
             pending = action
             permissionLauncher.launch(UbuntuMode.PERMISSION)

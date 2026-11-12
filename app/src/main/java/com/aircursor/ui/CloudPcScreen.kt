@@ -53,7 +53,7 @@ private fun gb(bytes: Long) = "%.1f GB".format(bytes / 1_000_000_000.0)
 
 /** AirCursor PC: install (one step), open, AirBoost, tools and the log. */
 @Composable
-fun CloudPcScreen(onBack: () -> Unit, onNeedPro: () -> Unit = {}) {
+fun CloudPcScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val state by CloudPcBus.state.collectAsStateWithLifecycle()
     val log by CloudPcBus.log.collectAsStateWithLifecycle()
@@ -384,7 +384,7 @@ fun CloudPcScreen(onBack: () -> Unit, onNeedPro: () -> Unit = {}) {
                 R.drawable.ic_ui_terminal, "Termux mode", "Only for phones that were set up with Termux",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             ) { showTermux = !showTermux }
-            if (showTermux) UbuntuCard(onNeedPro = onNeedPro)
+            if (showTermux) UbuntuCard()
         }
     }
 

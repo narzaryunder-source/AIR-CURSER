@@ -160,8 +160,10 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
         val (w, h) = desktopSize(this)
         CloudPcService.startDesktop(this, w, h)
-        // Pro: Air Drive gets the licence key (or loses it when the plan ended).
-        Thread { com.aircursor.pro.ProAccess.linkDrive(applicationContext) }.start()
+        // Air Drive was part of the old Pro plan (dropped): remove its key and address if a PC still has them.
+        Thread {
+            for (f in listOf("pro-license", "airdrive-url")) File(CloudPcEngine.rootfs(this), "root/.config/cloudpc/$f").delete()
+        }.start()
 
         val v = RfbView(this, CloudPcDesktop.socketPath(this))
         v.sharpness = AirBoost.current(this).sharpen

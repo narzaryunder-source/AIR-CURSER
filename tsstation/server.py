@@ -683,6 +683,9 @@ _latest = {"t": 0, "v": ""}
 
 def version_info():
     """Installed version and the newest one on GitHub (asked at most every 10 minutes)."""
+    # Part of the AirCursor app now: the app brings the new versions, no separate update.
+    if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "MANAGED")):
+        return {"installed": VERSION, "latest": VERSION, "update": False}
     if time.time() - _latest["t"] > 600:
         try:
             _latest["v"] = fetch(RAW + "VERSION", 100).decode().strip()

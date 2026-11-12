@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 30
+    const val VERSION = 31
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -100,9 +100,18 @@ object CloudPcTools {
         put("usr/local/bin/cloudpc-security-update", SECURITY_UPDATE, exec = true)
         put("usr/local/bin/cloudpc-benchmark", BENCHMARK, exec = true)
         put("usr/local/bin/cloudpc-vscode", asset(c, "vscode.sh"), exec = true)
-        put("usr/local/bin/cloudpc-airdrive", asset(c, "airdrive.sh"), exec = true)
-        put("usr/share/applications/cloudpc-airdrive.desktop",
-            entry("Air Drive", "cloudpc-airdrive", "folder-remote", "Network;FileTransfer;", "Pro: 100 GB private cloud drive, encrypted in your PC"))
+        // TS Station, the game console – for everyone, kept up to date by the app.
+        for (f in listOf("server.py", "ts-station", "ts-station.svg", "VERSION")) {
+            put("opt/ts-station/$f", asset(c, "tsstation/$f"), exec = f == "server.py" || f == "ts-station")
+        }
+        for (f in c.assets.list("cloudpc/tsstation/ui").orEmpty()) put("opt/ts-station/ui/$f", asset(c, "tsstation/ui/$f"))
+        put("opt/ts-station/MANAGED", "Installed and updated by the AirCursor app.\n")
+        put("usr/local/bin/ts-station", "#!/bin/sh\nexec /opt/ts-station/ts-station \"\$@\"\n", exec = true)
+        put("usr/share/applications/ts-station.desktop",
+            entry("TS Station", "ts-station", "/opt/ts-station/ts-station.svg", "Utility;", "Your games, console style"))
+        // Air Drive (old Pro plan) is gone: its shortcut too.
+        File(CloudPcEngine.rootfs(c), "usr/share/applications/cloudpc-airdrive.desktop").delete()
+        File(CloudPcEngine.rootfs(c), "usr/local/bin/cloudpc-airdrive").delete()
         put("usr/share/applications/cloudpc-vscode.desktop",
             entry("VS Code", "cloudpc-vscode %F", "code", "Development;TextEditor;", "Code editor (code-server) in Air – smooth on the phone's engine"))
         // Logins in the phone's own browser (fast, Google sign-in works): Claude Code and any tool

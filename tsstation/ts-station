@@ -1,7 +1,7 @@
 #!/bin/bash
 # TS Station launcher: starts the local server and opens the interface full screen.
 . /tmp/cloudpc-session.env 2>/dev/null
-DIR=/opt/ts-station
+DIR=$(dirname "$(readlink -f "$0")")
 pkill -f "python3 $DIR/server.py$" 2>/dev/null
 rm -f /tmp/ts-station.url
 # Shown in Air (the phone's own browser engine, over the PC) when it is there: much smoother.

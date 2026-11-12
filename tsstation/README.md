@@ -1,17 +1,10 @@
-# TS Station (TechOS Station) – TS1 for AirCursor PC
+# TS Station (TechOS Station) – the game console of AirCursor PC
 
-A console-style game launcher (PS5-like feel) for the owner's own AirCursor PC.
-It is **not** part of the AirCursor app – it is installed separately inside one PC.
+A console-style game launcher for everyone's AirCursor PC. It ships with the AirCursor app: the
+app writes it to /opt/ts-station (with a MANAGED marker, so it does not update itself) and pins it
+in the dock. Change the files here, raise `VERSION`; the next app version brings it to every PC.
 
-Install inside AirCursor PC – no terminal: open this link in the PC's browser, then click the
-downloaded file and choose Install:
-
-    https://github.com/narzaryunder-source/AIR-CURSER/raw/main/tsstation/dist/ts-station.deb
-
-Updates: TS Station → Settings → "Update to …" (it checks GitHub itself).
-Terminal alternative: `wget -qO- https://raw.githubusercontent.com/narzaryunder-source/AIR-CURSER/main/tsstation/install.sh | bash`
-
-Maintainers: change the files, raise `VERSION`, run `./build-deb.sh`, commit `dist/ts-station.deb`.
+The old one-click package (`dist/ts-station.deb`, `install.sh`) stays for PCs set up before.
 
 ## Version 0.2
 

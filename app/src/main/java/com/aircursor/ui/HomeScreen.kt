@@ -65,7 +65,6 @@ import com.aircursor.cloudpc.CloudPcBus
 import com.aircursor.cloudpc.CloudPcDesktop
 import com.aircursor.cloudpc.CloudPcDesktopActivity
 import com.aircursor.cloudpc.CloudPcEngine
-import com.aircursor.pro.ProAccess
 import com.aircursor.service.HandTrackingService
 import com.aircursor.service.Permissions
 import com.aircursor.service.TrackingBus
@@ -81,7 +80,6 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onOpenPc: () -> Unit,
     onOpenHelp: () -> Unit,
-    onOpenPro: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val status by TrackingBus.status.collectAsStateWithLifecycle()
@@ -97,7 +95,6 @@ fun HomeScreen(
     BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
 
     // Live plan settings (for later subscriptions) – quietly, in the background.
-    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { ProAccess.refresh(context) } }
 
     fun fromDrawer(action: () -> Unit) {
         scope.launch { drawer.close() }
@@ -119,7 +116,6 @@ fun HomeScreen(
                 onDesktop = { fromDrawer(openDesktop) },
                 onPc = { fromDrawer(onOpenPc) },
                 onHelp = { fromDrawer(onOpenHelp) },
-                onPro = { fromDrawer(onOpenPro) },
                 onAccount = { fromDrawer { showAccount = true } },
                 onAbout = { fromDrawer { showAbout = true } },
             )
@@ -226,9 +222,7 @@ private fun openPcDesktop(context: android.content.Context, onOpenPc: () -> Unit
     val ready = CloudPcEngine.isReady(context) && CloudPcDesktop.isInstalled(context)
     when {
         !ready -> onOpenPc()
-        ProAccess.allowed(context) ->
-            context.startActivity(android.content.Intent(context, CloudPcDesktopActivity::class.java))
-        else -> Toast.makeText(context, "Your plan has ended", Toast.LENGTH_SHORT).show()
+        else -> context.startActivity(android.content.Intent(context, CloudPcDesktopActivity::class.java))
     }
 }
 
@@ -257,7 +251,6 @@ private fun AppDrawer(
     onDesktop: () -> Unit,
     onPc: () -> Unit,
     onHelp: () -> Unit,
-    onPro: () -> Unit,
     onAccount: () -> Unit,
     onAbout: () -> Unit,
 ) {
@@ -274,7 +267,7 @@ private fun AppDrawer(
         drawerContainerColor = MaterialTheme.colorScheme.surface,
     ) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            // Header: logo, Pro, light/dark, name + version, master switch
+            // Header: logo, light/dark, name + version, master switch
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -326,19 +319,6 @@ private fun AppDrawer(
                             }
                         },
                     )
-                }
-                Spacer(Modifier.height(12.dp))
-                Row(
-                    Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(Color.White.copy(alpha = 0.18f))
-                        .clickable(onClick = onPro)
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    UiIcon(R.drawable.ic_ui_crown, tint = Color.White, size = 18.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text("AirCursor Pro", color = Color.White, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -409,7 +389,7 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_lock_backup_widgets"
+private const val WHATS_NEW_ID = "whatsnew_free_tsstation"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
@@ -422,11 +402,12 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             UiPrefs.close(context, WHATS_NEW_ID)
             whatsNew = false
         }) {
+            Bullet("AirCursor is now free for everyone – no plan, no key")
+            Bullet("TS Station, the game console, now comes with AirCursor PC for everyone (in the dock)")
             Bullet("New lock screen (blurred wallpaper, big clock) and a start screen with logo and progress bar")
             Bullet("Back up your whole PC to one file and restore it on any phone: AirCursor PC → Back up the PC")
             Bullet("Desktop widgets: clock, weather, storage, battery – they hide when a window is open")
             Bullet("A short tour on the first start, in Hindi or English")
-            Bullet("Pro: Air Drive – 100 GB private cloud storage, encrypted inside your PC (only 40 places)")
             Bullet("Google Drive sync in the PC works again")
             Bullet("Air has a new logo: a globe with a swirl of air – a real browser look")
             Bullet("27 new games in Air Store: Hedgewars, Wesnoth, OpenTTD, Warzone 2100, Solitaire, Chess, Sudoku… and web games like Krunker, Slither.io, skribbl.io")
@@ -774,13 +755,7 @@ private fun PcCard(onOpenPc: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PrimaryButton(
                     "Open desktop",
-                    onClick = {
-                        if (ProAccess.allowed(context)) {
-                            context.startActivity(android.content.Intent(context, CloudPcDesktopActivity::class.java))
-                        } else {
-                            Toast.makeText(context, "Your plan has ended", Toast.LENGTH_SHORT).show()
-                        }
-                    },
+                    onClick = { context.startActivity(android.content.Intent(context, CloudPcDesktopActivity::class.java)) },
                     icon = R.drawable.ic_ui_play,
                     modifier = Modifier.weight(1f),
                     container = Brand.Sky,

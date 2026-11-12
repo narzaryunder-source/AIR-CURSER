@@ -27,7 +27,6 @@ import com.aircursor.ui.LockScreen
 import com.aircursor.ui.LoginScreen
 import com.aircursor.ui.OnboardingScreen
 import com.aircursor.ui.PreviewScreen
-import com.aircursor.ui.ProScreen
 import com.aircursor.ui.SecurityScreen
 import com.aircursor.ui.SettingsScreen
 
@@ -82,8 +81,7 @@ class MainActivity : ComponentActivity() {
                             "security" -> SecurityScreen(onBack = home)
                             "settings" -> SettingsScreen(onBack = home)
                             "help" -> HelpScreen(onBack = home)
-                            "pro" -> ProScreen(onBack = home)
-                            "cloudpc" -> CloudPcScreen(onBack = home, onNeedPro = { screen = "pro" })
+                            "cloudpc" -> CloudPcScreen(onBack = home)
                             else -> HomeScreen(
                                 onOpenSetup = { screen = "setup" },
                                 onOpenPreview = { screen = "preview" },
@@ -91,7 +89,6 @@ class MainActivity : ComponentActivity() {
                                 onOpenSettings = { screen = "settings" },
                                 onOpenPc = { screen = "cloudpc" },
                                 onOpenHelp = { screen = "help" },
-                                onOpenPro = { screen = "pro" },
                             )
                         }
                     }

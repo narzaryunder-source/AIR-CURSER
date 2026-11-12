@@ -390,7 +390,7 @@ class AirShell(
                            val onTap: () -> Unit, val onLong: ((View) -> Unit)?)
 
     private val defaultPins = listOf(
-        "thunar.desktop", "cloudpc-air.desktop", "airstore.desktop", "cloudpc-youtube.desktop",
+        "thunar.desktop", "cloudpc-air.desktop", "airstore.desktop", "ts-station.desktop", "cloudpc-youtube.desktop",
         "xfce4-terminal.desktop", "cloudpc-vscode.desktop", "xfce-settings-manager.desktop",
     )
 
