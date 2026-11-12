@@ -409,7 +409,7 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_vscode_heavy"
+private const val WHATS_NEW_ID = "whatsnew_mac_look"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
@@ -422,6 +422,9 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             UiPrefs.close(context, WHATS_NEW_ID)
             whatsNew = false
         }) {
+            Bullet("AirCursor PC looks like a Mac: menu bar on top, dock with live dots, all-apps screen with search – drawn by the phone, so it stays smooth")
+            Bullet("New window frames: round close / minimise / maximise buttons on the left (AirMac)")
+            Bullet("Files → hold a video → Edit on the phone: opens in CapCut (or another editor) on your phone")
             Bullet("VS Code now runs like the guide (code-server) and opens in Air: smooth, signs in by itself")
             Bullet("Blender, Kdenlive, OpenShot, Krita: automatic speed mode while they run, plus a light Blender viewport preset")
             Bullet("Only Air Store now – the old App Store is gone. 50+ new apps: Meet, Zoom, Teams, OBS, OpenShot, chess, courses…")

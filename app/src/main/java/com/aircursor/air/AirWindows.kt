@@ -51,6 +51,17 @@ class AirWindows(
     private val prefs = AirData.prefs(activity)
 
     val windows: List<Win> get() = wins
+
+    /** Space kept free at the top and bottom for the phone-drawn menu bar and dock (Mac style). */
+    private var insetTop = 0
+    private var insetBottom = 0
+
+    fun setInsets(top: Int, bottom: Int) {
+        if (top == insetTop && bottom == insetBottom) return
+        insetTop = top
+        insetBottom = bottom
+        for (w in wins) layout(w)
+    }
     val anyShown get() = wins.any { !it.minimized }
     fun top(): Win? = wins.lastOrNull { !it.minimized }
 
@@ -245,7 +256,10 @@ class AirWindows(
     private fun layout(w: Win) {
         val f = w.frame
         val hw = host.width.takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels
-        val hh = host.height.takeIf { it > 0 } ?: activity.resources.displayMetrics.heightPixels
+        val full = host.height.takeIf { it > 0 } ?: activity.resources.displayMetrics.heightPixels
+        // A full-screen video covers everything; windows stay between the menu bar and the dock.
+        val top = if (w.videoFull) 0 else insetTop
+        val hh = if (w.videoFull) full else (full - insetTop - insetBottom).coerceAtLeast(full / 2)
         val whole = w.maximized || w.videoFull
         if (w.w <= 0 || w.h <= 0) {
             val app = w.browser.app
@@ -265,7 +279,7 @@ class AirWindows(
             height = if (whole) hh else w.h
         }
         f.x = if (whole) 0f else w.x
-        f.y = if (whole) 0f else w.y
+        f.y = top + if (whole) 0f else w.y
         f.setRounded(!whole)
         f.grip?.visibility = if (whole) View.GONE else View.VISIBLE
         w.browser.setTextureBackend(!whole)
@@ -311,9 +325,9 @@ class AirWindows(
                     if (moved || kotlin.math.abs(nx - w.frame.x) + kotlin.math.abs(ny - w.frame.y) > ui.u(4)) {
                         moved = true
                         w.x = nx.coerceIn(0f, (host.width - w.frame.width).toFloat().coerceAtLeast(0f))
-                        w.y = ny.coerceIn(0f, (host.height - w.frame.height).toFloat().coerceAtLeast(0f))
+                        w.y = (ny - insetTop).coerceIn(0f, (host.height - insetTop - insetBottom - w.frame.height).toFloat().coerceAtLeast(0f))
                         w.frame.x = w.x
-                        w.frame.y = w.y
+                        w.frame.y = insetTop + w.y
                     }
                 }
                 MotionEvent.ACTION_UP -> {

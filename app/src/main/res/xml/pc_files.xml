@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the PC user's own files (/root inside AirCursor PC) can be handed to a phone app, one file at a time. -->
+<paths>
+    <files-path name="pc_home" path="cloudpc/rootfs/root/" />
+</paths>

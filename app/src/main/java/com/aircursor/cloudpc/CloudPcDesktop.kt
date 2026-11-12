@@ -82,7 +82,7 @@ object CloudPcDesktop {
         # Leftovers of a desktop that Android stopped half-way would block the new one.
         for p in Xtigervnc Xvnc xfce4-session xfwm4 xfce4-panel xfdesktop xfsettingsd pulseaudio; do pkill -x "${'$'}p" 2>/dev/null; done
         sleep 0.3
-        rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 "${'$'}SOCK"
+        rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 "${'$'}SOCK" /tmp/cloudpc-windows
         rm -rf /root/.cache/sessions
         # Each phone has its own machine id (the ready-made PC ships without one).
         [ -s /etc/machine-id ] || dbus-uuidgen > /etc/machine-id 2>/dev/null
@@ -142,7 +142,9 @@ object CloudPcDesktop {
             command -v cloudpc-windows-keys >/dev/null && cloudpc-windows-keys >/dev/null 2>&1
             for i in 1 2 3 4 5; do
                 pgrep -x xfwm4 >/dev/null || (xfwm4 --replace >/dev/null 2>&1 &)
-                pgrep -x xfce4-panel >/dev/null || (xfce4-panel >/dev/null 2>&1 &)
+                # Mac style: the phone draws the dock, so no panel inside the PC.
+                grep -qx mac /root/.config/xfce4/aircursor-style 2>/dev/null ||
+                    pgrep -x xfce4-panel >/dev/null || (xfce4-panel >/dev/null 2>&1 &)
                 [ "${'$'}i" = 1 ] && [ "${'$'}LIGHT" = "1" ] && command -v cloudpc-light >/dev/null && cloudpc-light 0 >/dev/null 2>&1
                 sleep 10
             done

@@ -10,12 +10,12 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 27
+    const val VERSION = 28
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
         "app-store.sh", "app-store.py", "ubuntu-extras.sh", "install-deb.sh", "windows-layout.sh", "wallpaper-gui.sh",
-        "launch.sh", "apps-setup.sh", "style.sh", "airstore.py", "airstore.html", "web-icons.py",
+        "launch.sh", "apps-setup.sh", "style.sh", "airstore.py", "airstore.html", "web-icons.py", "shell-index.py",
     )
 
     fun needsSetup(c: Context): Boolean =
@@ -185,6 +185,7 @@ object CloudPcTools {
         var ucaNew = ucaText
         if (!ucaNew.contains("aircursor-send-to-phone")) ucaNew = ucaNew.replace("</actions>", UCA_SEND + "</actions>")
         if (!ucaNew.contains("aircursor-play-on-phone")) ucaNew = ucaNew.replace("</actions>", UCA_VIDEO + "</actions>")
+        if (!ucaNew.contains("aircursor-edit-on-phone")) ucaNew = ucaNew.replace("</actions>", UCA_EDIT + "</actions>")
         if (ucaNew != ucaText && ucaNew.contains("</actions>")) put("root/.config/Thunar/uca.xml", ucaNew)
         // Older Google Drive icon opened a terminal: use the new window.
         val oldDrive = File(r0, "root/Desktop/Google-Drive.desktop")
@@ -194,6 +195,7 @@ object CloudPcTools {
         // Claude's tools inside the PC (also handy for the person in the terminal).
         put("usr/local/bin/pc-doctor", PC_DOCTOR, exec = true)
         put("usr/local/bin/pc-open", PC_OPEN, exec = true)
+        put("usr/local/bin/cloudpc-edit-on-phone", EDIT_ON_PHONE, exec = true)
         put("usr/local/bin/pc-screenshot", PC_SCREENSHOT, exec = true)
         val memory = File(CloudPcEngine.rootfs(c), "root/.claude/CLAUDE.md")
         if (!memory.exists() || memory.readText().startsWith("<!-- AirCursor PC")) put("root/.claude/CLAUDE.md", CLAUDE_MD)
@@ -241,6 +243,11 @@ object CloudPcTools {
                 "night.svg – AirCursor PC's own wallpaper.\n")
         put("usr/share/pixmaps/aircursor-pc.svg", asset(c, "aircursor-logo.svg"))
         put("usr/share/pixmaps/aircursor-start.svg", asset(c, "aircursor-start.svg"))
+        // AirMac: our own Mac-like window frame (round close / minimise / maximise buttons on the left).
+        for (f in c.assets.list("cloudpc/airmac/xfwm4").orEmpty()) {
+            CloudPcEngine.writeGuestBytes(root, "usr/share/themes/AirMac/xfwm4/$f",
+                c.assets.open("cloudpc/airmac/xfwm4/$f").use { it.readBytes() })
+        }
         // Firefox: fewer background processes (less RAM on a phone), no first-run pages.
         put("etc/firefox/policies/policies.json", FIREFOX_POLICIES)
         put("usr/lib/firefox/defaults/pref/aircursor-pc.js", FIREFOX_PREFS)
@@ -593,6 +600,27 @@ object CloudPcTools {
         "\t<description>Save a copy on the phone</description>\n\t<patterns>*</patterns>\n\t<directories/>\n" +
         "\t<audio-files/>\n\t<image-files/>\n\t<other-files/>\n\t<text-files/>\n\t<video-files/>\n</action>\n"
 
+    /** Thunar: a video or photo → the phone's editor (CapCut when installed, else the share sheet). */
+    private const val UCA_EDIT = "<action>\n\t<icon>applications-multimedia</icon>\n\t<name>Edit on the phone (CapCut…)</name>\n" +
+        "\t<unique-id>aircursor-edit-on-phone</unique-id>\n\t<command>cloudpc-edit-on-phone %f</command>\n" +
+        "\t<description>Open it in CapCut or another editor on the phone – smooth, the phone's own app</description>\n" +
+        "\t<patterns>*</patterns>\n\t<image-files/>\n\t<video-files/>\n</action>\n"
+
+    private val EDIT_ON_PHONE = """
+        #!/bin/bash
+        # cloudpc-edit-on-phone FILE – a video or photo in /root opens in the phone's editor (CapCut…).
+        . /tmp/cloudpc-session.env 2>/dev/null
+        F=${'$'}(readlink -f "${'$'}1" 2>/dev/null)
+        case "${'$'}F" in
+            /root/*) ;;
+            *) zenity --info --width=420 --title="Edit on the phone" --text="Put the file in your home folder (for example Videos) first." >/dev/null 2>&1; exit 1 ;;
+        esac
+        [ -f "${'$'}F" ] || exit 1
+        printf '%s' "aircursor-edit:${'$'}F" | timeout 15 xclip -quiet -selection clipboard >/dev/null 2>&1 &
+        notify-send -a "AirCursor PC" -i applications-multimedia "Edit on the phone" "Opening it on your phone…" >/dev/null 2>&1 &
+        exit 0
+    """.trimIndent() + "\n"
+
     private const val UCA_VIDEO = "<action>\n\t<icon>video-display</icon>\n\t<name>Play smoothly on the phone</name>\n" +
         "\t<unique-id>aircursor-play-on-phone</unique-id>\n\t<command>cloudpc-phone-video %f</command>\n" +
         "\t<description>Play the video on the phone's video chip</description>\n\t<patterns>*</patterns>\n" +
@@ -683,7 +711,31 @@ object CloudPcTools {
         . /tmp/cloudpc-session.env 2>/dev/null
         exec 9>/tmp/cloudpc-focus.lock
         flock -n 9 || exit 0
-        command -v taskset >/dev/null && command -v xdotool >/dev/null || exit 0
+        # Also the feed for AirCursor's phone-drawn dock and menu bar (Mac style): the open windows in
+        # /tmp/cloudpc-windows, only when they change. The same loop, so no extra program runs.
+        FEED_LAST=""
+        feed() {
+            grep -qx mac /root/.config/xfce4/aircursor-style 2>/dev/null || return 0
+            local root act ids id info out
+            root=${'$'}(xprop -root _NET_CLIENT_LIST _NET_ACTIVE_WINDOW 2>/dev/null) || return 0
+            [ "${'$'}root" = "${'$'}FEED_LAST" ] && [ -f /tmp/cloudpc-windows ] && return 0
+            FEED_LAST=${'$'}root
+            act=${'$'}(sed -n 's/^_NET_ACTIVE_WINDOW.*# \(0x[0-9a-f]*\).*/\1/p' <<< "${'$'}root")
+            ids=${'$'}(sed -n 's/^_NET_CLIENT_LIST.*# //p' <<< "${'$'}root" | tr -d ',')
+            out="active	${'$'}act"
+            for id in ${'$'}ids; do
+                info=${'$'}(xprop -id "${'$'}id" WM_CLASS WM_NAME _NET_WM_NAME _NET_WM_WINDOW_TYPE 2>/dev/null | awk -v id="${'$'}id" '
+                    /^WM_CLASS.*=/ { n = split(${'$'}0, a, "\""); inst = a[2]; cls = a[4] }
+                    /^(_NET_)?WM_NAME.*= "/ { x = ${'$'}0; sub(/^[^=]*= "/, "", x); sub(/"${'$'}/, "", x); gsub(/\t/, " ", x)
+                        if (${'$'}0 ~ /^_NET/ || t == "") t = x }
+                    /^_NET_WM_WINDOW_TYPE.*=/ { if (${'$'}0 !~ /NORMAL|DIALOG/) skip = 1 }
+                    END { if (!skip && cls != "") printf "%s\t%s\t%s\t%s", id, inst, cls, t }')
+                [ -n "${'$'}info" ] && out="${'$'}out"${'$'}'\n'"${'$'}info"
+            done
+            printf '%s\n' "${'$'}out" > /tmp/cloudpc-windows.tmp && mv -f /tmp/cloudpc-windows.tmp /tmp/cloudpc-windows
+        }
+        BOOST=1
+        command -v taskset >/dev/null && command -v xdotool >/dev/null || BOOST=0
         CORES=""
         for d in /sys/devices/system/cpu/cpu[0-9]*; do
             f=${'$'}(cat "${'$'}d/cpufreq/cpuinfo_max_freq" 2>/dev/null) || continue
@@ -691,15 +743,17 @@ object CloudPcTools {
         done
         MIN=${'$'}(for x in ${'$'}CORES; do echo "${'$'}{x#*:}"; done | sort -n | head -n 1)
         MAX=${'$'}(for x in ${'$'}CORES; do echo "${'$'}{x#*:}"; done | sort -n | tail -n 1)
-        [ -n "${'$'}MIN" ] && [ "${'$'}MIN" != "${'$'}MAX" ] || exit 0     # all cores alike: nothing to gain
+        [ -n "${'$'}MIN" ] && [ "${'$'}MIN" != "${'$'}MAX" ] || BOOST=0     # all cores alike: nothing to gain
         LITTLE=${'$'}(for x in ${'$'}CORES; do [ "${'$'}{x#*:}" = "${'$'}MIN" ] && echo "${'$'}{x%%:*}"; done | paste -sd, -)
         EVERY=${'$'}(for x in ${'$'}CORES; do echo "${'$'}{x%%:*}"; done | paste -sd, -)
         declare -A PLACED
         LAST=""
-        while sleep 2; do
+        while sleep 1.5; do
+            feed
+            [ ${'$'}BOOST = 1 ] || continue
             if [ -f /root/.config/cloudpc/no-focus-boost ]; then
                 for p in "${'$'}{!PLACED[@]}"; do [ "${'$'}{PLACED[${'$'}p]}" = L ] && taskset -a -p -c "${'$'}EVERY" "${'$'}p" >/dev/null 2>&1; done
-                PLACED=(); LAST=""; sleep 30; continue
+                PLACED=(); LAST=""; continue
             fi
             W=${'$'}(xdotool getactivewindow getwindowpid 2>/dev/null)
             [ -n "${'$'}W" ] && [ "${'$'}W" != "${'$'}LAST" ] || continue

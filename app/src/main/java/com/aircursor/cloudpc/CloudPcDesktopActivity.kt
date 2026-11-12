@@ -61,6 +61,10 @@ class CloudPcDesktopActivity : ComponentActivity() {
         /** Files → right-click → Send to phone: the PC names a file, the phone asks where to save it. */
         private const val SAVE_ON_PHONE = "aircursor-save:"
 
+        /** Files → right-click → Edit on the phone: a video or photo opens in CapCut (or another editor). */
+        private const val EDIT_ON_PHONE = "aircursor-edit:"
+        private const val CAPCUT = "com.lemon.lvoverseas"
+
         /** The PC hands a video to the phone's own player (smooth, hardware decoding). */
         private const val PLAY_ON_PHONE = "aircursor-video:"
 
@@ -99,6 +103,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private var air: com.aircursor.air.AirWindows? = null
     private var assistant: com.aircursor.assistant.AirAssistant? = null
     private var videoChip: View? = null
+    private var shell: AirShell? = null
     private var hiddenAt = 0L
 
     // Start screen: the latest step from the log, and one automatic restart if the desktop hangs.
@@ -245,6 +250,29 @@ class CloudPcDesktopActivity : ComponentActivity() {
         tools.addView(iconButton(R.drawable.ic_ui_right, "Right") { v.sendKey(Keysyms.RIGHT) })
         tools.addView(iconButton(R.drawable.ic_ui_close, "Close") { askExit() })
 
+        // Mac style: menu bar, dock and apps grid drawn here by the phone (shows when the PC uses it).
+        shell = AirShell(this, root, object : AirShell.Actions {
+            override fun runPc(cmd: String) = this@CloudPcDesktopActivity.runPc(cmd)
+            override fun openAir(url: String?) = this@CloudPcDesktopActivity.openAir(url)
+            override fun airWindows() = air
+            override fun desktopSize() = desktopSize(this@CloudPcDesktopActivity)
+            override fun showToolbar() {
+                tools.visibility = View.VISIBLE
+                side.bringToFront()
+            }
+            override fun keyboard() = toggleKeyboard()
+            override fun lock() {
+                if (PcLock.hasPassword(this@CloudPcDesktopActivity)) showLock(PcLockScreen.Mode.SIGN_IN) else lockMenu()
+            }
+            override fun assistant() = startAssistant()
+            override fun boostMenu() = this@CloudPcDesktopActivity.boostMenu()
+            override fun exit() = askExit()
+            override fun changed() = keepControlsOnTop()
+        })
+        root.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or, ob ->
+            if (r - l != or - ol || b - t != ob - ot) shell?.applyInsets()
+        }
+
         v.onStatus = { msg ->
             if (msg != null && baseStatus == null) connectingSince = SystemClock.uptimeMillis()
             baseStatus = msg
@@ -257,6 +285,8 @@ class CloudPcDesktopActivity : ComponentActivity() {
         v.onDesktopClipboard = { text ->
             if (text.startsWith(OPEN_ON_PHONE)) {
                 openOnPhone(text.removePrefix(OPEN_ON_PHONE).trim())
+            } else if (text.startsWith(EDIT_ON_PHONE)) {
+                if (lockView == null) editOnPhone(text.removePrefix(EDIT_ON_PHONE).trim())
             } else if (text.startsWith(SAVE_ON_PHONE)) {
                 sendToPhone(text.removePrefix(SAVE_ON_PHONE).trim())
             } else if (text.startsWith(WEB_ON_PHONE)) {
@@ -292,6 +322,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
                 when {
                     lockView != null -> finish()
                     assistant?.isShowing == true -> assistant?.dismiss()
+                    shell?.closeGrid() == true -> Unit
                     air?.back() == true -> Unit
                     videoPlayer.isOpen -> if (!videoPlayer.back()) videoPlayer.close()
                     else -> askExit()
@@ -394,9 +425,15 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
             override fun assistant() = startAssistant()
 
-            override fun windowsChanged() = keepControlsOnTop()
+            override fun windowsChanged() {
+                keepControlsOnTop()
+                shell?.rebuildDock()
+            }
         },
-    ).also { air = it }
+    ).also {
+        air = it
+        shell?.applyInsets()
+    }
 
     /** True when phone UI (not the PC picture) is under this screen point. */
     private fun overPhoneUi(sx: Float, sy: Float): Boolean {
@@ -416,6 +453,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
     /** The PC toolbar, the assistant and the lock screen stay above Air's windows. */
     private fun keepControlsOnTop() {
+        shell?.bringToFront()
         if (::side.isInitialized) side.bringToFront()
         assistant?.bringToFront()
         lockView?.bringToFront()
@@ -999,6 +1037,38 @@ class CloudPcDesktopActivity : ComponentActivity() {
         setOn(fpsButton, v.showFps)
     }
 
+    // ---- PC style: Mac-like (phone dock), dock inside the PC, Windows taskbar ----
+
+    private fun pcStyle(): String = try {
+        File(CloudPcEngine.rootfs(this), "root/.config/xfce4/aircursor-style").readText().trim()
+    } catch (_: Exception) {
+        prefs.getString(KEY_STYLE, "mac") ?: "mac"
+    }
+
+    private fun styleLabel(s: String) = when (s) {
+        "windows" -> "Windows taskbar"
+        "dock" -> "dock inside the PC"
+        else -> "Mac-like (menu bar and dock)"
+    }
+
+    private fun styleMenu() {
+        val keys = listOf("mac", "dock", "windows")
+        val now = pcStyle()
+        AlertDialog.Builder(this)
+            .setTitle("PC style")
+            .setSingleChoiceItems(keys.map { styleLabel(it).replaceFirstChar { c -> c.uppercase() } }.toTypedArray(),
+                keys.indexOf(now).coerceAtLeast(0)) { d, i ->
+                d.dismiss()
+                val next = keys[i]
+                if (next == now) return@setSingleChoiceItems
+                prefs.edit().putString(KEY_STYLE, next).apply()
+                runPc("aircursor-style $next")
+                Toast.makeText(this, "PC style: ${styleLabel(next)} (a few seconds)", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     // ---- Toolbar actions ----
 
     /** Hand cursor on/off right from the desktop (the camera service may only start while we are visible). */
@@ -1066,8 +1136,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
             else "Touch: mouse style (drag selects) – tap for phone style") +
             (if (webInPc()) "Web links: Brave in the PC (slow) – tap for Air"
             else "Web links: Air, phone engine (fast) – tap for Brave in the PC") +
-            (if (prefs.getString(KEY_STYLE, "dock") == "windows") "PC style: Windows taskbar – tap for the modern dock"
-            else "PC style: modern dock – tap for the Windows taskbar")
+            "PC style: ${styleLabel(pcStyle())} – tap to change"
         AlertDialog.Builder(this)
             .setTitle("AirBoost (now: ${now.label})")
             .setItems(labels) { _, i ->
@@ -1080,14 +1149,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
                     return@setItems
                 }
                 if (i == profiles.size + 5) {
-                    val next = if (prefs.getString(KEY_STYLE, "dock") == "windows") "dock" else "windows"
-                    prefs.edit().putString(KEY_STYLE, next).apply()
-                    CloudPcService.send(this, CloudPcService.ACTION_RUN, CloudPcDesktop.inSession("aircursor-style $next"))
-                    Toast.makeText(
-                        this,
-                        if (next == "dock") "PC style: modern dock (a few seconds)" else "PC style: Windows taskbar (a few seconds)",
-                        Toast.LENGTH_SHORT,
-                    ).show()
+                    styleMenu()
                     return@setItems
                 }
                 if (i == profiles.size + 4) {
@@ -1248,6 +1310,40 @@ class CloudPcDesktopActivity : ComponentActivity() {
             .show()
     }
 
+    /** A file from the PC's home folder in the phone's editor: CapCut when it is installed, else the share sheet. */
+    private fun editOnPhone(guestPath: String) {
+        val home = File(CloudPcEngine.rootfs(this), "root").canonicalFile
+        val file = File(CloudPcEngine.rootfs(this), guestPath.removePrefix("/")).canonicalFile
+        if (!file.path.startsWith(home.path + File.separator) || !file.isFile) {
+            Toast.makeText(this, "That file could not be found", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val uri = try {
+            androidx.core.content.FileProvider.getUriForFile(this, "$packageName.pcfiles", file)
+        } catch (_: Exception) {
+            Toast.makeText(this, "That file cannot be shared", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val ext = file.extension.lowercase(java.util.Locale.ROOT)
+        val type = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "video/*"
+        val send = Intent(Intent.ACTION_SEND).apply {
+            setDataAndType(uri, type)
+            putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = ClipData.newRawUri(file.name, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            startActivity(Intent(send).setPackage(CAPCUT))
+            return
+        } catch (_: Exception) {
+        }
+        try {
+            startActivity(Intent.createChooser(send, "Edit ${file.name} with").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        } catch (_: Exception) {
+            Toast.makeText(this, "No app on the phone can open it", Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun sendToPhone(guestPath: String) {
         val root = CloudPcEngine.rootfs(this).canonicalFile
         val file = File(root, guestPath.removePrefix("/")).canonicalFile
@@ -1371,6 +1467,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        shell?.destroy()
         if (::status.isInitialized) status.removeCallbacks(statusTick)
         if (::videoPlayer.isInitialized) videoPlayer.close()
         air?.closeAll()

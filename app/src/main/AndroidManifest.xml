@@ -26,6 +26,8 @@
     <queries>
         <package android:name="com.termux" />
         <package android:name="com.termux.x11" />
+        <!-- "Edit on the phone": CapCut first when it is installed (else the share sheet). -->
+        <package android:name="com.lemon.lvoverseas" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
@@ -174,5 +176,14 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.pcfiles"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/pc_files" />
+        </provider>
     </application>
 </manifest>

@@ -1,6 +1,8 @@
 #!/bin/bash
 # AirCursor PC look.
-#   dock     – modern: dark theme, app dock at the bottom centre, clean desktop (default)
+#   mac      – Mac-like (default): AirMac windows (round buttons on the left); the menu bar, dock and
+#              apps grid are drawn by the AirCursor app on the phone (no panel inside the PC)
+#   dock     – dark theme, app dock inside the PC at the bottom centre
 #   windows  – Windows-style taskbar with Start, pinned apps and clock
 #   auto     – every desktop start: the first time the dock; later only the newest look updates
 #   refresh  – the look only (theme, icons, font, wallpaper, tidy desktop); the dock stays as it is
@@ -8,7 +10,7 @@
 # Change it any time: AirCursor toolbar → lightning → PC style, or: aircursor-style dock|windows
 MODE="${1:-auto}"
 MARK="$HOME/.config/xfce4/aircursor-style"
-LOOK="$HOME/.config/xfce4/aircursor-look-2"
+LOOK="$HOME/.config/xfce4/aircursor-look-3"
 LIB=/usr/local/lib/cloudpc
 . /tmp/cloudpc-session.env 2>/dev/null
 command -v xfconf-query >/dev/null || exit 0
@@ -32,7 +34,16 @@ look() {
     q -c xsettings -p /Xft/Antialias --create -t int -s 1
     q -c xsettings -p /Xft/HintStyle --create -t string -s hintslight
     q -c xsettings -p /Xft/RGBA --create -t string -s rgb
-    q -c xfwm4 -p /general/button_layout --create -t string -s "O|HMC"
+    local style
+    style=$(cat "$MARK" 2>/dev/null)
+    [ -n "$NEW_STYLE" ] && style=$NEW_STYLE
+    if [ "$style" != windows ] && [ -d /usr/share/themes/AirMac/xfwm4 ]; then
+        # AirMac: our own Mac-like frame – close, minimise, maximise as round buttons on the left.
+        q -c xfwm4 -p /general/theme --create -t string -s AirMac
+        q -c xfwm4 -p /general/button_layout --create -t string -s "CHM|"
+    else
+        q -c xfwm4 -p /general/button_layout --create -t string -s "O|HMC"
+    fi
     q -c xfwm4 -p /general/title_alignment --create -t string -s center
     q -c xfwm4 -p /general/use_compositing --create -t bool -s false
     # Desktop: clean icons, no drive icons.
@@ -74,6 +85,43 @@ tidy() {
     return 0
 }
 
+# The XFCE panel: off in mac style (the phone draws the dock), on in the other styles.
+panel_off() {
+    xfconf-query -c xfce4-session -p /sessions/Failsafe/Client2_Command --create --force-array -t string -s true >/dev/null 2>&1
+    if pgrep -x xfce4-panel >/dev/null; then
+        timeout 5 xfce4-panel --quit >/dev/null 2>&1
+        sleep 0.5
+        pkill -x xfce4-panel 2>/dev/null
+    fi
+    return 0
+}
+panel_on() {
+    q -c xfce4-desktop -p /desktop-icons/style --create -t int -s 2
+    xfconf-query -c xfce4-session -p /sessions/Failsafe/Client2_Command --create --force-array -t string -s xfce4-panel >/dev/null 2>&1
+    xfconf-query -c xfwm4 -p /general/margin_top --create -t int -s 0 >/dev/null 2>&1
+    xfconf-query -c xfwm4 -p /general/margin_bottom --create -t int -s 0 >/dev/null 2>&1
+    return 0
+}
+# App list and icons for the phone's dock and apps grid (fast when nothing changed).
+index() { python3 "$LIB/shell-index.py" >/dev/null 2>&1; }
+
+mac() {
+    NEW_STYLE=mac
+    echo mac > "$MARK"
+    look
+    q -c xfce4-keyboard-shortcuts -p /commands/custom/Super_L --create -t string -s "xfce4-appfinder"
+    xdg-mime default aircursor-install-deb.desktop application/vnd.debian.binary-package 2>/dev/null
+    panel_off
+    # A clean desktop like a Mac (icons would sit under the phone's menu bar and dock); the Desktop
+    # folder stays in Files, every app is in the apps grid.
+    q -c xfce4-desktop -p /desktop-icons/style --create -t int -s 0
+    wallpaper
+    tidy
+    touch "$LOOK"
+    xfdesktop --reload >/dev/null 2>&1 &
+    index
+}
+
 refresh() {
     look
     wallpaper
@@ -86,6 +134,7 @@ refresh() {
 # in the background), then the look again. Real logos for web shortcuts every start (fast when done).
 upgrade() {
     python3 "$LIB/web-icons.py" >/dev/null 2>&1
+    index
     local need=""
     [ -d /usr/share/themes/Arc-Dark ] || need="$need arc-theme"
     [ -n "$need" ] || return 0
@@ -105,21 +154,35 @@ case "$MODE" in
         if [ -f "$MARK" ]; then
             # Not the first start: newest look once, logos every start (fast when they are there).
             sleep 8
-            if [ ! -f "$LOOK" ]; then refresh; fi
+            if [ ! -f "$LOOK" ]; then
+                # The Mac look arrives once for PCs that had the dock; the Windows taskbar stays.
+                if [ "$(cat "$MARK")" = dock ]; then mac; else refresh; fi
+            fi
+            [ "$(cat "$MARK")" = mac ] && pgrep -x xfce4-panel >/dev/null && panel_off
             ( sleep 50; upgrade ) >/dev/null 2>&1 &
             exit 0
         fi
         sleep 6   # let the session finish starting
-        MODE=dock
+        MODE=mac
         ;;
 esac
+if [ "$MODE" = mac ]; then
+    mac
+    ( sleep 40; upgrade ) >/dev/null 2>&1 &
+    exit 0
+fi
+panel_on
 if [ "$MODE" = windows ]; then
+    NEW_STYLE=windows
+    pgrep -x xfce4-panel >/dev/null || (xfce4-panel >/dev/null 2>&1 &)
+    sleep 1
     bash "$LIB/windows-layout.sh" --force
     look
     echo windows > "$MARK"
     exit 0
 fi
 
+NEW_STYLE=dock
 look
 
 # ---- The dock ----
