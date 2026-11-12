@@ -67,8 +67,6 @@ EXTRA = [
       "photopea.com", True, categories="Graphics;"),
     W("figma", "Figma", "Design apps and websites together", store.MEDIA, "https://www.figma.com", "figma.com",
       categories="Graphics;"),
-    W("capcut", "CapCut", "Easy video editing online", store.MEDIA, "https://www.capcut.com/editor", "capcut.com",
-      categories="AudioVideo;Video;"),
     W("clipchamp", "Clipchamp", "Microsoft's simple video editor", store.MEDIA, "https://app.clipchamp.com",
       "clipchamp.com", categories="AudioVideo;Video;"),
     # Work

@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 31
+    const val VERSION = 32
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -112,6 +112,11 @@ object CloudPcTools {
         // Air Drive (old Pro plan) is gone: its shortcut too.
         File(CloudPcEngine.rootfs(c), "usr/share/applications/cloudpc-airdrive.desktop").delete()
         File(CloudPcEngine.rootfs(c), "usr/local/bin/cloudpc-airdrive").delete()
+        // CapCut Online left Air Store: its shortcut goes too (the phone's CapCut app still opens videos).
+        for (d in listOf("usr/share/applications", "usr/local/share/applications", "root/.local/share/applications",
+            "root/Desktop", "root/Desktop/Web Apps")) {
+            File(CloudPcEngine.rootfs(c), "$d/aircursor-web-capcut.desktop").delete()
+        }
         put("usr/share/applications/cloudpc-vscode.desktop",
             entry("VS Code", "cloudpc-vscode %F", "code", "Development;TextEditor;", "Code editor (code-server) in Air – smooth on the phone's engine"))
         // Logins in the phone's own browser (fast, Google sign-in works): Claude Code and any tool

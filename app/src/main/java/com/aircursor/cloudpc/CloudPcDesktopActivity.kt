@@ -65,6 +65,9 @@ class CloudPcDesktopActivity : ComponentActivity() {
         private const val EDIT_ON_PHONE = "aircursor-edit:"
         private const val CAPCUT = "com.lemon.lvoverseas"
 
+        /** TS Station opens one of the phone's own games: "aircursor-launch:<package>". */
+        private const val LAUNCH_ON_PHONE = "aircursor-launch:"
+
         /** The PC hands a video to the phone's own player (smooth, hardware decoding). */
         private const val PLAY_ON_PHONE = "aircursor-video:"
 
@@ -161,7 +164,9 @@ class CloudPcDesktopActivity : ComponentActivity() {
         val (w, h) = desktopSize(this)
         CloudPcService.startDesktop(this, w, h)
         // Air Drive was part of the old Pro plan (dropped): remove its key and address if a PC still has them.
+        // TS Station: the phone's own games (list + icons) for its library.
         Thread {
+            PhoneGames.export(applicationContext)
             for (f in listOf("pro-license", "airdrive-url")) File(CloudPcEngine.rootfs(this), "root/.config/cloudpc/$f").delete()
         }.start()
 
@@ -337,6 +342,10 @@ class CloudPcDesktopActivity : ComponentActivity() {
         v.onDesktopClipboard = { text ->
             if (text.startsWith(OPEN_ON_PHONE)) {
                 openOnPhone(text.removePrefix(OPEN_ON_PHONE).trim())
+            } else if (text.startsWith(LAUNCH_ON_PHONE)) {
+                if (lockView == null && !PhoneGames.launch(this, text.removePrefix(LAUNCH_ON_PHONE).trim())) {
+                    Toast.makeText(this, "That game is not on this phone any more", Toast.LENGTH_SHORT).show()
+                }
             } else if (text.startsWith(EDIT_ON_PHONE)) {
                 if (lockView == null) editOnPhone(text.removePrefix(EDIT_ON_PHONE).trim())
             } else if (text.startsWith(SAVE_ON_PHONE)) {

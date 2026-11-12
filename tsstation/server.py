@@ -52,71 +52,188 @@ os.makedirs(DATA, exist_ok=True)
 os.makedirs(os.path.join(CACHE, "art"), exist_ok=True)
 os.makedirs(os.path.join(CACHE, "flathub"), exist_ok=True)
 _lock = threading.Lock()
-UA = {"User-Agent": "TS-Station/0.2 (AirCursor PC)"}
+UA = {"User-Agent": "TS-Station/1.0 (AirCursor PC)"}
 
 # ---- TS Store: free games that run on this PC ----------------------------------------------------
 # pkg = Ubuntu packages to install, match = which installed menu entries belong to it,
 # fh = Flathub id (only for pictures), mb = download size, fit = how it runs on a phone CPU/GPU.
 STORE = [
-    # (pkg, name, genre, about, match, flathub id, MB, fit)
+    # (pkg, name, genre, about, match, flathub id, MB, fit, 2D/3D) – only well-known, finished games.
+    # Racing
     ("supertuxkart", "SuperTuxKart", "Racing", "Kart racing with items, 20+ tracks, Grand Prix and battle mode.",
-     r"supertuxkart", "net.supertuxkart.SuperTuxKart", 640, "Heavy"),
+     r"supertuxkart", "net.supertuxkart.SuperTuxKart", 640, "Heavy", "3D"),
     ("extremetuxracer", "Extreme Tux Racer", "Racing", "Slide down snowy mountains, collect herrings, beat the clock.",
-     r"tuxracer|^etr", "net.sourceforge.ExtremeTuxRacer", 41, "Good"),
+     r"tuxracer|^etr", "net.sourceforge.ExtremeTuxRacer", 41, "Good", "3D"),
     ("trigger-rally", "Trigger Rally", "Racing", "Rally driving on dirt, snow and tarmac against the clock.",
-     r"trigger", "io.sourceforge.trigger_rally.TriggerRally", 120, "Heavy"),
-    ("xmoto", "X-Moto", "Racing", "2D motocross with real physics – hundreds of tricky levels.",
-     r"xmoto", "org.tuxfamily.XMoto", 33, "Smooth"),
-    ("armagetronad", "Armagetron Advanced", "Racing", "Light-cycle duels: trap your rivals with your trail.",
-     r"armagetron", "org.armagetronad.ArmagetronAdvanced", 2, "Smooth"),
+     r"trigger", "io.sourceforge.trigger_rally.TriggerRally", 120, "Heavy", "3D"),
     ("torcs", "TORCS", "Racing", "Realistic car racing simulator with many cars and tracks.",
-     r"torcs", "net.sourceforge.torcs", 335, "Heavy"),
-    ("minetest", "Luanti (Minetest)", "Sandbox", "Build, mine and explore an endless block world.",
-     r"minetest|luanti", "org.luanti.luanti", 30, "Good"),
+     r"torcs", "net.sourceforge.torcs", 335, "Heavy", "3D"),
+    ("xmoto", "X-Moto", "Racing", "Motocross with real physics – hundreds of tricky levels.",
+     r"xmoto", "org.tuxfamily.XMoto", 33, "Smooth", "2D"),
+    ("armagetronad", "Armagetron Advanced", "Racing", "Light-cycle duels: trap your rivals with your trail.",
+     r"armagetron", "org.armagetronad.ArmagetronAdvanced", 2, "Smooth", "3D"),
+    # Action, platform, sandbox
+    ("minetest", "Luanti (Minetest)", "Sandbox", "Build, mine and explore an endless block world – alone or online.",
+     r"minetest|luanti", "org.luanti.luanti", 30, "Good", "3D"),
     ("supertux", "SuperTux", "Platformer", "Classic side-scrolling jump-and-run adventure with Tux.",
-     r"supertux2?$|supertux2", "org.supertuxproject.SuperTux", 165, "Smooth"),
-    ("neverball", "Neverball", "Arcade", "Tilt the floor to roll the ball to the goal – 3D puzzle racing.",
-     r"neverball", "org.neverball.Neverball", 39, "Good"),
-    ("pingus", "Pingus", "Puzzle", "Guide a crowd of penguins safely to the exit.",
-     r"pingus", "", 12, "Smooth"),
-    ("chromium-bsu", "Chromium B.S.U.", "Arcade", "Fast scrolling space shooter.",
-     r"chromium-bsu", "net.sourceforge.chromium-bsu", 1, "Good"),
-    ("kobodeluxe", "Kobo Deluxe", "Arcade", "Destroy space fortresses in this quick arcade shooter.",
-     r"kobo", "net.olofson.KoboDeluxe", 1, "Smooth"),
-    ("teeworlds", "Teeworlds", "Shooter", "Fast 2D online shooter with grappling hooks.",
-     r"teeworlds", "com.teeworlds.Teeworlds", 8, "Smooth"),
+     r"supertux2?$|supertux2", "org.supertuxproject.SuperTux", 165, "Smooth", "2D"),
+    ("frogatto", "Frogatto & Friends", "Platformer", "A hand-drawn action-adventure platformer with a big story.",
+     r"frogatto", "com.frogatto.Frogatto", 90, "Good", "2D"),
+    ("openclonk", "OpenClonk", "Action", "Dig, build and fight in a living 2D world – missions and melees.",
+     r"openclonk", "org.openclonk.OpenClonk", 120, "Good", "2D"),
+    ("cdogs-sdl", "C-Dogs SDL", "Action", "Top-down run-and-gun with campaigns and co-op for four.",
+     r"cdogs", "io.github.cxong.cdogs-sdl", 40, "Smooth", "2D"),
+    ("teeworlds", "Teeworlds", "Shooter", "Fast online shooter with grappling hooks.",
+     r"teeworlds", "com.teeworlds.Teeworlds", 8, "Smooth", "2D"),
     ("openarena", "OpenArena", "Shooter", "Fast arena first-person shooter.",
-     r"openarena", "io.github.ec_.Quake3e.OpenArena", 420, "Heavy"),
+     r"openarena", "io.github.ec_.Quake3e.OpenArena", 420, "Heavy", "3D"),
+    ("bzflag-client", "BZFlag", "Shooter", "Online tank battles – capture the flag.",
+     r"bzflag", "org.bzflag.BZFlag", 30, "Good", "3D"),
+    # Arcade
+    ("neverball", "Neverball", "Arcade", "Tilt the floor to roll the ball to the goal – 3D puzzle racing.",
+     r"neverball", "org.neverball.Neverball", 39, "Good", "3D"),
+    ("neverputt", "Neverputt", "Sports", "Mini golf from the makers of Neverball.",
+     r"neverputt", "", 39, "Good", "3D"),
+    ("chromium-bsu", "Chromium B.S.U.", "Arcade", "Fast scrolling space shooter.",
+     r"chromium-bsu", "net.sourceforge.chromium-bsu", 1, "Good", "2D"),
+    ("kobodeluxe", "Kobo Deluxe", "Arcade", "Destroy space fortresses in this quick arcade shooter.",
+     r"kobo", "net.olofson.KoboDeluxe", 1, "Smooth", "2D"),
+    ("lbreakouthd", "LBreakoutHD", "Arcade", "Break the bricks – 100+ levels and bonuses.",
+     r"lbreakout", "net.sourceforge.lgames.LBreakoutHD", 5, "Smooth", "2D"),
+    ("blockout2", "BlockOut II", "Puzzle", "Falling blocks in a 3D pit.",
+     r"blockout", "", 10, "Good", "3D"),
+    # Strategy
     ("hedgewars", "Hedgewars", "Strategy", "Turn-based artillery battles with hedgehogs.",
-     r"hedgewars", "org.hedgewars.Hedgewars", 150, "Good"),
+     r"hedgewars", "org.hedgewars.Hedgewars", 150, "Good", "2D"),
     ("wesnoth", "Battle for Wesnoth", "Strategy", "Fantasy turn-based strategy with long campaigns.",
-     r"wesnoth", "org.wesnoth.Wesnoth", 280, "Smooth"),
+     r"wesnoth", "org.wesnoth.Wesnoth", 280, "Smooth", "2D"),
+    ("widelands", "Widelands", "Strategy", "Build an economy and an empire, at your own pace.",
+     r"widelands", "org.widelands.Widelands", 350, "Good", "2D"),
+    ("freeciv-client-gtk3", "Freeciv", "Strategy", "Lead a civilization from the stone age to the space age.",
+     r"freeciv", "", 60, "Smooth", "2D"),
     ("warzone2100", "Warzone 2100", "Strategy", "Real-time strategy: build a base, design units, win the war.",
-     r"warzone", "net.wz2100.wz2100", 150, "Heavy"),
+     r"warzone", "net.wz2100.wz2100", 150, "Heavy", "3D"),
+    ("megaglest", "MegaGlest", "Strategy", "3D real-time strategy with seven factions.",
+     r"megaglest", "org.megaglest.MegaGlest", 400, "Heavy", "3D"),
+    # Simulation
     ("openttd openttd-opengfx", "OpenTTD", "Simulation", "Build a transport empire with trains, ships and planes.",
-     r"openttd", "org.openttd.OpenTTD", 16, "Smooth"),
+     r"openttd", "org.openttd.OpenTTD", 16, "Smooth", "2D"),
+    ("simutrans", "Simutrans", "Simulation", "Transport tycoon: connect cities and grow them.",
+     r"simutrans", "com.simutrans.Simutrans", 60, "Smooth", "2D"),
     ("lincity-ng", "LinCity-NG", "Simulation", "Build and run your own city.",
-     r"lincity", "io.github.lincity_ng.lincity-ng", 47, "Smooth"),
+     r"lincity", "io.github.lincity_ng.lincity-ng", 47, "Smooth", "2D"),
     ("endless-sky", "Endless Sky", "Simulation", "Space trading, exploring and combat.",
-     r"endless", "io.github.endless_sky.endless_sky", 245, "Good"),
+     r"endless", "io.github.endless_sky.endless_sky", 245, "Good", "2D"),
+    # Role-playing and adventure
+    ("flare-game", "Flare", "RPG", "Action role-playing game: dungeons, loot, a full campaign.",
+     r"flare", "org.flarerpg.Flare", 130, "Good", "2D"),
+    ("freedroidrpg", "FreedroidRPG", "RPG", "Sci-fi role-playing with a long story and humour.",
+     r"freedroid", "", 280, "Good", "2D"),
+    ("crawl-tiles", "Dungeon Crawl Stone Soup", "RPG", "The famous deep dungeon adventure – every game is new.",
+     r"crawl", "org.develz.Crawl", 12, "Smooth", "2D"),
+    ("beneath-a-steel-sky", "Beneath a Steel Sky", "Adventure", "Classic point-and-click sci-fi adventure (freeware).",
+     r"steel.sky|bass", "org.scummvm.ScummVM", 75, "Smooth", "2D"),
+    ("flight-of-the-amazon-queen", "Flight of the Amazon Queen", "Adventure",
+     "Classic point-and-click adventure in the jungle (freeware).", r"amazon|fotaq", "org.scummvm.ScummVM", 55, "Smooth", "2D"),
+    # Sports and puzzles
     ("blobby", "Blobby Volley", "Sports", "Funny two-player volleyball.",
-     r"blobby", "de.blobbyvolley.BlobbyVolley2", 1, "Smooth"),
+     r"blobby", "de.blobbyvolley.BlobbyVolley2", 1, "Smooth", "2D"),
+    ("foobillardplus", "FooBillard++", "Sports", "Pool and snooker in 3D.",
+     r"foobillard", "", 30, "Good", "3D"),
+    ("enigma", "Enigma", "Puzzle", "Roll a marble through 1000+ clever puzzle levels.",
+     r"enigma", "org.nongnu.enigma", 30, "Smooth", "2D"),
+    ("pingus", "Pingus", "Puzzle", "Guide a crowd of penguins safely to the exit.",
+     r"pingus", "", 12, "Smooth", "2D"),
     ("frozen-bubble", "Frozen Bubble", "Puzzle", "Pop coloured bubbles before they reach the bottom.",
-     r"frozen", "org.frozen_bubble.frozen-bubble", 22, "Smooth"),
+     r"frozen", "org.frozen_bubble.frozen-bubble", 22, "Smooth", "2D"),
     ("quadrapassel", "Quadrapassel", "Puzzle", "Falling-blocks classic.",
-     r"quadrapassel", "org.gnome.Quadrapassel", 1, "Smooth"),
+     r"quadrapassel", "org.gnome.Quadrapassel", 1, "Smooth", "2D"),
     ("gnome-2048", "2048", "Puzzle", "Slide tiles, join numbers, reach 2048.",
-     r"2048", "org.gnome.TwentyFortyEight", 1, "Smooth"),
+     r"2048", "org.gnome.TwentyFortyEight", 1, "Smooth", "2D"),
+    ("gnome-sudoku", "Sudoku", "Puzzle", "Number puzzles from easy to very hard.",
+     r"sudoku", "org.gnome.Sudoku", 2, "Smooth", "2D"),
     ("gnome-mines", "Mines", "Puzzle", "Minesweeper.",
-     r"mines", "org.gnome.Mines", 1, "Smooth"),
+     r"mines", "org.gnome.Mines", 1, "Smooth", "2D"),
+    # Cards and board games
     ("aisleriot", "Solitaire", "Cards", "Klondike, Spider, FreeCell and 80 more card games.",
-     r"sol$|aisleriot", "org.gnome.Aisleriot", 2, "Smooth"),
-    ("gnome-chess", "Chess", "Board", "Chess against the computer or a friend.",
-     r"chess", "org.gnome.Chess", 1, "Smooth"),
+     r"sol$|aisleriot", "org.gnome.Aisleriot", 2, "Smooth", "2D"),
+    ("pysolfc", "PySol", "Cards", "1000+ solitaire card games in one.",
+     r"pysol", "io.sourceforge.pysolfc.PySolFC", 15, "Smooth", "2D"),
+    ("gnome-chess stockfish", "Chess", "Board", "Chess against a strong computer (Stockfish) or a friend.",
+     r"chess", "org.gnome.Chess", 3, "Smooth", "2D"),
+    ("gnome-mahjongg", "Mahjongg", "Board", "Match the tiles and clear the board.",
+     r"mahjongg", "org.gnome.Mahjongg", 5, "Smooth", "2D"),
+    ("iagno", "Reversi", "Board", "The classic disc-flipping strategy game.",
+     r"iagno|reversi", "org.gnome.Reversi", 13, "Smooth", "2D"),
+    ("four-in-a-row", "Four in a Row", "Board", "Drop discs, connect four.",
+     r"four", "org.gnome.Four-in-a-row", 2, "Smooth", "2D"),
+    ("gnubg", "GNU Backgammon", "Board", "Backgammon against a world-class computer player.",
+     r"gnubg|backgammon", "", 10, "Smooth", "2D"),
 ]
-STORE = [dict(zip(("pkg", "name", "genre", "about", "match", "fh", "mb", "fit"), e)) for e in STORE]
+STORE = [dict(zip(("pkg", "name", "genre", "about", "match", "fh", "mb", "fit", "dim"), e)) for e in STORE]
 for e in STORE:
     e["id"] = e["pkg"].split()[0]
+
+# ---- Play at once: web games (in Air, the phone's own browser engine) and cloud gaming ------------
+# (id, name, genre, about, url, 2D/3D, kind) – well-known games only, nothing to install.
+INSTANT = [
+    ("web-chess", "Chess.com", "Board", "Play chess online against people or bots.", "https://www.chess.com/play", "2D", "Web"),
+    ("web-lichess", "Lichess", "Board", "Free chess, no ads – puzzles, lessons and games.", "https://lichess.org", "2D", "Web"),
+    ("web-krunker", "Krunker", "Shooter", "Fast first-person shooter in the browser.", "https://krunker.io", "3D", "Web"),
+    ("web-shellshockers", "Shell Shockers", "Shooter", "Online egg shooter, quick matches.", "https://shellshock.io", "3D", "Web"),
+    ("web-narrowone", "Narrow One", "Shooter", "Capture the flag with bows – medieval castles.", "https://narrow.one", "3D", "Web"),
+    ("web-smashkarts", "Smash Karts", "Racing", "Online kart battles with weapons.", "https://smashkarts.io", "3D", "Web"),
+    ("web-hexgl", "HexGL", "Racing", "Futuristic anti-gravity racing.", "https://hexgl.bkcore.com/play/", "3D", "Web"),
+    ("web-geofs", "GeoFS", "Simulation", "Flight simulator over the whole real world.", "https://www.geo-fs.com/geofs.php", "3D", "Web"),
+    ("web-minecraftclassic", "Minecraft Classic", "Sandbox", "The original Minecraft from 2009, free from Mojang.",
+     "https://classic.minecraft.net", "3D", "Web"),
+    ("web-bloxd", "Bloxd.io", "Sandbox", "Block building, parkour and survival online.", "https://bloxd.io", "3D", "Web"),
+    ("web-zombsroyale", "ZombsRoyale", "Shooter", "100-player battle royale from above.", "https://zombsroyale.io", "2D", "Web"),
+    ("web-slither", "Slither.io", "Arcade", "Grow the longest snake online.", "https://slither.io", "2D", "Web"),
+    ("web-diep", "Diep.io", "Arcade", "Upgrade your tank and take over the arena.", "https://diep.io", "2D", "Web"),
+    ("web-agar", "Agar.io", "Arcade", "Eat or be eaten – online.", "https://agar.io", "2D", "Web"),
+    ("web-skribbl", "skribbl.io", "Party", "Draw and guess with friends.", "https://skribbl.io", "2D", "Web"),
+    ("web-garticphone", "Gartic Phone", "Party", "The telephone game with drawings.", "https://garticphone.com", "2D", "Web"),
+    ("web-wordle", "Wordle", "Puzzle", "Guess the word in six tries.", "https://www.nytimes.com/games/wordle/index.html", "2D", "Web"),
+    ("web-tetris", "Tetris", "Puzzle", "The official Tetris online.", "https://tetris.com/play-tetris", "2D", "Web"),
+    ("web-littlealchemy2", "Little Alchemy 2", "Puzzle", "Mix elements and discover the world.", "https://littlealchemy2.com", "2D", "Web"),
+    ("web-cookieclicker", "Cookie Clicker", "Idle", "The famous cookie empire game.", "https://orteil.dashnet.org/cookieclicker/", "2D", "Web"),
+    ("web-adarkroom", "A Dark Room", "Adventure", "A minimalist text adventure that grows into much more.",
+     "https://adarkroom.doublespeakgames.com", "2D", "Web"),
+    ("web-paperclips", "Universal Paperclips", "Idle", "Make paperclips. Then make more.",
+     "https://www.decisionproblem.com/paperclips/index2.html", "2D", "Web"),
+    # Cloud gaming: big PC and console games (GTA V, Fortnite…) run on a server and stream here.
+    ("cloud-geforcenow", "GeForce NOW", "Cloud", "Your Steam, Epic and Ubisoft games streamed from NVIDIA – free tier "
+     "with a queue. Needs an NVIDIA account and 15+ Mbps internet.", "https://play.geforcenow.com", "3D", "Cloud"),
+    ("cloud-xbox", "Xbox Cloud Gaming", "Cloud", "Hundreds of Xbox games streamed – needs Game Pass Ultimate and fast internet.",
+     "https://www.xbox.com/play", "3D", "Cloud"),
+    ("cloud-boosteroid", "Boosteroid", "Cloud", "Cloud gaming for games you own on Steam, Epic and more – paid, fast internet.",
+     "https://cloud.boosteroid.com", "3D", "Cloud"),
+]
+INSTANT = [dict(zip(("id", "name", "genre", "about", "url", "dim", "kind"), e)) for e in INSTANT]
+INSTANT_BY_ID = {e["id"]: e for e in INSTANT}
+
+# ---- Phone games: the AirCursor app lists the games installed on the phone here ------------------
+PHONE_DIR = os.path.join(HOME, ".cache", "ts-station", "phone")
+PHONE_LIST = os.path.join(PHONE_DIR, "games.json")
+
+
+def phone_games():
+    try:
+        with open(PHONE_LIST) as f:
+            items = json.load(f)
+    except Exception:
+        return []
+    out = []
+    for it in items if isinstance(items, list) else []:
+        pkg = str(it.get("pkg", ""))
+        if not re.fullmatch(r"[A-Za-z0-9_.]{3,120}", pkg):
+            continue
+        out.append({"id": "phone-" + pkg, "pkg": pkg, "name": str(it.get("name", pkg))[:60],
+                    "icon": os.path.join(PHONE_DIR, pkg + ".png")})
+    return out
+
+
 STORE_BY_ID = {e["id"]: e for e in STORE}
 
 _dpkg = {"mtime": 0, "installed": set()}
@@ -329,8 +446,36 @@ def find_games():
                 "store": st["id"] if st else "",
                 "fh": st["fh"] if st else "",
                 "fit": st["fit"] if st else "",
+                "dim": st["dim"] if st else "",
+                "kind": "PC",
             })
+    # Play at once (web and cloud) – always there, nothing to install.
+    for e in INSTANT:
+        games.append({
+            "id": e["id"], "name": e["name"], "about": e["about"], "icon": "", "file": "", "exec": "", "path": "",
+            "mine": False, "genre": e["genre"], "store": "", "fh": "", "dim": e["dim"], "kind": e["kind"],
+            "fit": "Cloud" if e["kind"] == "Cloud" else "Smooth",
+            "source": "Cloud gaming" if e["kind"] == "Cloud" else "Web · plays at once",
+        })
+    # The phone's own games (opened on the phone: its GPU, its controls).
+    for e in phone_games():
+        games.append({
+            "id": e["id"], "name": e["name"], "about": "Installed on your phone – opens there, smooth on the phone's own chip.",
+            "icon": e["icon"], "file": "", "exec": "", "path": "", "mine": False, "genre": "Phone", "store": "",
+            "fh": "", "dim": "", "kind": "Phone", "fit": "Smooth", "source": "On your phone", "pkg": e["pkg"],
+        })
     return games
+
+
+def favicon(gid):
+    """A web or cloud game's logo (Google's favicon service, 128 px), downloaded once."""
+    e = INSTANT_BY_ID.get(gid)
+    if not e:
+        return None
+    host = urllib.parse.urlsplit(e["url"]).hostname or ""
+    return cached_download("icon-" + gid, lambda: [
+        "https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://%s&size=128"
+        % urllib.parse.quote(host)])
 
 
 def genre(cats):
@@ -430,7 +575,10 @@ def prefetch_art():
     time.sleep(1)
     for g in find_games():
         try:
-            hero_art(g["id"], g["name"])
+            if g["kind"] == "PC":
+                hero_art(g["id"], g["name"])
+            elif g["id"] in INSTANT_BY_ID:
+                favicon(g["id"])
         except Exception:
             pass
 
@@ -568,8 +716,48 @@ def _watch_game(proc, name):
         xdo("windowactivate", wid)
 
 
+def played(gid):
+    s = defaults(load_settings())
+    p = s["played"].setdefault(gid, {"count": 0})
+    p["count"] = p.get("count", 0) + 1
+    p["last"] = int(time.time())
+    save_settings(s)
+
+
+def to_phone(marker):
+    """A message for the AirCursor app on the phone (through the PC's clipboard, like the other tools)."""
+    try:
+        p = subprocess.Popen(["xclip", "-quiet", "-selection", "clipboard"], stdin=subprocess.PIPE,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        p.stdin.write(marker.encode())
+        p.stdin.close()
+        threading.Timer(15, lambda: p.poll() is None and p.kill()).start()
+        return True
+    except Exception:
+        return False
+
+
 def launch(gid):
     """Starts a game. Returns "" when it is starting, else a short reason."""
+    e = INSTANT_BY_ID.get(gid)
+    if e:
+        # Its own full-screen window in Air (the phone's browser engine: smooth, GPU).
+        if shutil.which("cloudpc-app"):
+            spawn(["cloudpc-app", "ts-" + gid, "max", e["name"], e["url"]])
+        elif shutil.which("cloudpc-air"):
+            spawn(["cloudpc-air", e["url"]])
+        else:
+            return "Air is missing – update the AirCursor app."
+        played(gid)
+        return ""
+    if gid.startswith("phone-"):
+        g = next((g for g in phone_games() if g["id"] == gid), None)
+        if not g:
+            return "This game is not on the phone any more."
+        if not to_phone("aircursor-launch:" + g["pkg"]):
+            return "Could not reach the phone."
+        played(gid)
+        return ""
     g = next((g for g in find_games() if g["id"] == gid), None)
     if not g:
         return "This game is not installed any more."
@@ -578,11 +766,7 @@ def launch(gid):
         return "This game has no start command."
     if not shutil.which(argv[0]) and not os.path.exists(argv[0]):
         return "Program not found: %s" % argv[0]
-    s = defaults(load_settings())
-    p = s["played"].setdefault(gid, {"count": 0})
-    p["count"] = p.get("count", 0) + 1
-    p["last"] = int(time.time())
-    save_settings(s)
+    played(gid)
     log = open(GAME_LOG, "ab")
     log.write(("\n==> %s  %s\n" % (time.strftime("%H:%M:%S"), " ".join(argv))).encode())
     log.flush()
@@ -753,7 +937,7 @@ def store_list():
     have = installed_packages()
     out = []
     for e in STORE:
-        d = {k: e[k] for k in ("id", "name", "genre", "about", "mb", "fit", "fh")}
+        d = {k: e[k] for k in ("id", "name", "genre", "about", "mb", "fit", "fh", "dim")}
         d["installed"] = e["id"] in have
         out.append(d)
     return out
@@ -809,7 +993,7 @@ class Handler(BaseHTTPRequestHandler):
                 g["last"] = p.get("last", 0)
                 g["count"] = p.get("count", 0)
                 g["favorite"] = g["id"] in s["favorites"]
-                for k in ("file", "exec", "path"):
+                for k in ("file", "exec", "path", "pkg"):
                     g.pop(k, None)
             return self.send(200, {"games": games})
         if u.path == "/api/settings":
@@ -817,10 +1001,16 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/system":
             return self.send(200, system_info())
         if u.path.startswith("/api/icon/"):
-            g = next((g for g in find_games() if g["id"] == u.path[10:]), None)
+            gid = u.path[10:]
+            if gid in INSTANT_BY_ID:
+                p = favicon(gid)
+                return self.file(p) if p else self.send(404, {"error": "no icon"})
+            g = next((g for g in find_games() if g["id"] == gid), None)
             p = icon_path(g["icon"]) if g else None
             return self.file(p) if p else self.send(404, {"error": "no icon"})
         if u.path.startswith("/api/art/"):
+            if u.path[9:] in INSTANT_BY_ID or u.path[9:].startswith("phone-"):
+                return self.send(404, {"error": "no art"})   # the page paints these from their logo
             p = hero_art(u.path[9:])
             return self.file(p) if p else self.send(404, {"error": "no art"})
         if u.path == "/api/store":

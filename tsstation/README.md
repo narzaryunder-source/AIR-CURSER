@@ -6,6 +6,20 @@ in the dock. Change the files here, raise `VERSION`; the next app version brings
 
 The old one-click package (`dist/ts-station.deb`, `install.sh`) stays for PCs set up before.
 
+## Version 1.0
+
+- One library, four places a game can come from (filters: PC, Web, Cloud, Phone, 2D, 3D, Runs smooth):
+  - **PC**: 51 hand-picked free games for the PC (only well-known, finished games – racing, shooters,
+    strategy, RPG, adventure, simulation, puzzles, cards and board games), each with an honest
+    "runs on this phone" label and 2D/3D; one tap installs.
+  - **Web**: 22 well-known browser games that play at once in Air (Krunker, GeoFS, Minecraft Classic,
+    Chess.com, skribbl.io, Wordle…).
+  - **Cloud**: GeForce NOW, Xbox Cloud Gaming, Boosteroid – big PC/console games streamed (the player's
+    own account and fast internet needed).
+  - **Phone**: the games installed on the phone (the AirCursor app lists them); Play opens them on the
+    phone, smooth on its own chip.
+- No game portals or filler games.
+
 ## Version 0.2
 
 - Home like a console: big key art on the right, logo-style title, source / installed / profile chips,

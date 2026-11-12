@@ -389,7 +389,7 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_free_tsstation"
+private const val WHATS_NEW_ID = "whatsnew_tsstation_1"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
@@ -403,6 +403,7 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             whatsNew = false
         }) {
             Bullet("AirCursor is now free for everyone – no plan, no key")
+            Bullet("TS Station 1.0: 51 hand-picked PC games, 22 web games that play at once, cloud gaming (GeForce NOW, Xbox) and your phone's own games – one library")
             Bullet("TS Station, the game console, now comes with AirCursor PC for everyone (in the dock)")
             Bullet("New lock screen (blurred wallpaper, big clock) and a start screen with logo and progress bar")
             Bullet("Back up your whole PC to one file and restore it on any phone: AirCursor PC → Back up the PC")

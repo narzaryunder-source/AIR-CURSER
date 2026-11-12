@@ -180,7 +180,8 @@ function renderRow() {
   state.rowSel = Math.min(state.rowSel, Math.max(0, list.length - 1));
   selectRow(state.rowSel, false);
   if (!list.length) showHero(null);
-  $("#count").innerHTML = `<b>${state.games.length}</b> installed · TS Console`;
+  const pc = state.games.filter((g) => g.kind === "PC").length;
+  $("#count").innerHTML = `<b>${state.games.length}</b> games · ${pc} on this PC · TS Console`;
 }
 function selectRow(i, sound = true) {
   const tiles = $$("#row .tile");
@@ -198,7 +199,9 @@ function ago(t) {
   return d < 1 ? "Played today" : d === 1 ? "Played yesterday" : `Played ${d} days ago`;
 }
 function metaHtml(g) {
-  const parts = [`<span class="src">${esc(g.source || "Ubuntu")}</span>`, '<span class="dot">Installed</span>'];
+  const ready = { Web: "Plays at once", Cloud: "Streams from the cloud", Phone: "Opens on the phone" }[g.kind] || "Installed";
+  const parts = [`<span class="src">${esc(g.source || "Ubuntu")}</span>`, `<span class="dot">${ready}</span>`];
+  if (g.dim) parts.push(`<span>${esc(g.dim)}</span>`);
   if (state.sys.profile) parts.push(`<span>Profile <b>${esc(state.sys.profile)}</b></span>`);
   if (g.fit) parts.push(`<span>Runs <b>${esc(g.fit)}</b></span>`);
   parts.push(`<span>${esc(g.count ? `${ago(g.last)} · ${g.count}×` : ago(g.last))}</span>`);
@@ -305,7 +308,8 @@ function addGame() {
 
 /* ---------- details ---------- */
 const stat = (k, v) => `<div class="stat"><small>${esc(k)}</small><b>${esc(v)}</b></div>`;
-const FIT_TEXT = { Smooth: "Runs smooth", Good: "Good · Game profile", Heavy: "Heavy · Turbo profile" };
+const FIT_TEXT = { Smooth: "Runs smooth", Good: "Good · Game profile", Heavy: "Heavy · Turbo profile",
+  Cloud: "Needs fast internet (15+ Mbps)" };
 function button(cls, html, fn) {
   const b = document.createElement("button"); b.className = cls; b.innerHTML = html;
   if (fn) b.onclick = fn; else b.disabled = true;
@@ -381,7 +385,7 @@ function storeCard(s) {
   b.className = "sgame"; b.dataset.sid = s.id;
   b.innerHTML = `<div class="s-art"><img alt="" src="${storeIconUrl(s.id)}" onerror="this.remove()"></div>
     <div class="s-body"><span class="s-name"></span><span class="s-info"><span class="fit fit-${esc(s.fit)}">${esc(s.fit)}</span>
-    <span>${esc(s.genre)}</span><span>${size(s.mb)}</span></span><span class="s-act"></span></div>`;
+    <span>${esc(s.genre)}</span><span>${esc(s.dim || "")}</span><span>${size(s.mb)}</span></span><span class="s-act"></span></div>`;
   b.querySelector(".s-name").textContent = s.name;
   paintArt(b.querySelector(".s-art"), storeArt(s, false), storeIconUrl(s.id));
   cardState(b, s);
@@ -403,14 +407,15 @@ function cardState(b, s) {
   }
 }
 function renderStore() {
-  const genres = ["All", "Runs smooth", ...new Set(state.store.map((s) => s.genre))];
+  const genres = ["All", "Runs smooth", "2D", "3D", ...new Set(state.store.map((s) => s.genre))];
   const tabs = $("#storeTabs"); tabs.innerHTML = "";
   for (const name of genres) {
     const b = document.createElement("button"); b.textContent = name; b.classList.toggle("active", name === state.storeGenre);
     b.onclick = () => { state.storeGenre = name; renderStore(); blip(600); $$("#storeTabs button")[genres.indexOf(name)].focus(); };
     tabs.appendChild(b);
   }
-  const list = state.store.filter((s) => state.storeGenre === "All" || (state.storeGenre === "Runs smooth" ? s.fit === "Smooth" : s.genre === state.storeGenre));
+  const list = state.store.filter((s) => state.storeGenre === "All" ||
+    (state.storeGenre === "Runs smooth" ? s.fit === "Smooth" : state.storeGenre === "2D" || state.storeGenre === "3D" ? s.dim === state.storeGenre : s.genre === state.storeGenre));
   const grid = $("#storeGrid"); grid.innerHTML = "";
   list.forEach((s) => grid.appendChild(storeCard(s)));
   if (!state.storeHero && state.store.length) storeHero(state.store[0]);
@@ -510,19 +515,35 @@ function go(page, focus = true) {
   }
 }
 function firstIn(root) { return focusables().find((e) => root.contains(e)); }
+/* Where a game runs: PC (installed), Web (plays at once in Air), Cloud, Phone (opens on the phone). */
+const SOURCES = [["All", "All"], ["PC", "On this PC"], ["Web", "Web · instant"], ["Cloud", "Cloud"], ["Phone", "Phone"],
+  ["2D", "2D"], ["3D", "3D"], ["Smooth", "Runs smooth"]];
+const inSource = (g, src) => src === "All" || g.kind === src || g.dim === src || (src === "Smooth" && g.fit === "Smooth");
 function sortedLibrary() {
-  const list = state.games.filter((g) => state.genre === "All" || g.genre === state.genre);
+  const list = state.games.filter((g) => inSource(g, state.src || "All") && (state.genre === "All" || g.genre === state.genre));
   if (state.sort === "recent") return list.sort((a, b) => (b.last - a.last) || a.name.localeCompare(b.name));
   if (state.sort === "most") return list.sort((a, b) => (b.count - a.count) || a.name.localeCompare(b.name));
   return list.sort((a, b) => a.name.localeCompare(b.name));
 }
 function renderLibrary() {
-  const genres = ["All", ...new Set(state.games.map((g) => g.genre))];
+  const src = state.src || "All";
+  const st = $("#srcTabs"); st.innerHTML = "";
+  for (const [key, label] of SOURCES) {
+    const n = state.games.filter((g) => inSource(g, key)).length;
+    if (!n && key !== "All") continue;
+    const b = document.createElement("button");
+    b.innerHTML = `${esc(label)} <i>${n}</i>`;
+    b.classList.toggle("active", key === src);
+    b.onclick = () => { state.src = key; state.genre = "All"; renderLibrary(); blip(600); };
+    st.appendChild(b);
+  }
+  const pool = state.games.filter((g) => inSource(g, src));
+  const genres = ["All", ...new Set(pool.map((g) => g.genre))];
   if (!genres.includes(state.genre)) state.genre = "All";
   const tabs = $("#genreTabs"); tabs.innerHTML = "";
   for (const name of genres) {
     const b = document.createElement("button");
-    b.innerHTML = `${esc(name)} <i>${name === "All" ? state.games.length : state.games.filter((g) => g.genre === name).length}</i>`;
+    b.innerHTML = `${esc(name)} <i>${name === "All" ? pool.length : pool.filter((g) => g.genre === name).length}</i>`;
     b.classList.toggle("active", name === state.genre);
     b.onclick = () => { state.genre = name; renderLibrary(); blip(600); $$("#genreTabs button")[genres.indexOf(name)].focus(); };
     tabs.appendChild(b);
