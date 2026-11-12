@@ -409,7 +409,7 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_mac_look"
+private const val WHATS_NEW_ID = "whatsnew_air_logo_games"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
@@ -422,6 +422,8 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             UiPrefs.close(context, WHATS_NEW_ID)
             whatsNew = false
         }) {
+            Bullet("Air has a new logo: a globe with a swirl of air – a real browser look")
+            Bullet("27 new games in Air Store: Hedgewars, Wesnoth, OpenTTD, Warzone 2100, Solitaire, Chess, Sudoku… and web games like Krunker, Slither.io, skribbl.io")
             Bullet("AirCursor PC looks like a Mac: menu bar on top, dock with live dots, all-apps screen with search – drawn by the phone, so it stays smooth")
             Bullet("New window frames: round close / minimise / maximise buttons on the left (AirMac)")
             Bullet("Files → hold a video → Edit on the phone: opens in CapCut (or another editor) on your phone")
@@ -429,7 +431,7 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             Bullet("Blender, Kdenlive, OpenShot, Krita: automatic speed mode while they run, plus a light Blender viewport preset")
             Bullet("Only Air Store now – the old App Store is gone. 50+ new apps: Meet, Zoom, Teams, OBS, OpenShot, chess, courses…")
             Bullet("Air pages a little smaller, so more fits on the screen")
-            Bullet("New AirCursor logo: the blue air-arrow (AirCursor PC in violet); Air keeps its eagle")
+            Bullet("New AirCursor logo: the blue air-arrow (AirCursor PC in violet)")
             Bullet("Air, like Brave: laptop-size pages and desktop YouTube, tabs with real logos, bookmarks, history")
             Bullet("New tab page with real photos of the Earth (NASA), clock and shortcuts with real app logos")
             Bullet("Shields: trackers and ads blocked (uBlock Origin), with a counter")

@@ -13,7 +13,7 @@ import java.util.concurrent.Executors
 
 /**
  * Real site logos for tabs, bookmarks and shortcuts: fetched once per site and kept on the phone.
- * Callbacks run on the main thread; null means "no logo" (the caller shows a letter or the eagle).
+ * Callbacks run on the main thread; null means "no logo" (the caller shows a letter or the Air logo).
  */
 object AirIcons {
     private val mem = LruCache<String, Bitmap>(160)

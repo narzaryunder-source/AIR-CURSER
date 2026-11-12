@@ -81,7 +81,7 @@ class AirBrowser(
 ) : FrameLayout(activity) {
 
     /** An app window: [key] identifies it ("airstore", "youtube"…), [url] is its start page. */
-    class App(val key: String, val title: String, var url: String, val iconRes: Int = R.drawable.ic_air_eagle)
+    class App(val key: String, val title: String, var url: String, val iconRes: Int = R.drawable.ic_air_logo)
 
     interface Host {
         fun pickPhoneFiles(multiple: Boolean, done: (List<Uri>) -> Unit)
@@ -219,7 +219,7 @@ class AirBrowser(
         }
         strip = s
         val logo = ImageView(activity).apply {
-            setImageResource(R.drawable.ic_air_eagle)
+            setImageResource(R.drawable.ic_air_logo)
             contentDescription = "Air"
         }
         s.addView(logo, LinearLayout.LayoutParams(ui.u(20), ui.u(20)).apply {
@@ -431,7 +431,7 @@ class AirBrowser(
         }
         val ic = ImageView(activity).apply { setImageResource(a.iconRes) }
         // Web apps (YouTube, Spotify…) show their real logo.
-        if (a.iconRes == R.drawable.ic_air_eagle || a.iconRes == R.drawable.ic_ui_music) {
+        if (a.iconRes == R.drawable.ic_air_logo || a.iconRes == R.drawable.ic_ui_music) {
             AirIcons.get(activity, a.url) { bmp -> if (bmp != null) ic.setImageBitmap(bmp) }
         }
         bar.addView(ic, LinearLayout.LayoutParams(ui.u(17), ui.u(17)).apply {
@@ -536,7 +536,7 @@ class AirBrowser(
                 icon.setImageResource(R.drawable.ic_ui_eye)
                 icon.imageTintList = ColorStateList.valueOf(AirUi.ACCENT_2)
             }
-            isInternal(t.url) || t.url.isEmpty() -> icon.setImageResource(R.drawable.ic_air_eagle)
+            isInternal(t.url) || t.url.isEmpty() -> icon.setImageResource(R.drawable.ic_air_logo)
             t.icon != null -> icon.setImageBitmap(t.icon)
             else -> {
                 icon.setImageResource(R.drawable.ic_ui_globe)

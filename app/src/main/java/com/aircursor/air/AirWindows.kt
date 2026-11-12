@@ -89,7 +89,7 @@ class AirWindows(
             "airstore" -> R.drawable.ic_ui_store
             "tsstation" -> R.drawable.ic_ui_gamepad
             "music", "spotify", "ytmusic", "jiosaavn", "gaana" -> R.drawable.ic_ui_music
-            else -> R.drawable.ic_air_eagle
+            else -> R.drawable.ic_air_logo
         }
         val w = create(key, AirBrowser.App(key, title, url, icon), maximized = prefs.getBoolean("win_max_$key", size != "win"))
         show(w)
@@ -240,7 +240,7 @@ class AirWindows(
         anchor.getLocationInWindow(loc)
         val items = ArrayList<AirUi.Item>()
         for (w in wins.asReversed()) {
-            val icon = w.browser.app?.iconRes ?: R.drawable.ic_air_eagle
+            val icon = w.browser.app?.iconRes ?: R.drawable.ic_air_logo
             items += AirUi.Item(w.title + if (w.minimized) "  (minimized)" else "", icon) { show(w) }
         }
         items += AirUi.Item("New Air tab", R.drawable.ic_ui_plus, separatorBefore = items.isNotEmpty()) {

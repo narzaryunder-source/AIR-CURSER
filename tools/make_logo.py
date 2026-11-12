@@ -7,7 +7,7 @@ silver edge and trails, cut out of the owner's own blue logo design by tools/log
 
 Writes the Android adaptive icon layers (background, foreground, monochrome), the in-app logo
 tiles, and the PC's logo / Start button (SVG with the picture inside). The Air browser keeps its
-eagle (tools/make_eagle.py). Needs numpy and Pillow. Run from the repository root:
+Air logo (tools/make_air_logo.py). Needs numpy and Pillow. Run from the repository root:
     python3 tools/make_logo.py [preview.png]
 """
 import base64

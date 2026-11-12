@@ -213,6 +213,10 @@ install_id() {
         supertuxkart|neverball|openarena|torcs) install_apt "$1"; install_game_tools ;;
         trigger) install_apt trigger-rally; install_game_tools ;;
         tuxracer) install_apt extremetuxracer; install_game_tools ;;
+        openttd) install_apt openttd openttd-opengfx; install_game_tools ;;
+        gnome-chess) install_apt gnome-chess stockfish ;;
+        hedgewars|wesnoth|warzone2100|teeworlds|xmoto|frozen-bubble|pingus|chromium-bsu|blockout2|lbreakouthd)
+            install_apt "$1"; install_game_tools ;;
         *) install_apt "$1" ;;   # any Ubuntu package name (App Store search)
     esac
 }
@@ -234,6 +238,11 @@ remove_id() {
         trigger) pkgs="trigger-rally trigger-rally-data" ;;
         tuxracer) pkgs="extremetuxracer extremetuxracer-data" ;;
         supertuxkart|neverball|openarena|torcs) pkgs="$1 $1-data" ;;
+        openttd) pkgs="openttd openttd-data openttd-opengfx" ;;
+        gnome-chess) pkgs="gnome-chess stockfish" ;;
+        wesnoth) pkgs=$(dpkg-query -W -f='${Package}\n' 'wesnoth*' 2>/dev/null | tr '\n' ' ') ;;
+        hedgewars|warzone2100|xmoto|frozen-bubble|pingus|teeworlds|blockout2|lbreakouthd|chromium-bsu)
+            pkgs="$1 $(dpkg-query -W -f='${Package}\n' "$1-data" "$1-music" 2>/dev/null | tr '\n' ' ')" ;;
         python|coding|python3*|xfce4*|firefox*|zenity|tigervnc*|dbus*) bad "This is part of the PC and stays."; return ;;
         *) pkgs="$1" ;;
     esac
