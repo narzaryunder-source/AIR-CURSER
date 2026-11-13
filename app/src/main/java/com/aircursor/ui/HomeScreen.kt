@@ -389,7 +389,7 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_dock_fix"
+private const val WHATS_NEW_ID = "whatsnew_game_speed"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
@@ -403,6 +403,10 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             whatsNew = false
         }) {
             Bullet("AirCursor is now free for everyone – no plan, no key")
+            Bullet("Games: the whole screen for the game (menu bar and dock step aside), a smaller picture for 3D games = more FPS, background helper rests")
+            Bullet("The PC is lighter again: the background helper uses far less CPU")
+            Bullet("Dock: one tap opens an app; the dock no longer flickers")
+            Bullet("Touch is mouse style again: hold and move, the pointer follows your finger (change it in AirBoost → Touch)")
             Bullet("Fixed: apps in the dock and the all-apps screen now open (and stay open)")
             Bullet("Hand control is easier: lighter pinch, steadier click, drags start sooner and do not drop")
             Bullet("Dock and menu bar in a lighter glass look")

@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 33
+    const val VERSION = 34
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -732,13 +732,20 @@ object CloudPcTools {
         # /tmp/cloudpc-windows, only when they change. The same loop, so no extra program runs.
         FEED_LAST=""
         feed() {
-            grep -qx mac /root/.config/xfce4/aircursor-style 2>/dev/null || return 0
-            local root act ids id info out
+            # Shell built-ins only (starting a program costs a lot inside the PC): one xprop per round.
+            local style="" root act ids id info out
+            read -r style < /root/.config/xfce4/aircursor-style 2>/dev/null
+            [ "${'$'}style" = mac ] || return 0
             root=${'$'}(xprop -root _NET_CLIENT_LIST _NET_ACTIVE_WINDOW 2>/dev/null) || return 0
             [ "${'$'}root" = "${'$'}FEED_LAST" ] && [ -f /tmp/cloudpc-windows ] && return 0
             FEED_LAST=${'$'}root
-            act=${'$'}(sed -n 's/^_NET_ACTIVE_WINDOW.*# \(0x[0-9a-f]*\).*/\1/p' <<< "${'$'}root")
-            ids=${'$'}(sed -n 's/^_NET_CLIENT_LIST.*# //p' <<< "${'$'}root" | tr -d ',')
+            act=""; ids=""
+            if [[ "${'$'}root" == *"_NET_ACTIVE_WINDOW(WINDOW): window id # "* ]]; then
+                act=${'$'}{root##*_NET_ACTIVE_WINDOW(WINDOW): window id # }; act=${'$'}{act%%,*}; act=${'$'}{act%%${'$'}'\n'*}
+            fi
+            if [[ "${'$'}root" == *"_NET_CLIENT_LIST(WINDOW): window id # "* ]]; then
+                ids=${'$'}{root#*_NET_CLIENT_LIST(WINDOW): window id # }; ids=${'$'}{ids%%${'$'}'\n'*}; ids=${'$'}{ids//,/}
+            fi
             out="active	${'$'}act"
             for id in ${'$'}ids; do
                 info=${'$'}(xprop -id "${'$'}id" WM_CLASS WM_NAME _NET_WM_NAME _NET_WM_WINDOW_TYPE 2>/dev/null | awk -v id="${'$'}id" '
@@ -770,11 +777,19 @@ object CloudPcTools {
         RUN=/tmp/cloudpc-run.fifo
         [ -p "${'$'}RUN" ] || { rm -f "${'$'}RUN"; mkfifo -m 600 "${'$'}RUN"; }
         exec 7<>"${'$'}RUN"
+        N=0
         while true; do
             CMD=""
-            if read -r -t 1.5 -u 7 CMD && [ -n "${'$'}CMD" ]; then
+            if read -r -t 2 -u 7 CMD && [ -n "${'$'}CMD" ]; then
                 ( printf '%s' "${'$'}CMD" | base64 -d | setsid bash ) >/dev/null 2>&1 7<&- 9<&- &
                 continue
+            fi
+            # A game runs: rest (every program started here takes CPU from the game) – look only now and then.
+            if [ -f /tmp/cloudpc-game-on ]; then
+                GP=""; read -r GP < /tmp/cloudpc-game-on 2>/dev/null
+                if [ -n "${'$'}GP" ] && ! kill -0 "${'$'}GP" 2>/dev/null; then rm -f /tmp/cloudpc-game-on; fi
+                N=${'$'}(( (N + 1) % 5 ))
+                [ ${'$'}N = 0 ] || continue
             fi
             feed
             [ ${'$'}BOOST = 1 ] || continue

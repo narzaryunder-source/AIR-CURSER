@@ -126,7 +126,7 @@ object CloudPcDesktop {
         startxfce4 &
         # The session helper from the first second: runs the app's commands (dock, apps grid) inside
         # this session, tells the phone which windows are open, and gives the app in front the fast cores.
-        rm -f /tmp/cloudpc-run.fifo
+        rm -f /tmp/cloudpc-run.fifo /tmp/cloudpc-game-on
         command -v cloudpc-focus >/dev/null && (cloudpc-focus >/dev/null 2>&1 &)
         # One helper (Android allows an app only ~32 programs, so no extra background shells):
         # first-start settings, app fixes, light mode, self-repair for the first minute, browser updates.

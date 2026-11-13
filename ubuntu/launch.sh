@@ -25,6 +25,12 @@ case "${ID,,} ${NAME,,}" in
         HEAVY=1; GAME=1 ;;
 esac
 GAME_W=960; [ $HEAVY = 1 ] && GAME_W=1120
+# Big 3D games draw every pixel on the CPU: a smaller picture is the one thing that really adds FPS
+# (the app sharpens it on the phone's GPU).
+case "${ID,,} ${NAME,,}" in
+    *supertuxkart*|*torcs*|*trigger*|*openarena*|*warzone*|*megaglest*|*tuxracer*|*etr*|*neverball*|*neverputt*|*bzflag*|*minetest*|*luanti*|*foobillard*)
+        [ $HEAVY = 0 ] && GAME_W=800 ;;
+esac
 
 # Which argument is the program? (skip "env VAR=value")
 ARGS=("$@")
@@ -150,7 +156,15 @@ if [ $GAME = 1 ] && [ ! -f /root/.config/cloudpc/no-game-resolution ] && command
         fi
     fi
 fi
+# A game is on: the phone hides its menu bar and dock (the whole screen for the game) and the
+# session helper rests.
+GAME_ON=0
+if [ $GAME = 1 ] && [ $HEAVY = 0 ]; then echo "$$" > /tmp/cloudpc-game-on; GAME_ON=1; fi
 restore_resolution() {
+    if [ $GAME_ON = 1 ]; then
+        GAME_ON=0
+        [ "$(cat /tmp/cloudpc-game-on 2>/dev/null)" = "$$" ] && rm -f /tmp/cloudpc-game-on
+    fi
     [ -n "$GAME_RES" ] || return 0
     rm -f /tmp/cloudpc-game-res
     cloudpc-resize $GAME_RES >/dev/null 2>&1

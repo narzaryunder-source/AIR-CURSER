@@ -94,6 +94,9 @@ class AirShell(
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
     private var indexAsked = 0L
+    private var gameOn = false
+    private var dockSignature = ""
+    private var dockTouched = 0L
 
     // ---- views ----
     private val bar = LinearLayout(activity)
@@ -215,6 +218,22 @@ class AirShell(
             setEnabled(try { style.readText().trim() == "mac" } catch (_: Exception) { false })
         }
         if (!enabled) return
+        // A game runs: the whole screen is the game's (no bar, no dock over it, no margins).
+        val game = guest("/tmp/cloudpc-game-on").exists()
+        if (game != gameOn) {
+            gameOn = game
+            bar.visibility = if (game) View.GONE else View.VISIBLE
+            dockBox.visibility = if (game || autoHide) View.GONE else View.VISIBLE
+            handle.visibility = if (!game && autoHide) View.VISIBLE else View.GONE
+            if (game) closeGrid()
+            lastMargins = ""
+            applyInsets()
+            actions.changed()
+        }
+        if (game) {
+            widgets.update(false)
+            return
+        }
         val af = guest("/root/.cache/cloudpc-shell/apps.tsv")
         val am = af.lastModified()
         if (am != appsStamp) {
@@ -434,6 +453,14 @@ class AirShell(
                 if (air.top() === w) air.minimize(w) else air.show(w)
             }, null)
         }
+        // Only when something changed, and never under a finger (a rebuild would swallow the tap).
+        val sig = items.joinToString("|") { it.key + (if (it.running) "*" else "") + (if (it.bitmap != null) "i" else "") }
+        if (sig == dockSignature && dock.childCount > 0) return
+        if (System.currentTimeMillis() - dockTouched < 700) {
+            main.postDelayed({ rebuildDock() }, 750)
+            return
+        }
+        dockSignature = sig
         dock.removeAllViews()
         for (it in items) dock.addView(dockView(it))
     }
@@ -477,9 +504,13 @@ class AirShell(
         box.setOnTouchListener { v, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    dockTouched = System.currentTimeMillis()
+                    // The dock fits on the screen: no sideways scrolling that could steal the tap.
+                    if (dock.width <= dockScroll.width) v.parent?.requestDisallowInterceptTouchEvent(true)
                     img.animate().scaleX(1.28f).scaleY(1.28f).translationY(-ui.uf(6)).setDuration(110).start()
                     showDockFor(5000)
                 }
+                MotionEvent.ACTION_MOVE -> dockTouched = System.currentTimeMillis()
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     img.animate().scaleX(1f).scaleY(1f).translationY(0f).setDuration(140).start()
                 }
@@ -596,8 +627,8 @@ class AirShell(
             host.post { applyInsets() }
             return
         }
-        val top = if (enabled) barH else 0
-        val bottom = if (enabled && !autoHide) dockH + dockGap * 2 else 0
+        val top = if (enabled && !gameOn) barH else 0
+        val bottom = if (enabled && !gameOn && !autoHide) dockH + dockGap * 2 else 0
         actions.airWindows()?.setInsets(top, bottom)
         val (dw, dh) = actions.desktopSize()
         val scale = min(hw.toFloat() / dw, hh.toFloat() / dh)
@@ -614,7 +645,7 @@ class AirShell(
     }
 
     fun bringToFront() {
-        if (!enabled) return
+        if (!enabled || gameOn) return
         widgets.view.bringToFront()
         bar.bringToFront()
         dockBox.bringToFront()

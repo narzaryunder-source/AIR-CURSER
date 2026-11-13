@@ -51,7 +51,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     companion object {
         private const val PREFS = "cloudpc_engine"
         private const val KEY_FPS = "show_fps"
-        private const val KEY_PHONE_TOUCH = "phone_touch"
+        private const val KEY_PHONE_TOUCH = "phone_touch2"
         private const val KEY_STYLE = "pc_style"
         private const val ON = 0xEE4F46E5.toInt()
 
@@ -174,7 +174,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         v.sharpness = AirBoost.current(this).sharpen
         v.fpsLimit = AirBoost.fpsLimit(this)
         v.showFps = prefs.getBoolean(KEY_FPS, false)
-        v.phoneTouch = prefs.getBoolean(KEY_PHONE_TOUCH, true)
+        v.phoneTouch = prefs.getBoolean(KEY_PHONE_TOUCH, false)
         // Hand cursor over Air windows, the toolbar, the assistant or a dialog: tap the phone UI there.
         v.systemArea = { x, y -> overPhoneUi(x, y) }
         view = v
