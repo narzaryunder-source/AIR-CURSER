@@ -1,4 +1,3 @@
-import java.net.URI
 
 plugins {
     id("com.android.application")
@@ -87,28 +86,6 @@ android {
     }
 }
 
-// Downloads the MediaPipe hand landmark model into assets (only if it is missing).
-val downloadHandModel by tasks.registering {
-    val modelUrl =
-        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task"
-    val outFile = layout.projectDirectory.file("src/main/assets/hand_landmarker.task").asFile
-    outputs.file(outFile)
-    doLast {
-        if (!outFile.exists() || outFile.length() < 100_000L) {
-            outFile.parentFile.mkdirs()
-            logger.lifecycle("Downloading hand_landmarker.task ...")
-            URI(modelUrl).toURL().openStream().use { input ->
-                outFile.outputStream().use { output -> input.copyTo(output) }
-            }
-            logger.lifecycle("Saved ${outFile.length()} bytes to $outFile")
-        }
-    }
-}
-
-tasks.named("preBuild") {
-    dependsOn(downloadHandModel)
-}
-
 // The built-in Cloud PC uses the same desktop tools as the Termux setup (App Store, Windows layout…):
 // copy them from ubuntu/ into the APK's assets.
 val copyCloudPcTools by tasks.registering(Copy::class) {
@@ -145,12 +122,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
 
-    val cameraX = "1.3.4"
-    implementation("androidx.camera:camera-core:$cameraX")
-    implementation("androidx.camera:camera-camera2:$cameraX")
-    implementation("androidx.camera:camera-lifecycle:$cameraX")
-
-    implementation("com.google.mediapipe:tasks-vision:0.10.14")
     implementation("androidx.documentfile:documentfile:1.0.1")
     // Unpacks the ready-made AirCursor PC (tar.xz).
     implementation("org.tukaani:xz:1.9")

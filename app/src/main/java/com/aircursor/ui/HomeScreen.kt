@@ -65,29 +65,17 @@ import com.aircursor.cloudpc.CloudPcBus
 import com.aircursor.cloudpc.CloudPcDesktop
 import com.aircursor.cloudpc.CloudPcDesktopActivity
 import com.aircursor.cloudpc.CloudPcEngine
-import com.aircursor.service.HandTrackingService
-import com.aircursor.service.Permissions
-import com.aircursor.service.TrackingBus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
 fun HomeScreen(
-    onOpenSetup: () -> Unit,
-    onOpenPreview: () -> Unit,
-    onOpenSecurity: () -> Unit,
-    onOpenSettings: () -> Unit,
     onOpenPc: () -> Unit,
     onOpenHelp: () -> Unit,
 ) {
     val context = LocalContext.current
-    val status by TrackingBus.status.collectAsStateWithLifecycle()
     val user by AuthManager.user.collectAsStateWithLifecycle()
-    var tick by remember { mutableIntStateOf(0) }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { tick++ }
-    val cameraOk = remember(tick) { Permissions.camera(context) }
-    val a11yOk = remember(tick, status.accessibilityConnected) { Permissions.accessibility(context) }
     var showAccount by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     val drawer = rememberDrawerState(DrawerValue.Closed)
@@ -106,13 +94,7 @@ fun HomeScreen(
         drawerState = drawer,
         drawerContent = {
             AppDrawer(
-                setupNeeded = !cameraOk || !a11yOk,
-                canStart = cameraOk && a11yOk,
                 onHome = { scope.launch { drawer.close() } },
-                onSetup = { fromDrawer(onOpenSetup) },
-                onSettings = { fromDrawer(onOpenSettings) },
-                onPreview = { fromDrawer(onOpenPreview) },
-                onSecurity = { fromDrawer(onOpenSecurity) },
                 onDesktop = { fromDrawer(openDesktop) },
                 onPc = { fromDrawer(onOpenPc) },
                 onHelp = { fromDrawer(onOpenHelp) },
@@ -160,46 +142,27 @@ fun HomeScreen(
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            "Control your phone – and your pocket PC – with your hand.",
+                            "Your pocket PC – Ubuntu desktop, apps and games on your phone.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
 
-                    if (!cameraOk || !a11yOk) SetupNeededCard(onOpenSetup)
-
-                    HandControlCard(enabledToStart = cameraOk && a11yOk, onNeedSetup = onOpenSetup)
+                    PcCard(onOpenPc)
 
                     InfoCards(onOpenHelp)
-
-                    SectionLabel("Quick actions")
-                    QuickActions(
-                        running = status.running,
-                        onPreview = onOpenPreview,
-                        onDesktop = openDesktop,
-                    )
-
-                    PcCard(onOpenPc)
 
                     UpdateCard()
 
                     SectionLabel("Settings")
                     SectionCard {
-                        NavRow(R.drawable.ic_ui_cursor, "Cursor & gestures", "Size, speed, clicks, scrolling, performance", onClick = onOpenSettings)
                         NavRow(R.drawable.ic_ui_desktop, "AirCursor PC", "Desktop, AirBoost, graphics, apps and games", tint = Brand.Sky, onClick = onOpenPc)
-                        NavRow(R.drawable.ic_ui_shield, "Security & PIN", "Owner hand lock and app PIN", tint = Brand.Violet, onClick = onOpenSecurity)
-                        NavRow(
-                            R.drawable.ic_ui_check, "Permissions", "Camera, accessibility and battery",
-                            tint = Brand.Success,
-                            badge = if (!cameraOk || !a11yOk) "Action needed" else null,
-                            onClick = onOpenSetup,
-                        )
                         NavRow(R.drawable.ic_ui_book, "Help & guide", "Gestures, the PC, apps and AI step by step", tint = Brand.Warning, onClick = onOpenHelp)
                     }
 
                     Column(Modifier.padding(horizontal = 4.dp)) {
                         Text(
-                            "Hand tracking runs only on this phone – camera images never leave it.",
+                            "AirCursor PC and its files stay inside this app on your phone.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -241,13 +204,7 @@ private fun SectionLabel(text: String) {
 
 @Composable
 private fun AppDrawer(
-    setupNeeded: Boolean,
-    canStart: Boolean,
     onHome: () -> Unit,
-    onSetup: () -> Unit,
-    onSettings: () -> Unit,
-    onPreview: () -> Unit,
-    onSecurity: () -> Unit,
     onDesktop: () -> Unit,
     onPc: () -> Unit,
     onHelp: () -> Unit,
@@ -255,7 +212,6 @@ private fun AppDrawer(
     onAbout: () -> Unit,
 ) {
     val context = LocalContext.current
-    val status by TrackingBus.status.collectAsStateWithLifecycle()
     val theme by UiPrefs.theme.collectAsStateWithLifecycle()
     val dark = when (theme) {
         UiPrefs.ThemeMode.LIGHT -> false
@@ -267,7 +223,7 @@ private fun AppDrawer(
         drawerContainerColor = MaterialTheme.colorScheme.surface,
     ) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            // Header: logo, light/dark, name + version, master switch
+            // Header: logo, light/dark, name + version
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -299,41 +255,15 @@ private fun AppDrawer(
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
-                    Switch(
-                        checked = status.running,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Brand.Indigo,
-                            checkedTrackColor = Color.White,
-                            uncheckedThumbColor = Color.White,
-                            uncheckedTrackColor = Color.White.copy(alpha = 0.25f),
-                            uncheckedBorderColor = Color.White.copy(alpha = 0.6f),
-                        ),
-                        onCheckedChange = { want ->
-                            if (!want) {
-                                HandTrackingService.stop(context)
-                            } else if (canStart) {
-                                HandTrackingService.start(context)
-                            } else {
-                                Toast.makeText(context, "Finish the setup first", Toast.LENGTH_SHORT).show()
-                                onSetup()
-                            }
-                        },
-                    )
                 }
             }
             Spacer(Modifier.height(8.dp))
             DrawerEntry(R.drawable.ic_ui_home, "Home", selected = true, onClick = onHome)
-            DrawerLabel("Hand control")
-            DrawerEntry(R.drawable.ic_ui_cursor, "Cursor & gestures", onClick = onSettings)
-            DrawerEntry(R.drawable.ic_ui_camera, "Camera test", onClick = onPreview)
-            DrawerEntry(R.drawable.ic_ui_shield, "Security & PIN", onClick = onSecurity)
-            DrawerDivider()
             DrawerLabel("AirCursor PC")
             DrawerEntry(R.drawable.ic_ui_desktop, "Open desktop", onClick = onDesktop)
             DrawerEntry(R.drawable.ic_ui_bolt, "PC settings & AirBoost", onClick = onPc)
             DrawerDivider()
             DrawerLabel("Support")
-            DrawerEntry(R.drawable.ic_ui_check, "Permissions", badge = if (setupNeeded) "Action needed" else null, onClick = onSetup)
             DrawerEntry(R.drawable.ic_ui_book, "Help & guide", onClick = onHelp)
             DrawerEntry(R.drawable.ic_ui_user, "Account", onClick = onAccount)
             DrawerEntry(R.drawable.ic_ui_info, "About AirCursor", onClick = onAbout)
@@ -389,26 +319,26 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_game_speed"
+private const val WHATS_NEW_ID = "whatsnew_no_hand"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
     val context = LocalContext.current
     var whatsNew by remember { mutableStateOf(!UiPrefs.closed(context, WHATS_NEW_ID)) }
-    var howTo by remember { mutableStateOf(!UiPrefs.closed(context, "howto")) }
     var help by remember { mutableStateOf(!UiPrefs.closed(context, "help")) }
     if (whatsNew) {
         InfoCard(R.drawable.ic_ui_sparkles, Brand.Violet, "What's new", onClose = {
             UiPrefs.close(context, WHATS_NEW_ID)
             whatsNew = false
         }) {
+            Bullet("Hand control is removed – AirCursor is now only your pocket PC (no camera or accessibility permission needed)")
+            Bullet("The app PIN lock is gone too; the PC keeps its own password (lock screen)")
             Bullet("AirCursor is now free for everyone – no plan, no key")
             Bullet("Games: the whole screen for the game (menu bar and dock step aside), a smaller picture for 3D games = more FPS, background helper rests")
             Bullet("The PC is lighter again: the background helper uses far less CPU")
             Bullet("Dock: one tap opens an app; the dock no longer flickers")
             Bullet("Touch is mouse style again: hold and move, the pointer follows your finger (change it in AirBoost → Touch)")
             Bullet("Fixed: apps in the dock and the all-apps screen now open (and stay open)")
-            Bullet("Hand control is easier: lighter pinch, steadier click, drags start sooner and do not drop")
             Bullet("Dock and menu bar in a lighter glass look")
             Bullet("TS Station 1.0: 51 hand-picked PC games, 22 web games that play at once, cloud gaming (GeForce NOW, Xbox) and your phone's own games – one library")
             Bullet("TS Station, the game console, now comes with AirCursor PC for everyone (in the dock)")
@@ -431,8 +361,7 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             Bullet("New tab page with real photos of the Earth (NASA), clock and shortcuts with real app logos")
             Bullet("Shields: trackers and ads blocked (uBlock Origin), with a counter")
             Bullet("Downloads: save each file in the PC, on the phone, or both – e.g. a project made with Claude")
-            Bullet("Voice assistant: tap the mic or Win+A – \"YouTube kholo\", \"search …\", \"hand control on\", \"type …\"; give it any name")
-            Bullet("Hand cursor on the PC moves at screen speed like a real mouse; it now works over Air windows too")
+            Bullet("Voice assistant: tap the mic or Win+A – \"YouTube kholo\", \"search …\", \"type …\"; give it any name")
             Bullet("App windows: Air Store (small window), TS Station and web apps open like apps, no address bar")
             Bullet("Premium PC look: modern dark theme and icons, clean desktop, real-photo wallpaper, eagle logo")
             Bullet("Air Store: Apple-style store – Spotify, YouTube Music, Netflix, Photopea, AI apps and PC apps")
@@ -455,17 +384,6 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             Bullet("24 more apps: Geany, Thonny, PDF Reader, Calculator, Paint, mpv, Remmina…")
             Bullet("Windows keys: Win+E, Win+R, snap windows, Task Manager, screenshots, zip")
             Bullet("Brave as default browser, Phone GPU for games, Turbo and Steady FPS")
-        }
-    }
-    if (howTo) {
-        InfoCard(R.drawable.ic_ui_hand, Brand.Indigo, "How to use hand control", onClose = {
-            UiPrefs.close(context, "howto")
-            howTo = false
-        }) {
-            Bullet("Turn on Hand control above")
-            Bullet("Hold your hand 30–60 cm from the front camera")
-            Bullet("Move your index finger to move the pointer")
-            Bullet("Pinch thumb and index to click · pinch and hold for a right click")
         }
     }
     if (help) {
@@ -530,49 +448,6 @@ private fun Bullet(text: String) {
 
 // ---- Quick actions ------------------------------------------------------------------------------
 
-@Composable
-private fun QuickActions(running: Boolean, onPreview: () -> Unit, onDesktop: () -> Unit) {
-    val context = LocalContext.current
-    fun needRunning(action: () -> Unit) {
-        if (running) action() else Toast.makeText(context, "Turn on Hand control first", Toast.LENGTH_SHORT).show()
-    }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-        QuickAction(R.drawable.ic_ui_crosshair, "Recenter") {
-            needRunning { HandTrackingService.send(context, HandTrackingService.ACTION_RECALIBRATE) }
-        }
-        QuickAction(R.drawable.ic_ui_target, "Auto-tune") {
-            needRunning {
-                HandTrackingService.send(context, HandTrackingService.ACTION_AUTOTUNE)
-                Toast.makeText(context, "Hold your finger still for 2 seconds", Toast.LENGTH_LONG).show()
-            }
-        }
-        QuickAction(R.drawable.ic_ui_camera, "Camera test", onClick = onPreview)
-        QuickAction(R.drawable.ic_ui_desktop, "Open PC", onClick = onDesktop)
-    }
-}
-
-@Composable
-private fun QuickAction(@DrawableRes icon: Int, label: String, onClick: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(78.dp)) {
-        Box(
-            Modifier
-                .size(64.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surface)
-                .border(1.5.dp, MaterialTheme.colorScheme.outline, CircleShape)
-                .clickable(onClick = onClick),
-            contentAlignment = Alignment.Center,
-        ) { UiIcon(icon, tint = MaterialTheme.colorScheme.primary, size = 26.dp) }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-        )
-    }
-}
-
 // ---- About --------------------------------------------------------------------------------------
 
 @Composable
@@ -607,117 +482,6 @@ private fun AboutDialog(onDismiss: () -> Unit) {
     )
 }
 
-@Composable
-private fun SetupNeededCard(onOpenSetup: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.errorContainer)
-            .clickable(onClick = onOpenSetup)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        UiIcon(R.drawable.ic_ui_alert, tint = MaterialTheme.colorScheme.onErrorContainer)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text("Finish setup", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onErrorContainer)
-            Text(
-                "Allow camera and accessibility to use hand control.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-            )
-        }
-        UiIcon(R.drawable.ic_ui_chevron, tint = MaterialTheme.colorScheme.onErrorContainer, size = 18.dp)
-    }
-}
-
-@Composable
-private fun HandControlCard(enabledToStart: Boolean, onNeedSetup: () -> Unit) {
-    val context = LocalContext.current
-    val status by TrackingBus.status.collectAsStateWithLifecycle()
-    val on = status.running
-    val line = when {
-        !on -> "Off"
-        status.screenOff -> "Waiting for unlock"
-        status.paused -> "Paused"
-        !status.accessibilityConnected -> "Accessibility service is off"
-        status.handPresent -> "Hand detected · %.0f fps".format(status.fps)
-        else -> "On · show your hand to the front camera"
-    }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(Brand.handGradient)
-            .padding(18.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(46.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color.White.copy(alpha = 0.18f)),
-                contentAlignment = Alignment.Center,
-            ) { UiIcon(R.drawable.ic_ui_hand, tint = Color.White, size = 26.dp) }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Hand control", color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(line, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
-            }
-            Switch(
-                checked = on,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Brand.Indigo,
-                    checkedTrackColor = Color.White,
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = Color.White.copy(alpha = 0.25f),
-                    uncheckedBorderColor = Color.White.copy(alpha = 0.6f),
-                ),
-                onCheckedChange = { want ->
-                    if (want) {
-                        if (!enabledToStart) {
-                            Toast.makeText(context, "Finish the setup first", Toast.LENGTH_SHORT).show()
-                            onNeedSetup()
-                        } else {
-                            HandTrackingService.start(context)
-                        }
-                    } else {
-                        HandTrackingService.stop(context)
-                    }
-                },
-            )
-        }
-        status.error?.let {
-            Spacer(Modifier.height(8.dp))
-            Text(it, color = Color.White, style = MaterialTheme.typography.bodySmall)
-        }
-        if (on) {
-            Spacer(Modifier.height(14.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                GlassButton(
-                    if (status.paused) "Resume" else "Pause",
-                    if (status.paused) R.drawable.ic_ui_play else R.drawable.ic_ui_pause,
-                    onClick = { HandTrackingService.send(context, HandTrackingService.ACTION_TOGGLE_PAUSE) },
-                    modifier = Modifier.weight(1f),
-                )
-                GlassButton(
-                    "Recenter", R.drawable.ic_ui_crosshair,
-                    onClick = { HandTrackingService.send(context, HandTrackingService.ACTION_RECALIBRATE) },
-                    modifier = Modifier.weight(1f),
-                )
-                GlassButton(
-                    "Auto-tune", R.drawable.ic_ui_target,
-                    onClick = {
-                        HandTrackingService.send(context, HandTrackingService.ACTION_AUTOTUNE)
-                        Toast.makeText(context, "Hold your finger still for 2 seconds", Toast.LENGTH_LONG).show()
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun PcCard(onOpenPc: () -> Unit) {

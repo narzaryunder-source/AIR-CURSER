@@ -32,7 +32,6 @@ object AssistantBrain {
 
     /** Features the assistant can switch on and off, with the words people use for them. */
     val FEATURES = linkedMapOf(
-        "hand" to listOf("hand control", "hand cursor", "hand tracking", "air cursor", "aircursor", "cursor", "hand", "haath", "hath"),
         "fps" to listOf("fps meter", "fps counter", "frame rate", "fps"),
         "keyboard" to listOf("keyboard", "keypad"),
         "game" to listOf("game mode", "gaming mode", "turbo mode", "turbo", "boost mode", "boost", "game"),

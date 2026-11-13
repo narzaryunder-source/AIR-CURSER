@@ -33,25 +33,11 @@ private class Topic(
 
 private val TOPICS = listOf(
     Topic(
-        R.drawable.ic_ui_play, "Get started", "Three steps to your first click",
+        R.drawable.ic_ui_play, "Get started", "Three steps to your pocket PC",
         steps = listOf(
-            "Open AirCursor and switch on Hand control.",
-            "Hold your hand 30–60 cm from the front camera, palm facing the screen.",
-            "Move your index finger to move the pointer. Pinch thumb and index finger to click.",
-            "If the pointer shakes, tap Auto-tune and keep your finger still for 2 seconds.",
-        ),
-    ),
-    Topic(
-        R.drawable.ic_ui_hand, "Hand gestures", "Everything you can do in the air",
-        rows = listOf(
-            "Move index finger" to "Move the pointer",
-            "Quick pinch" to "Click / tap",
-            "Two quick pinches" to "Double click",
-            "Pinch and hold (ring fills)" to "Long press · right click on the PC",
-            "Pinch, hold a moment, then move" to "Drag · select · move windows",
-            "Two fingers up, move up/down" to "Scroll (Simple mode off)",
-            "Open palm swipe left" to "Back (Simple mode off)",
-            "Open palm held still" to "Home (Simple mode off)",
+            "Open AirCursor PC from the home screen (first time: Install – it unpacks the ready-made PC).",
+            "Tap the apps in the dock at the bottom, or the first icon for all apps with search.",
+            "Open Air Store for more apps and games; TS Station is your game console.",
         ),
     ),
     Topic(
@@ -60,7 +46,7 @@ private val TOPICS = listOf(
             "Open AirCursor PC from the home screen icon or from AirCursor.",
             "Start (bottom left) opens all apps. The taskbar shows open windows.",
             "Tap = click, press and hold = right click, two fingers = scroll.",
-            "The button on the right edge opens the toolbar: keyboard, hand control, paste, files, wallpaper, boost and FPS.",
+            "The button on the right edge opens the toolbar: keyboard, paste, files, wallpaper, boost and FPS.",
             "One tap opens a desktop icon. Tap Getting Started on the desktop for a full guide.",
             "A Bluetooth or USB keyboard and mouse work like on a PC (shortcuts, right click, scroll wheel).",
             "Windows keys: Win+E files, Win+R run, Win+arrows snap windows, Ctrl+Shift+Esc Task Manager, Print screenshot.",
@@ -122,7 +108,6 @@ private val TOPICS = listOf(
     Topic(
         R.drawable.ic_ui_shield, "Privacy and your data", "What stays where",
         steps = listOf(
-            "Hand tracking runs only on this phone. Camera images are never saved or sent.",
             "AirCursor PC and its files live inside the AirCursor app on this phone.",
             "Android keeps AirCursor PC in its own sandbox: it cannot reach your other apps, photos or messages.",
             "Firefox in the PC uses HTTPS only, blocks trackers and updates itself for security.",

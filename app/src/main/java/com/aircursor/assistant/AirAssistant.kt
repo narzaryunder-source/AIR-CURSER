@@ -31,8 +31,7 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * AirCursor's voice assistant in the PC. Tap the mic (or Win+A, or pinch the orb with the hand
- * cursor), say what you want – "YouTube kholo", "search cricket score", "hand control on",
+ * AirCursor's voice assistant in the PC. Tap the mic (or Win+A), say what you want – "YouTube kholo", "search cricket score",
  * "type hello" – and it happens. Its name is yours to choose (default "Air").
  */
 @SuppressLint("SetTextI18n")
@@ -87,7 +86,7 @@ class AirAssistant(
         orb.state = AssistantOrb.State.LISTENING
         heard.text = "Listening…"
         heard.setTextColor(0xB3FFFFFF.toInt())
-        reply.text = "Try: \"YouTube kholo\", \"search today's news\", \"hand control on\""
+        reply.text = "Try: \"YouTube kholo\", \"search today's news\""
         reply.setTextColor(0x99FFFFFF.toInt())
         root.removeCallbacks(hide)
         tts?.stop()
@@ -186,7 +185,7 @@ class AirAssistant(
                 Command.Battery -> battery()
                 Command.Lock -> actions.lock()
                 Command.Help -> "Say: open YouTube · search anything · play a song · type a message · " +
-                    "hand control on · scroll down · new tab · screenshot · what's the time · volume up."
+                    "scroll down · new tab · screenshot · what's the time · volume up."
                 Command.Nothing -> "Say something like \"open YouTube\"."
             }
         } catch (e: Exception) {

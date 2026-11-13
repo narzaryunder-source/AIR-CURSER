@@ -8,13 +8,10 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.aircursor.pc.PcMode
-import com.aircursor.service.HandTrackingService
-import com.aircursor.service.Permissions
 
 /**
  * One-tap "Cloud PC" (Ubuntu desktop): starts the Ubuntu desktop inside Termux (through Termux's
- * RUN_COMMAND service), opens Termux:X11 and turns on hand tracking.
+ * RUN_COMMAND service), opens Termux:X11 .
  * Needs the commands installed by ubuntu/setup.sh or fix.sh (they also allow external apps).
  */
 object UbuntuMode {
@@ -75,9 +72,6 @@ object UbuntuMode {
         }
         val error = runInTermux(c, "ubuntu-desktop", args)
         if (error != null) return error
-        // PC mode's taskbar would cover the Ubuntu panel.
-        PcMode.setEnabled(c, false)
-        if (Permissions.camera(c) && Permissions.accessibility(c)) HandTrackingService.start(c)
         Handler(Looper.getMainLooper()).postDelayed({ openX11(c) }, 2500)
         return null
     }
@@ -89,13 +83,11 @@ object UbuntuMode {
      * matter). Keeps the user's settings and files; starts the desktop when done.
      */
     fun repair(c: Context): String? {
-        PcMode.setEnabled(c, false)
         val script = "curl -fsSL $FIX_URL -o $HOME/fix.sh && bash $HOME/fix.sh --keep > $HOME/cloudpc-repair.log 2>&1"
         return runInTermux(c, "bash", arrayOf("-c", script))
     }
 
     fun stop(c: Context) {
         runInTermux(c, "ubuntu-stop")
-        HandTrackingService.stop(c)
     }
 }

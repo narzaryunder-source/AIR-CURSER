@@ -38,15 +38,13 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.aircursor.MainActivity
 import com.aircursor.R
 import com.aircursor.core.Keysyms
-import com.aircursor.service.HandTrackingService
-import com.aircursor.service.Permissions
 import com.aircursor.service.ScreenUtils
 import java.io.File
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-/** Full-screen AirCursor PC desktop. The hand cursor works here as a real mouse. */
+/** Full-screen AirCursor PC desktop. */
 class CloudPcDesktopActivity : ComponentActivity() {
     companion object {
         private const val PREFS = "cloudpc_engine"
@@ -99,7 +97,6 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private var bootDone = false
     private lateinit var tools: LinearLayout
     private val stickyButtons = HashMap<Int, View>()
-    private var handButton: View? = null
     private var fpsButton: View? = null
     private var pendingExport: File? = null
     private lateinit var rootLayout: FrameLayout
@@ -263,7 +260,6 @@ class CloudPcDesktopActivity : ComponentActivity() {
         })
         tools.addView(iconButton(R.drawable.ic_ui_mic, "Voice assistant (Win+A)") { startAssistant() })
         tools.addView(iconButton(R.drawable.ic_ui_play, "Smooth video on the phone (Win+Y)") { smoothVideo() })
-        handButton = iconButton(R.drawable.ic_ui_hand, "Hand control") { toggleHand() }.also { tools.addView(it) }
         tools.addView(iconButton(R.drawable.ic_ui_paste, "Paste from phone") { pasteFromPhone() })
         tools.addView(iconButton(R.drawable.ic_ui_folder, "Files") { filesMenu() })
         tools.addView(iconButton(R.drawable.ic_ui_image, "Wallpaper") {
@@ -738,11 +734,6 @@ class CloudPcDesktopActivity : ComponentActivity() {
         }
 
         override fun toggle(feature: String, on: Boolean?): String = when (feature) {
-            "hand" -> {
-                val want = on ?: !HandTrackingService.isRunning
-                if (want != HandTrackingService.isRunning) toggleHand()
-                if (want) "Hand control on – show your hand to the camera." else "Hand control off."
-            }
             "fps" -> {
                 val v = view
                 val want = on ?: !(v?.showFps ?: false)
@@ -1103,7 +1094,6 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private fun updateButtons() {
         val v = view ?: return
         for ((sym, b) in stickyButtons) setOn(b, sym in v.sticky)
-        setOn(handButton, HandTrackingService.isRunning)
         setOn(fpsButton, v.showFps)
     }
 
@@ -1140,20 +1130,6 @@ class CloudPcDesktopActivity : ComponentActivity() {
     }
 
     // ---- Toolbar actions ----
-
-    /** Hand cursor on/off right from the desktop (the camera service may only start while we are visible). */
-    private fun toggleHand() {
-        if (HandTrackingService.isRunning) {
-            HandTrackingService.stop(this)
-            Toast.makeText(this, "Hand control off", Toast.LENGTH_SHORT).show()
-        } else if (!Permissions.camera(this) || !Permissions.accessibility(this)) {
-            Toast.makeText(this, "Open AirCursor and finish the setup first", Toast.LENGTH_LONG).show()
-        } else {
-            HandTrackingService.start(this)
-            Toast.makeText(this, "Hand control on – show your hand to the front camera", Toast.LENGTH_SHORT).show()
-        }
-        tools.postDelayed({ updateButtons() }, 800)
-    }
 
     private fun pasteFromPhone() {
         val cm = getSystemService(ClipboardManager::class.java)

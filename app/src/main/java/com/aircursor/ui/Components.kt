@@ -52,9 +52,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.aircursor.R
-import com.aircursor.data.BoolSetting
-import com.aircursor.data.FloatSetting
-import com.aircursor.data.Prefs
 
 @Composable
 fun UiIcon(
@@ -321,50 +318,6 @@ fun CheckLine(label: String, ok: Boolean) {
         )
         Spacer(Modifier.width(10.dp))
         Text(label, style = MaterialTheme.typography.bodyMedium)
-    }
-}
-
-@Composable
-fun SettingSwitch(prefs: Prefs, setting: BoolSetting, onChange: (Boolean) -> Unit = {}) {
-    var checked by remember { mutableStateOf(prefs.get(setting)) }
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(setting.label, style = MaterialTheme.typography.bodyLarge)
-            if (setting.description.isNotEmpty()) {
-                Text(setting.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        Spacer(Modifier.width(12.dp))
-        Switch(checked = checked, onCheckedChange = {
-            checked = it
-            prefs.set(setting, it)
-            onChange(it)
-        })
-    }
-}
-
-@Composable
-fun SettingSlider(prefs: Prefs, setting: FloatSetting) {
-    var value by remember { mutableFloatStateOf(prefs.get(setting)) }
-    Column(Modifier.padding(top = 6.dp)) {
-        Row {
-            Text(setting.label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-            Text(setting.format(value), fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
-        }
-        Slider(
-            value = value,
-            valueRange = setting.min..setting.max,
-            steps = setting.steps,
-            onValueChange = {
-                value = it
-                prefs.set(setting, it)
-            },
-        )
     }
 }
 

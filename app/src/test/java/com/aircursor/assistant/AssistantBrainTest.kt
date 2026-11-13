@@ -46,7 +46,6 @@ class AssistantBrainTest {
 
     @Test
     fun switchesFeatures() {
-        assertEquals(Command.Toggle("hand", true), p("hand control on karo"))
         assertEquals(Command.Toggle("fps", false), p("turn off the FPS meter"))
         assertEquals(Command.Toggle("torch", true), p("torch on"))
         assertEquals(Command.Toggle("wifi", false), p("wifi band karo"))
