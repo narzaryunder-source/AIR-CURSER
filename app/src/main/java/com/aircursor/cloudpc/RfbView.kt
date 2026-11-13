@@ -544,6 +544,40 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
         onStickyChanged?.invoke()
     }
 
+    // ---- Second phone as keyboard and touchpad ----
+
+    private fun mask(b: Char) = when (b) {
+        'r' -> RfbClient.BUTTON_RIGHT
+        'm' -> RfbClient.BUTTON_MIDDLE
+        else -> RfbClient.BUTTON_LEFT
+    }
+
+    /** Touchpad movement in points; about 1000 points cross the whole desktop. */
+    fun remoteMove(dx: Float, dy: Float) {
+        val b = bitmap ?: return
+        val f = b.width / 1000f
+        val x = (lastFbX + dx * f).toInt().coerceIn(0, b.width - 1)
+        val y = (lastFbY + dy * f).toInt().coerceIn(0, b.height - 1)
+        if (x != lastFbX || y != lastFbY) sendMoveCoalesced(x, y)
+    }
+
+    fun remoteButton(b: Char, down: Boolean) {
+        buttons = if (down) buttons or mask(b) else buttons and mask(b).inv()
+        sendPointer(lastFbX, lastFbY, buttons)
+    }
+
+    fun remoteClick(b: Char) = clickAt(lastFbX, lastFbY, mask(b))
+
+    fun remoteWheel(dy: Int, dx: Int) {
+        repeat(kotlin.math.abs(dy)) { wheel(lastFbX, lastFbY, if (dy > 0) RfbClient.WHEEL_DOWN else RfbClient.WHEEL_UP) }
+        repeat(kotlin.math.abs(dx)) { wheel(lastFbX, lastFbY, if (dx > 0) WHEEL_RIGHT else WHEEL_LEFT) }
+    }
+
+    fun remoteKeyState(keysym: Int, down: Boolean) {
+        lastInputMs = SystemClock.uptimeMillis()
+        sendKeyState(keysym, down)
+    }
+
     // ---- Hand cursor (AirCursor) ----
 
     override fun hover(sx: Float, sy: Float) {

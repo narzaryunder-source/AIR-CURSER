@@ -109,6 +109,64 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private var shell: AirShell? = null
     private var tour: PcTour? = null
 
+    // ---- Another phone as keyboard and touchpad ----
+    private var remote: RemoteInputHost? = null
+    private var remoteState = RemoteInputHost.State(false, "")
+    private var remoteDialog: AlertDialog? = null
+
+    private fun applyRemote(cmd: com.aircursor.core.RemoteInput.Cmd) {
+        val v = view ?: return
+        if (lockView != null) return
+        when (cmd) {
+            is com.aircursor.core.RemoteInput.Cmd.Move -> v.remoteMove(cmd.dx, cmd.dy)
+            is com.aircursor.core.RemoteInput.Cmd.Button -> v.remoteButton(cmd.button, cmd.down)
+            is com.aircursor.core.RemoteInput.Cmd.Click -> v.remoteClick(cmd.button)
+            is com.aircursor.core.RemoteInput.Cmd.Wheel -> v.remoteWheel(cmd.dy, cmd.dx)
+            is com.aircursor.core.RemoteInput.Cmd.Key -> v.sendKey(cmd.keysym)
+            is com.aircursor.core.RemoteInput.Cmd.KeyState -> v.remoteKeyState(cmd.keysym, cmd.down)
+            is com.aircursor.core.RemoteInput.Cmd.Text -> v.typeText(cmd.text)
+            com.aircursor.core.RemoteInput.Cmd.Ping -> Unit
+        }
+    }
+
+    private fun remoteHost(): RemoteInputHost = remote ?: RemoteInputHost(this, { applyRemote(it) }) { st ->
+        val was = remoteState.connected
+        remoteState = st
+        if (st.connected != null && was == null) Toast.makeText(this, "Phone keyboard connected", Toast.LENGTH_SHORT).show()
+        if (st.connected == null && was != null) Toast.makeText(this, "Phone keyboard disconnected", Toast.LENGTH_SHORT).show()
+        remoteDialog?.setMessage(remoteText())
+    }.also { remote = it }
+
+    private fun remoteText(): String {
+        val st = remoteState
+        return if (!st.running) "Off. Turn it on to use another phone as keyboard and touchpad."
+        else "Code:  ${st.code.chunked(3).joinToString(" ")}\n\n" +
+            (if (st.connected != null) "✅ Connected (${st.connected})\n\n" else "Waiting for the other phone…\n\n") +
+            "On the other phone: open AirCursor → \"Use as keyboard & touchpad\" → tap this PC → type the code.\n" +
+            "Both phones on the same Wi-Fi, or the other phone on this phone's hotspot." +
+            (remote?.address()?.let { "\n\nNot found? Connect by address: $it" } ?: "")
+    }
+
+    private fun phoneKeyboardMenu() {
+        val host = remoteHost()
+        if (!host.running) {
+            host.start()
+            prefs.edit().putBoolean("remote_on", true).apply()
+        }
+        remoteDialog = AlertDialog.Builder(this)
+            .setTitle("Phone as keyboard & touchpad")
+            .setMessage(remoteText())
+            .setPositiveButton("OK", null)
+            .setNeutralButton("New code") { _, _ -> host.renewCode(); phoneKeyboardMenu() }
+            .setNegativeButton("Turn off") { _, _ ->
+                host.stop()
+                prefs.edit().putBoolean("remote_on", false).apply()
+                Toast.makeText(this, "Phone keyboard off", Toast.LENGTH_SHORT).show()
+            }
+            .setOnDismissListener { remoteDialog = null }
+            .show()
+    }
+
     /** The five-card tour: once, after the first picture, never over the lock screen. */
     private fun showTour(force: Boolean = false) {
         if (tour != null || lockView != null || !bootDone) return
@@ -260,6 +318,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         })
         tools.addView(iconButton(R.drawable.ic_ui_mic, "Voice assistant (Win+A)") { startAssistant() })
         tools.addView(iconButton(R.drawable.ic_ui_play, "Smooth video on the phone (Win+Y)") { smoothVideo() })
+        tools.addView(iconButton(R.drawable.ic_ui_phone, "Another phone as keyboard & touchpad") { phoneKeyboardMenu() })
         tools.addView(iconButton(R.drawable.ic_ui_paste, "Paste from phone") { pasteFromPhone() })
         tools.addView(iconButton(R.drawable.ic_ui_folder, "Files") { filesMenu() })
         tools.addView(iconButton(R.drawable.ic_ui_image, "Wallpaper") {
@@ -302,6 +361,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
             override fun boostMenu() = this@CloudPcDesktopActivity.boostMenu()
             override fun exit() = askExit()
             override fun tour() = showTour(force = true)
+            override fun phoneKeyboard() = phoneKeyboardMenu()
             override fun changed() = keepControlsOnTop()
         })
         root.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or, ob ->
@@ -388,6 +448,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
             }
         })
 
+        if (prefs.getBoolean("remote_on", false)) remoteHost().start()
         boot.bringToFront()
         // Windows-style: password screen (or the first-start question) in front, desktop starting behind it.
         when {
@@ -1513,6 +1574,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        remote?.stop()
         shell?.destroy()
         if (::status.isInitialized) status.removeCallbacks(statusTick)
         if (::videoPlayer.isInitialized) videoPlayer.close()

@@ -86,6 +86,13 @@
             android:taskAffinity="com.aircursor.cloudpc"
             android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"
             android:windowSoftInputMode="adjustResize|stateHidden" />
+        <!-- This phone as keyboard and touchpad for AirCursor PC on another phone. -->
+        <activity
+            android:name=".cloudpc.RemotePadActivity"
+            android:exported="false"
+            android:label="Keyboard &amp; touchpad"
+            android:theme="@android:style/Theme.Material.NoActionBar"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
         <!-- Share sheet → "AirCursor PC": files from any app go straight into the PC. -->
         <activity
             android:name=".cloudpc.ShareToPcActivity"

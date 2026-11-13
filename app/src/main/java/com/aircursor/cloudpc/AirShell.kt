@@ -68,6 +68,7 @@ class AirShell(
         fun exit()
         fun changed()
         fun tour()
+        fun phoneKeyboard()
     }
 
     class App(
@@ -347,7 +348,8 @@ class AirShell(
             AirUi.Item("AirBoost and PC style…", R.drawable.ic_ui_bolt, separatorBefore = true) { actions.boostMenu() },
             AirUi.Item("Hide the dock automatically", R.drawable.ic_ui_minimize, checked = autoHide) { setAutoHide(!autoHide) },
             AirUi.Item("Widgets on the desktop", R.drawable.ic_ui_sun, checked = widgets.on) { widgets.setOn(!widgets.on) },
-            AirUi.Item("Toolbar (keys, files, hand control)", R.drawable.ic_ui_menu) { actions.showToolbar() },
+            AirUi.Item("Another phone as keyboard & touchpad…", R.drawable.ic_ui_phone) { actions.phoneKeyboard() },
+            AirUi.Item("Toolbar (keys, files, wallpaper)", R.drawable.ic_ui_menu) { actions.showToolbar() },
             AirUi.Item("How to use (tour)", R.drawable.ic_ui_help, separatorBefore = true) { actions.tour() },
             AirUi.Item("Lock", R.drawable.ic_ui_lock) { actions.lock() },
             AirUi.Item("Turn off AirCursor PC", R.drawable.ic_ui_close) { actions.exit() },

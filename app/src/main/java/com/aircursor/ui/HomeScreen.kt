@@ -157,6 +157,10 @@ fun HomeScreen(
                     SectionLabel("Settings")
                     SectionCard {
                         NavRow(R.drawable.ic_ui_desktop, "AirCursor PC", "Desktop, AirBoost, graphics, apps and games", tint = Brand.Sky, onClick = onOpenPc)
+                        NavRow(
+                            R.drawable.ic_ui_phone, "Use as keyboard & touchpad",
+                            "Control AirCursor PC on your other phone from this one", tint = Brand.Violet,
+                        ) { context.startActivity(android.content.Intent(context, com.aircursor.cloudpc.RemotePadActivity::class.java)) }
                         NavRow(R.drawable.ic_ui_book, "Help & guide", "Gestures, the PC, apps and AI step by step", tint = Brand.Warning, onClick = onOpenHelp)
                     }
 
@@ -262,6 +266,9 @@ private fun AppDrawer(
             DrawerLabel("AirCursor PC")
             DrawerEntry(R.drawable.ic_ui_desktop, "Open desktop", onClick = onDesktop)
             DrawerEntry(R.drawable.ic_ui_bolt, "PC settings & AirBoost", onClick = onPc)
+            DrawerEntry(R.drawable.ic_ui_phone, "Use as keyboard & touchpad") {
+                context.startActivity(android.content.Intent(context, com.aircursor.cloudpc.RemotePadActivity::class.java))
+            }
             DrawerDivider()
             DrawerLabel("Support")
             DrawerEntry(R.drawable.ic_ui_book, "Help & guide", onClick = onHelp)
@@ -319,7 +326,7 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_no_hand"
+private const val WHATS_NEW_ID = "whatsnew_phone_keyboard"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
@@ -331,6 +338,7 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             UiPrefs.close(context, WHATS_NEW_ID)
             whatsNew = false
         }) {
+            Bullet("Use a second phone as keyboard & touchpad: on it open AirCursor → Use as keyboard & touchpad; on the PC: menu → Another phone as keyboard")
             Bullet("Hand control is removed – AirCursor is now only your pocket PC (no camera or accessibility permission needed)")
             Bullet("The app PIN lock is gone too; the PC keeps its own password (lock screen)")
             Bullet("AirCursor is now free for everyone – no plan, no key")
