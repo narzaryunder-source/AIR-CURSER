@@ -309,6 +309,13 @@ class CloudPcService : Service() {
 
     /** Phone GPU switch: starts or stops the VirGL server and tells the PC which one games use. */
     private fun applyGpu() {
+        // Snapdragon GPU (Turnip) first: no server needed, games talk to the GPU directly.
+        if (desktopActive && TurnipGpu.active(this)) {
+            VirglServer.stop(this)
+            TurnipGpu.writeMode(this)
+            CloudPcBus.line("==> Snapdragon GPU (Turnip + Zink) is on – games use it from their next start", force = true)
+            return
+        }
         val want = AirBoost.phoneGpu(this) && desktopActive
         if (want) {
             val ok = VirglServer.start(this)

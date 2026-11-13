@@ -105,9 +105,14 @@ run() {   # $1 = 1 for the safe second try
             LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe GDK_BACKEND=x11 "${cmd[@]}" </dev/null >"$LOG" 2>&1
     elif [ $GAME = 1 ]; then
         # Games: OpenGL work on its own CPU thread; FPS overlay + steady FPS limit (MangoHud).
-        # AirBoost → Graphics → Phone GPU: draw on the phone's GPU through VirGL.
+        # AirBoost → Graphics: the phone's GPU through VirGL, or the Snapdragon GPU directly (Turnip).
         local gpu=()
-        if [ "$(cat /etc/cloudpc/gpu-mode 2>/dev/null)" = virgl ] && [ -S /tmp/.virgl_test ]; then
+        local mode
+        mode=$(cat /etc/cloudpc/gpu-mode 2>/dev/null)
+        if [ "$mode" = turnip ] && [ -f /opt/aircursor-turnip/gpu.env ] && [ -e /dev/kgsl-3d0 ]; then
+            # Snapdragon phones: OpenGL through Zink on Turnip, straight to the Adreno GPU.
+            mapfile -t gpu < <(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' /opt/aircursor-turnip/gpu.env)
+        elif [ "$mode" = virgl ] && [ -S /tmp/.virgl_test ]; then
             gpu=(GALLIUM_DRIVER=virpipe MESA_GL_VERSION_OVERRIDE=4.0)
         fi
         if [ $HEAVY = 0 ] && command -v mangohud >/dev/null 2>&1 && [ ! -f /root/.config/cloudpc/no-game-overlay ]; then

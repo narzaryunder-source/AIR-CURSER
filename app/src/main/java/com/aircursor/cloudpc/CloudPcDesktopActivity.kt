@@ -957,8 +957,11 @@ class CloudPcDesktopActivity : ComponentActivity() {
             }
             "torch" -> torch(on)
             "gpu" -> {
-                val want = on ?: !AirBoost.phoneGpu(this@CloudPcDesktopActivity)
-                AirBoost.setPhoneGpu(this@CloudPcDesktopActivity, want)
+                val c = this@CloudPcDesktopActivity
+                val want = on ?: (TurnipGpu.graphics(c) == 0)
+                // On: the Snapdragon GPU when it is ready on this phone, else VirGL.
+                val mode = if (!want) 0 else if (TurnipGpu.installed(c) && TurnipGpu.supported()) 2 else 1
+                TurnipGpu.setGraphics(c, mode)
                 if (want) "Phone GPU on for games." else "Phone GPU off."
             }
             "wifi" -> {
@@ -1359,15 +1362,91 @@ class CloudPcDesktopActivity : ComponentActivity() {
     }
 
     /** AirBoost profiles, applied live (desktop size + sharpening + light mode), plus "Boost now". */
+    private fun graphicsLabel(mode: Int) = when (mode) {
+        2 -> "Snapdragon GPU (Turnip)"
+        1 -> "Phone GPU (VirGL)"
+        else -> "CPU"
+    }
+
+    /** Graphics for games: CPU, the phone GPU through VirGL, or (Snapdragon phones) Turnip + Zink. */
+    private fun graphicsMenu() {
+        val snapdragon = TurnipGpu.supported()
+        val items = mutableListOf(
+            "CPU – works with every game",
+            "Phone GPU (VirGL) – faster for some games, try it",
+        )
+        if (snapdragon) {
+            items += "Snapdragon GPU (Turnip + Zink) – games draw on the Adreno GPU directly" +
+                (if (TurnipGpu.installed(this)) "" else " · about 15 MB download")
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Graphics for games")
+            .setSingleChoiceItems(items.toTypedArray(), TurnipGpu.graphics(this)) { d, i ->
+                d.dismiss()
+                if (i == 2 && !TurnipGpu.installed(this)) {
+                    installTurnip()
+                    return@setSingleChoiceItems
+                }
+                TurnipGpu.setGraphics(this, i)
+                Toast.makeText(
+                    this,
+                    "Graphics: ${graphicsLabel(i)} – games use it from their next start. Benchmark shows the speed.",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    /** Downloads the Snapdragon GPU driver into the PC (checked against its SHA-256), then turns it on. */
+    private fun installTurnip() {
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Snapdragon GPU")
+            .setMessage("Downloading the driver…")
+            .setCancelable(false)
+            .show()
+        Thread({
+            val error = try {
+                TurnipGpu.install(applicationContext) { p ->
+                    runOnUiThread { dialog.setMessage("Downloading the driver… ${(p * 100).toInt()}%") }
+                }
+                null
+            } catch (e: Exception) {
+                e.message ?: "Download failed"
+            }
+            runOnUiThread {
+                dialog.dismiss()
+                if (isFinishing) return@runOnUiThread
+                if (error == null) {
+                    TurnipGpu.setGraphics(this, 2)
+                    AlertDialog.Builder(this)
+                        .setTitle("Snapdragon GPU is on")
+                        .setMessage(
+                            "Games draw on the phone's Adreno GPU from their next start.\n\n" +
+                                "Run Benchmark to see the speed. If a game does not start or looks wrong, " +
+                                "AirBoost → Graphics → CPU brings back the normal drawing.",
+                        )
+                        .setPositiveButton("OK", null)
+                        .show()
+                } else {
+                    AlertDialog.Builder(this)
+                        .setTitle("Snapdragon GPU")
+                        .setMessage("Could not install it: $error\n\nCheck the internet and try again.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            }
+        }, "turnip-install").start()
+    }
+
     private fun boostMenu() {
         val profiles = AirBoost.entries
         val now = AirBoost.current(this)
         val fps = AirBoost.fpsLimit(this)
-        val gpu = AirBoost.phoneGpu(this)
         val labels = profiles.map { "${it.label} – ${it.about}" }.toTypedArray() +
             "Steady FPS: ${AirBoost.fpsLabel(fps)} – tap to change" +
             "Boost now – stop background jobs, free memory" +
-            (if (gpu) "Graphics: Phone GPU (VirGL) – tap for CPU" else "Graphics: CPU – tap for Phone GPU (VirGL)") +
+            "Graphics for games: ${graphicsLabel(TurnipGpu.graphics(this))} – tap to change" +
             (if (view?.phoneTouch != false) "Touch: phone style (swipe scrolls) – tap for mouse style"
             else "Touch: mouse style (drag selects) – tap for phone style") +
             (if (webInPc()) "Web links: Brave in the PC (slow) – tap for Air"
@@ -1412,13 +1491,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
                     return@setItems
                 }
                 if (i == profiles.size + 2) {
-                    AirBoost.setPhoneGpu(this, !gpu)
-                    Toast.makeText(
-                        this,
-                        if (!gpu) "Phone GPU on – games use it from their next start. Benchmark compares both."
-                        else "Graphics: CPU – games use it from their next start.",
-                        Toast.LENGTH_LONG,
-                    ).show()
+                    graphicsMenu()
                     return@setItems
                 }
                 val b = profiles[i]

@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 34
+    const val VERSION = 35
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -1186,7 +1186,11 @@ object CloudPcTools {
         }
         CPU=${'$'}(measure "Testing the CPU (llvmpipe)" GALLIUM_DRIVER=llvmpipe)
         TEXT="CPU graphics: ${'$'}{CPU:-?} FPS  (${'$'}LP_NUM_THREADS cores)"
-        if [ "${'$'}(cat /etc/cloudpc/gpu-mode 2>/dev/null)" = virgl ] && [ -S /tmp/.virgl_test ]; then
+        if [ "${'$'}(cat /etc/cloudpc/gpu-mode 2>/dev/null)" = turnip ] && [ -f /opt/aircursor-turnip/gpu.env ]; then
+            mapfile -t TU < <(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' /opt/aircursor-turnip/gpu.env)
+            GPU=${'$'}(measure "Testing the Snapdragon GPU (Turnip)" "${'$'}{TU[@]}")
+            TEXT="${'$'}TEXT\nSnapdragon GPU (Turnip + Zink): ${'$'}{GPU:-did not run} FPS\n\nGames use the Snapdragon GPU now. If a game is slower or looks wrong, switch Graphics back to CPU in AirBoost."
+        elif [ "${'$'}(cat /etc/cloudpc/gpu-mode 2>/dev/null)" = virgl ] && [ -S /tmp/.virgl_test ]; then
             GPU=${'$'}(measure "Testing the phone GPU (VirGL)" GALLIUM_DRIVER=virpipe MESA_GL_VERSION_OVERRIDE=4.0)
             TEXT="${'$'}TEXT\nPhone GPU (VirGL): ${'$'}{GPU:-did not run} FPS\n\nGames use the phone GPU now. If a game is slower or looks wrong, switch Graphics back to CPU in AirBoost."
         else

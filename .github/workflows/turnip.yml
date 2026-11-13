@@ -1,0 +1,58 @@
+name: Snapdragon GPU (Turnip)
+
+# Mesa Turnip (Vulkan for Adreno over /dev/kgsl-3d0) + Zink (OpenGL on Vulkan) for the AirCursor PC
+# (Ubuntu 24.04 arm64). Phones with a Snapdragon chip download it from AirBoost → Graphics.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'gpu/**'
+      - '.github/workflows/turnip.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: turnip
+  cancel-in-progress: false
+
+jobs:
+  turnip:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Mesa (Turnip + Zink)
+        run: bash gpu/build-turnip.sh
+
+      - name: Check the build
+        run: |
+          set -e
+          T=$(mktemp -d)
+          tar -xJf gpu/out/aircursor-turnip-arm64.tar.xz -C "$T"
+          P="$T/opt/aircursor-turnip"
+          test -f "$P/lib/libvulkan_freedreno.so"
+          ls "$P"/share/vulkan/icd.d/freedreno_icd.*.json
+          ls "$P"/lib/libGLX_mesa.so.0 "$P"/lib/libEGL_mesa.so.0
+          ls "$P"/lib/libgallium-*.so "$P"/lib/libvulkan.so.1
+          cat "$P/gpu.env"
+          sha256sum gpu/out/aircursor-turnip-arm64.tar.xz | cut -d' ' -f1 > gpu/out/aircursor-turnip-arm64.sha256
+          cat gpu/out/aircursor-turnip-arm64.sha256
+
+      - name: Publish (release "turnip", never marked as latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: turnip
+          name: AirCursor PC – Snapdragon GPU (Turnip)
+          target_commitish: ${{ github.sha }}
+          make_latest: false
+          files: |
+            gpu/out/aircursor-turnip-arm64.tar.xz
+            gpu/out/aircursor-turnip-arm64.sha256
+          body: |
+            Mesa Turnip (Vulkan for Adreno GPUs, kgsl) and Zink (OpenGL on Vulkan) for AirCursor PC
+            (Ubuntu 24.04 arm64). Only for phones with a Snapdragon (Adreno) GPU.
+            The AirCursor app downloads this itself – nothing to do here. Mesa is MIT-licensed.

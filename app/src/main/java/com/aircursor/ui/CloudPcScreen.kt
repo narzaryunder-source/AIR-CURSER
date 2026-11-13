@@ -67,7 +67,9 @@ fun CloudPcScreen(onBack: () -> Unit) {
     var used by remember { mutableLongStateOf(0L) }
     var boost by remember { mutableStateOf(AirBoost.current(context)) }
     var fpsLimit by remember { mutableStateOf(AirBoost.fpsLimit(context)) }
-    var phoneGpu by remember { mutableStateOf(AirBoost.phoneGpu(context)) }
+    var gpuMode by remember { mutableStateOf(com.aircursor.cloudpc.TurnipGpu.graphics(context)) }
+    val snapdragon = remember { com.aircursor.cloudpc.TurnipGpu.supported() }
+    val turnipReady = remember(state.version) { com.aircursor.cloudpc.TurnipGpu.installed(context) }
     var showLimitCard by remember { mutableStateOf(false) }
     var programs by remember { mutableStateOf(0) }
     var command by remember { mutableStateOf("") }
@@ -304,14 +306,29 @@ fun CloudPcScreen(onBack: () -> Unit) {
                 Text("Graphics for games", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    SegmentOption("CPU", !phoneGpu) {
-                        phoneGpu = false
-                        AirBoost.setPhoneGpu(context, false)
+                    SegmentOption("CPU", gpuMode == 0) {
+                        gpuMode = 0
+                        com.aircursor.cloudpc.TurnipGpu.setGraphics(context, 0)
                     }
-                    SegmentOption("Phone GPU (VirGL)", phoneGpu) {
-                        phoneGpu = true
-                        AirBoost.setPhoneGpu(context, true)
+                    SegmentOption("Phone GPU (VirGL)", gpuMode == 1) {
+                        gpuMode = 1
+                        com.aircursor.cloudpc.TurnipGpu.setGraphics(context, 1)
                     }
+                    if (snapdragon && turnipReady) {
+                        SegmentOption("Snapdragon", gpuMode == 2) {
+                            gpuMode = 2
+                            com.aircursor.cloudpc.TurnipGpu.setGraphics(context, 2)
+                        }
+                    }
+                }
+                if (snapdragon && !turnipReady) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "This phone has a Snapdragon GPU: in AirCursor PC, AirBoost → Graphics → Snapdragon GPU downloads " +
+                            "a faster driver (Turnip) for games.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
