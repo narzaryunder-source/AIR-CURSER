@@ -64,7 +64,7 @@ object TurnipGpu {
     }
 
     /**
-     * Downloads (about 15 MB) and unpacks the driver into the PC's /opt/aircursor-turnip, checked
+     * Downloads (about 6 MB) and unpacks the driver into the PC's /opt/aircursor-turnip, checked
      * against the published SHA-256. Runs on a background thread; [progress] gets 0..1.
      */
     fun install(c: Context, progress: (Float) -> Unit) {

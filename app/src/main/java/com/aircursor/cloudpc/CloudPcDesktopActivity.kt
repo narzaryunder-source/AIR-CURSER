@@ -1377,7 +1377,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         )
         if (snapdragon) {
             items += "Snapdragon GPU (Turnip + Zink) – games draw on the Adreno GPU directly" +
-                (if (TurnipGpu.installed(this)) "" else " · about 15 MB download")
+                (if (TurnipGpu.installed(this)) "" else " · about 6 MB download")
         }
         AlertDialog.Builder(this)
             .setTitle("Graphics for games")
