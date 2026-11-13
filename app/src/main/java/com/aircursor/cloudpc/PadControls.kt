@@ -2,6 +2,7 @@ package com.aircursor.cloudpc
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -80,15 +81,37 @@ class PadControls(
             for ((label, action) in extras) ex.addView(smallButton(label) { action() })
             col.addView(HorizontalScrollView(activity).apply { isHorizontalScrollBarEnabled = false; addView(ex) })
         }
-        top.addView(smallButton(closeLabel) { onClose() })
         val keys = KeyCatcher()
+        // The PC keyboard on the screen (default), or the old key row + the phone's own keyboard.
+        val ui = activity.getSharedPreferences("pad_ui", Context.MODE_PRIVATE)
+        val rowScroll = HorizontalScrollView(activity).apply { isHorizontalScrollBarEnabled = false }
+        lateinit var kbButton: Button
+        lateinit var vk: VirtualKeyboard
+        fun showVk(on: Boolean) {
+            vk.visibility = if (on) View.VISIBLE else View.GONE
+            rowScroll.visibility = if (on) View.GONE else View.VISIBLE
+            kbButton.text = if (on) "Hide keyboard" else "⌨  Keyboard"
+            if (on) keys.hide() else vk.releaseMods()
+            ui.edit().putBoolean("vk", on).apply()
+        }
+        vk = VirtualKeyboard(activity, send) {
+            // 🌐: the phone's own keyboard (voice typing, Hindi…) instead, until ⌨ Keyboard is tapped.
+            showVk(false)
+            keys.show()
+        }
+        top.addView(smallButton(closeLabel) {
+            vk.releaseMods()
+            releaseMods()
+            onClose()
+        })
         col.addView(Touchpad(), LinearLayout.LayoutParams(-1, 0, 1f).apply { setMargins(dp(10), dp(4), dp(10), dp(8)) })
         val clicks = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
         clicks.addView(holdButton("Left") { down -> send(Cmd.Button('l', down)) },
             LinearLayout.LayoutParams(0, dp(54), 1f).apply { marginStart = dp(10); marginEnd = dp(4) })
         clicks.addView(holdButton("Right") { down -> send(Cmd.Button('r', down)) },
             LinearLayout.LayoutParams(0, dp(54), 1f).apply { marginEnd = dp(4) })
-        clicks.addView(button("⌨  Keyboard") { keys.show() }, LinearLayout.LayoutParams(0, dp(54), 1.2f).apply { marginEnd = dp(10) })
+        kbButton = button("⌨  Keyboard") { showVk(vk.visibility != View.VISIBLE) }
+        clicks.addView(kbButton, LinearLayout.LayoutParams(0, dp(54), 1.2f).apply { marginEnd = dp(10) })
         col.addView(clicks)
         val row = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(6), dp(6), dp(6), dp(10)) }
         fun k(label: String, sym: Int) = row.addView(smallButton(label) { key(sym) })
@@ -108,8 +131,11 @@ class PadControls(
         k("⏎", Keysyms.RETURN); k("⌫", Keysyms.BACKSPACE); k("Del", Keysyms.DELETE)
         k("Home", Keysyms.HOME); k("End", Keysyms.END)
         for (i in 0 until 12) k("F${i + 1}", Keysyms.F1 + i)
-        col.addView(HorizontalScrollView(activity).apply { isHorizontalScrollBarEnabled = false; addView(row) })
+        rowScroll.addView(row)
+        col.addView(rowScroll)
+        col.addView(vk, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
         col.addView(keys, LinearLayout.LayoutParams(1, 1))
+        showVk(ui.getBoolean("vk", true))
         return col
     }
 
@@ -207,6 +233,10 @@ class PadControls(
         init {
             isFocusable = true
             isFocusableInTouchMode = true
+        }
+
+        fun hide() {
+            activity.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(windowToken, 0)
         }
 
         fun show() {

@@ -326,7 +326,7 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_monitor_mode"
+private const val WHATS_NEW_ID = "whatsnew_pc_keyboard"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
@@ -338,7 +338,7 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             UiPrefs.close(context, WHATS_NEW_ID)
             whatsNew = false
         }) {
-            Bullet("Use a second phone as keyboard & touchpad: on it open AirCursor → Use as keyboard & touchpad; on the PC: menu → Another phone as keyboard")
+            Bullet("Use a second phone as keyboard & touchpad – now with a full PC keyboard (Ctrl, Alt, Shift, Win, F1–F12, arrows): on it open AirCursor → Use as keyboard & touchpad; on the PC: menu → Another phone as keyboard")
             Bullet("Monitor mode: AirCursor PC on a TV or monitor (USB-C to HDMI, on phones with video output) – this phone becomes its touchpad and keyboard")
             Bullet("Hand control is removed – AirCursor is now only your pocket PC (no camera or accessibility permission needed)")
             Bullet("The app PIN lock is gone too; the PC keeps its own password (lock screen)")

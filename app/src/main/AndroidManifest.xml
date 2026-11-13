@@ -92,6 +92,7 @@
             android:exported="false"
             android:label="Keyboard &amp; touchpad"
             android:theme="@android:style/Theme.Material.NoActionBar"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden"
             android:windowSoftInputMode="adjustResize|stateHidden" />
         <!-- Share sheet → "AirCursor PC": files from any app go straight into the PC. -->
         <activity
