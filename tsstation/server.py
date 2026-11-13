@@ -455,7 +455,7 @@ def find_games():
             "id": e["id"], "name": e["name"], "about": e["about"], "icon": "", "file": "", "exec": "", "path": "",
             "mine": False, "genre": e["genre"], "store": "", "fh": "", "dim": e["dim"], "kind": e["kind"],
             "fit": "Cloud" if e["kind"] == "Cloud" else "Smooth",
-            "source": "Cloud gaming" if e["kind"] == "Cloud" else "Web · plays at once",
+            "source": "Cloud gaming · opens in your phone browser" if e["kind"] == "Cloud" else "Web · plays at once",
         })
     # The phone's own games (opened on the phone: its GPU, its controls).
     for e in phone_games():
@@ -740,6 +740,13 @@ def to_phone(marker):
 def launch(gid):
     """Starts a game. Returns "" when it is starting, else a short reason."""
     e = INSTANT_BY_ID.get(gid)
+    if e and e["kind"] == "Cloud":
+        # Cloud gaming sites support Chrome (not every browser engine): open them in the phone's own
+        # browser – full screen, hardware video, already signed in.
+        if not to_phone("aircursor-open:" + e["url"]):
+            return "Could not reach the phone."
+        played(gid)
+        return ""
     if e:
         # Its own full-screen window in Air (the phone's browser engine: smooth, GPU).
         if shutil.which("cloudpc-app"):
