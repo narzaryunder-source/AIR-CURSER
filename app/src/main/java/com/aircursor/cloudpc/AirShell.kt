@@ -69,6 +69,7 @@ class AirShell(
         fun changed()
         fun tour()
         fun phoneKeyboard()
+        fun monitor()
     }
 
     class App(
@@ -111,6 +112,16 @@ class AirShell(
     private var grid: FrameLayout? = null
     private var dockShownUntil = 0L
     private var lastMargins = ""
+
+    /** Monitor mode: the PC is on a monitor without this shell, so windows use the whole screen. */
+    private var onMonitor = false
+
+    fun setOnMonitor(on: Boolean) {
+        if (onMonitor == on) return
+        onMonitor = on
+        lastMargins = ""
+        applyInsets()
+    }
 
     private val barH get() = ui.u(24)
     private val dockH get() = ui.u(54)
@@ -349,6 +360,7 @@ class AirShell(
             AirUi.Item("Hide the dock automatically", R.drawable.ic_ui_minimize, checked = autoHide) { setAutoHide(!autoHide) },
             AirUi.Item("Widgets on the desktop", R.drawable.ic_ui_sun, checked = widgets.on) { widgets.setOn(!widgets.on) },
             AirUi.Item("Another phone as keyboard & touchpad…", R.drawable.ic_ui_phone) { actions.phoneKeyboard() },
+            AirUi.Item("Monitor / TV (monitor mode)…", R.drawable.ic_ui_desktop) { actions.monitor() },
             AirUi.Item("Toolbar (keys, files, wallpaper)", R.drawable.ic_ui_menu) { actions.showToolbar() },
             AirUi.Item("How to use (tour)", R.drawable.ic_ui_help, separatorBefore = true) { actions.tour() },
             AirUi.Item("Lock", R.drawable.ic_ui_lock) { actions.lock() },
@@ -635,8 +647,8 @@ class AirShell(
         val (dw, dh) = actions.desktopSize()
         val scale = min(hw.toFloat() / dw, hh.toFloat() / dh)
         val off = (hh - dh * scale) / 2f
-        val mt = max(0, ceil((top - off) / scale).toInt())
-        val mb = max(0, ceil((bottom - off) / scale).toInt())
+        val mt = if (onMonitor) 0 else max(0, ceil((top - off) / scale).toInt())
+        val mb = if (onMonitor) 0 else max(0, ceil((bottom - off) / scale).toInt())
         val key = "$mt/$mb"
         if (key == lastMargins) return
         lastMargins = key

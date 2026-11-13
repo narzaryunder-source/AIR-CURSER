@@ -85,6 +85,8 @@ class CloudPcDesktopActivity : ComponentActivity() {
             val long = max(s.x, s.y).toFloat()
             val short = min(s.x, s.y).toFloat()
             val w = AirBoost.current(c).width
+            // Monitor mode: the monitor's shape instead.
+            MonitorMode.desktopSize(w)?.let { return it }
             val h = ((w * short / long) / 2f).roundToInt() * 2
             return w to h.coerceAtLeast(480)
         }
@@ -115,7 +117,8 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private var remoteDialog: AlertDialog? = null
 
     private fun applyRemote(cmd: com.aircursor.core.RemoteInput.Cmd) {
-        val v = view ?: return
+        // Monitor mode: the other phone works the PC on the monitor.
+        val v = monitor?.view ?: view ?: return
         if (lockView != null) return
         when (cmd) {
             is com.aircursor.core.RemoteInput.Cmd.Move -> v.remoteMove(cmd.dx, cmd.dy)
@@ -166,6 +169,111 @@ class CloudPcDesktopActivity : ComponentActivity() {
             .setOnDismissListener { remoteDialog = null }
             .show()
     }
+
+
+    // ---- Monitor mode: the PC on a TV / monitor, this phone as its touchpad and keyboard ----
+    private var monitor: MonitorMode? = null
+    private var monitorPad: View? = null
+    private var monitorOffered = false
+
+    private fun monitorMode(): MonitorMode = monitor ?: MonitorMode(this, CloudPcDesktop.socketPath(this), object : MonitorMode.Listener {
+        override fun monitorAvailable(name: String?) = offerMonitor(name)
+        override fun monitorChanged(on: Boolean) = onMonitorChanged(on)
+        override fun desktopClipboard(text: String) = onPcClipboard(text)
+    }).also { monitor = it }
+
+    /** A monitor is connected (plugged in now, or already there at the start): offer it once. */
+    private fun offerMonitor(name: String?) {
+        if (name == null) {
+            monitorOffered = false
+            return
+        }
+        if (monitorOffered || monitor?.isOn == true || lockView != null || !bootDone || isFinishing) return
+        monitorOffered = true
+        AlertDialog.Builder(this)
+            .setTitle("Monitor connected")
+            .setMessage("Show AirCursor PC on \"$name\"?\n\nThis phone becomes its touchpad and keyboard.")
+            .setPositiveButton("Use the monitor") { _, _ -> startMonitor() }
+            .setNegativeButton("Not now", null)
+            .show()
+    }
+
+    private fun monitorMenu() {
+        if (monitor?.isOn == true) monitor?.stop() else startMonitor()
+    }
+
+    private fun startMonitor() {
+        if (lockView != null) return
+        val m = monitorMode()
+        if (m.isOn) return
+        if (m.display() == null) {
+            AlertDialog.Builder(this)
+                .setTitle("Monitor mode")
+                .setMessage(
+                    "Show AirCursor PC on a TV or monitor, with this phone as its touchpad and keyboard.\n\n" +
+                        "Connect the monitor first:\n" +
+                        "• USB-C to HDMI cable or a USB-C dock – only phones whose USB-C port has video output " +
+                        "(many phones do not; the phone's specifications say \"DisplayPort\" or \"video out\").\n" +
+                        "• Or wireless: some phones offer a TV as a second screen (Cast / Smart View).\n\n" +
+                        "When it is connected, AirCursor asks you by itself.",
+                )
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+        if (!m.start(AirBoost.current(this).sharpen, AirBoost.fpsLimit(this))) {
+            Toast.makeText(this, "That screen cannot show AirCursor PC", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun onMonitorChanged(on: Boolean) {
+        // The desktop takes the monitor's shape, and the phone's shape again afterwards.
+        val (w, h) = desktopSize(this)
+        runPc("cloudpc-resize $w $h")
+        shell?.setOnMonitor(on)
+        if (on) {
+            videoPlayer.close()
+            air?.minimizeAll()
+            assistant?.dismiss()
+            tools.visibility = View.GONE
+            // The phone's own picture rests (saves power); the monitor's picture does the work.
+            view?.releaseAll()
+            view?.disconnect()
+            showMonitorPad()
+            Toast.makeText(this, "AirCursor PC is on the monitor", Toast.LENGTH_SHORT).show()
+        } else {
+            monitorPad?.let { rootLayout.removeView(it) }
+            monitorPad = null
+            if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) view?.connect()
+            if (!isFinishing) Toast.makeText(this, "Monitor mode off", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun showMonitorPad() {
+        monitorPad?.let { rootLayout.removeView(it) }
+        val m = monitor ?: return
+        val pad = PadControls(this, { m.apply(it) }, { dx, dy -> m.view?.remoteMove(dx, dy) })
+        val altTab = {
+            m.apply(com.aircursor.core.RemoteInput.Cmd.KeyState(Keysyms.ALT_L, true))
+            m.apply(com.aircursor.core.RemoteInput.Cmd.Key(Keysyms.TAB))
+            m.apply(com.aircursor.core.RemoteInput.Cmd.KeyState(Keysyms.ALT_L, false))
+        }
+        val v = pad.build(
+            "On the monitor", "Stop",
+            listOf(
+                "Apps" to { runPc("xfce4-appfinder") },
+                "Browser" to { openInPcBrowser("https://www.google.com") },
+                "Files" to { runPc("exo-open --launch FileManager") },
+                "Switch window" to altTab,
+                "TS Station" to { runPc("/opt/ts-station/ts-station") },
+            ),
+        ) { m.stop() }
+        monitorPad = v
+        rootLayout.addView(v, FrameLayout.LayoutParams(-1, -1))
+    }
+
+    /** Monitor mode: web pages open in the PC's browser (Air windows draw on the phone screen only). */
+    private fun openInPcBrowser(url: String) = runPc("CLOUDPC_PC_BROWSER=1 cloudpc-web " + pcQuote(url))
 
     /** The five-card tour: once, after the first picture, never over the lock screen. */
     private fun showTour(force: Boolean = false) {
@@ -319,6 +427,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         tools.addView(iconButton(R.drawable.ic_ui_mic, "Voice assistant (Win+A)") { startAssistant() })
         tools.addView(iconButton(R.drawable.ic_ui_play, "Smooth video on the phone (Win+Y)") { smoothVideo() })
         tools.addView(iconButton(R.drawable.ic_ui_phone, "Another phone as keyboard & touchpad") { phoneKeyboardMenu() })
+        tools.addView(iconButton(R.drawable.ic_ui_desktop, "Monitor / TV (monitor mode)") { monitorMenu() })
         tools.addView(iconButton(R.drawable.ic_ui_paste, "Paste from phone") { pasteFromPhone() })
         tools.addView(iconButton(R.drawable.ic_ui_folder, "Files") { filesMenu() })
         tools.addView(iconButton(R.drawable.ic_ui_image, "Wallpaper") {
@@ -362,6 +471,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
             override fun exit() = askExit()
             override fun tour() = showTour(force = true)
             override fun phoneKeyboard() = phoneKeyboardMenu()
+            override fun monitor() = monitorMenu()
             override fun changed() = keepControlsOnTop()
         })
         root.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or, ob ->
@@ -387,6 +497,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
                     status.background = round(0xE6131A2E.toInt(), 18)
                     status.layoutParams = LinearLayout.LayoutParams(-2, -2)
                     showTour()
+                    if (tour == null) offerMonitor(monitor?.display()?.name)
                 }.start()
             } else if (bootDone) {
                 boot.visibility = if (msg == null) View.GONE else View.VISIBLE
@@ -395,42 +506,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         connectingSince = SystemClock.uptimeMillis()
         status.post(statusTick)
         v.onStickyChanged = { updateButtons() }
-        v.onDesktopClipboard = { text ->
-            if (text.startsWith(OPEN_ON_PHONE)) {
-                openOnPhone(text.removePrefix(OPEN_ON_PHONE).trim())
-            } else if (text.startsWith(LAUNCH_ON_PHONE)) {
-                if (lockView == null && !PhoneGames.launch(this, text.removePrefix(LAUNCH_ON_PHONE).trim())) {
-                    Toast.makeText(this, "That game is not on this phone any more", Toast.LENGTH_SHORT).show()
-                }
-            } else if (text.startsWith(EDIT_ON_PHONE)) {
-                if (lockView == null) editOnPhone(text.removePrefix(EDIT_ON_PHONE).trim())
-            } else if (text.startsWith(SAVE_ON_PHONE)) {
-                sendToPhone(text.removePrefix(SAVE_ON_PHONE).trim())
-            } else if (text.startsWith(WEB_ON_PHONE)) {
-                val url = text.removePrefix(WEB_ON_PHONE).trim()
-                if (lockView == null) {
-                    when {
-                        url == "air:home" -> openAir(null)
-                        // A game started from TS Station (shown in Air): Air steps aside, then comes back.
-                        url == "air:minimize" -> air?.minimizeAll()
-                        url == "air:show" -> air?.showLast()
-                        url.startsWith("https://") || url.startsWith("http://") -> openAir(url)
-                    }
-                }
-            } else if (text.startsWith(APP_ON_PHONE)) {
-                if (lockView == null) openApp(text.removePrefix(APP_ON_PHONE).trim())
-            } else if (text.startsWith(PLAY_ON_PHONE)) {
-                hideVideoChip()
-                if (lockView == null) videoPlayer.play(text.removePrefix(PLAY_ON_PHONE))
-            } else {
-                getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("AirCursor PC", text))
-                if (PhoneVideoPlayer.youtubeId(text) != null && lockView == null) {
-                    offerVideo(text.trim())
-                } else {
-                    Toast.makeText(this, "Copied to phone", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
+        v.onDesktopClipboard = { onPcClipboard(it) }
         setContentView(root)
         updateButtons()
 
@@ -438,6 +514,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
             override fun handleOnBackPressed() {
                 when {
                     lockView != null -> finish()
+                    monitorPad != null -> monitor?.stop()
                     tour != null -> tour?.finish()
                     assistant?.isShowing == true -> assistant?.dismiss()
                     shell?.closeGrid() == true -> Unit
@@ -449,11 +526,52 @@ class CloudPcDesktopActivity : ComponentActivity() {
         })
 
         if (prefs.getBoolean("remote_on", false)) remoteHost().start()
+        monitorMode().register()
         boot.bringToFront()
         // Windows-style: password screen (or the first-start question) in front, desktop starting behind it.
         when {
             PcLock.hasPassword(this) -> showLock(PcLockScreen.Mode.SIGN_IN)
             PcLock.shouldOfferSetup(this) -> showLock(PcLockScreen.Mode.SETUP)
+        }
+    }
+
+    /** Text copied in the desktop, and the PC's requests to the phone (markers). */
+    private fun onPcClipboard(text: String) {
+        if (text.startsWith(OPEN_ON_PHONE)) {
+            openOnPhone(text.removePrefix(OPEN_ON_PHONE).trim())
+        } else if (text.startsWith(LAUNCH_ON_PHONE)) {
+            if (lockView == null && !PhoneGames.launch(this, text.removePrefix(LAUNCH_ON_PHONE).trim())) {
+                Toast.makeText(this, "That game is not on this phone any more", Toast.LENGTH_SHORT).show()
+            }
+        } else if (text.startsWith(EDIT_ON_PHONE)) {
+            if (lockView == null) editOnPhone(text.removePrefix(EDIT_ON_PHONE).trim())
+        } else if (text.startsWith(SAVE_ON_PHONE)) {
+            sendToPhone(text.removePrefix(SAVE_ON_PHONE).trim())
+        } else if (text.startsWith(WEB_ON_PHONE)) {
+            val url = text.removePrefix(WEB_ON_PHONE).trim()
+            if (lockView == null) {
+                when {
+                    url == "air:home" -> openAir(null)
+                    // A game started from TS Station (shown in Air): Air steps aside, then comes back.
+                    url == "air:minimize" -> air?.minimizeAll()
+                    url == "air:show" -> air?.showLast()
+                    url.startsWith("https://") || url.startsWith("http://") -> openAir(url)
+                }
+            }
+        } else if (text.startsWith(APP_ON_PHONE)) {
+            if (lockView == null) openApp(text.removePrefix(APP_ON_PHONE).trim())
+        } else if (text.startsWith(PLAY_ON_PHONE) && monitor?.isOn == true) {
+            Toast.makeText(this, "The phone's video player works on the phone screen – stop monitor mode to use it", Toast.LENGTH_LONG).show()
+        } else if (text.startsWith(PLAY_ON_PHONE)) {
+            hideVideoChip()
+            if (lockView == null) videoPlayer.play(text.removePrefix(PLAY_ON_PHONE))
+        } else {
+            getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("AirCursor PC", text))
+            if (PhoneVideoPlayer.youtubeId(text) != null && lockView == null) {
+                offerVideo(text.trim())
+            } else {
+                Toast.makeText(this, "Copied to phone", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -491,6 +609,10 @@ class CloudPcDesktopActivity : ComponentActivity() {
     // ---- Air, AirCursor's browser (phone engine) ----
 
     private fun openAir(url: String?) {
+        if (monitor?.isOn == true) {
+            openInPcBrowser(url ?: "https://www.google.com")
+            return
+        }
         if (!com.aircursor.air.AirEngine.supported()) {
             // 32-bit phones: the simple fast window (Android's web view) instead.
             videoPlayer.browse(url ?: "https://www.google.com")
@@ -506,6 +628,10 @@ class CloudPcDesktopActivity : ComponentActivity() {
         if (parts.size < 4) return
         val (key, size, title, url) = parts
         if (!url.startsWith("http://") && !url.startsWith("https://")) return
+        if (monitor?.isOn == true) {
+            openInPcBrowser(url)
+            return
+        }
         if (!com.aircursor.air.AirEngine.supported()) {
             videoPlayer.browse(url)
             return
@@ -576,6 +702,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         shell?.bringToFront()
         if (::side.isInitialized) side.bringToFront()
         assistant?.bringToFront()
+        monitorPad?.bringToFront()
         if (::boot.isInitialized && !bootDone) boot.bringToFront()
         lockView?.bringToFront()
     }
@@ -983,6 +1110,8 @@ class CloudPcDesktopActivity : ComponentActivity() {
     // ---- Password lock ----
 
     private fun showLock(mode: PcLockScreen.Mode) {
+        // The monitor would show the desktop behind the password screen: back to the phone first.
+        monitor?.stop()
         lockView?.let { rootLayout.removeView(it) }
         videoPlayer.close()
         air?.minimizeAll()
@@ -1526,7 +1655,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        view?.connect()
+        if (monitor?.isOn != true) view?.connect()
         // Away for a while (screen off, other apps): ask for the password again, like Windows.
         if (lockView == null && hiddenAt > 0 && PcLock.hasPassword(this) &&
             SystemClock.uptimeMillis() - hiddenAt > PcLock.RELOCK_AFTER_MS
@@ -1570,11 +1699,15 @@ class CloudPcDesktopActivity : ComponentActivity() {
     override fun onStop() {
         hiddenAt = SystemClock.uptimeMillis()
         view?.disconnect()
+        // With a password, the monitor does not keep showing the PC while the phone is away.
+        if (monitor?.isOn == true && PcLock.hasPassword(this)) monitor?.stop()
         super.onStop()
     }
 
     override fun onDestroy() {
         remote?.stop()
+        monitor?.stop()
+        monitor?.unregister()
         shell?.destroy()
         if (::status.isInitialized) status.removeCallbacks(statusTick)
         if (::videoPlayer.isInitialized) videoPlayer.close()
