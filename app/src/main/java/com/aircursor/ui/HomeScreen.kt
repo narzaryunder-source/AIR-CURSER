@@ -389,7 +389,7 @@ private fun DrawerEntry(
 // ---- Info cards (the person can close them) -----------------------------------------------------
 
 /** Changes when there is something new to tell; closing the card hides it until the next update. */
-private const val WHATS_NEW_ID = "whatsnew_tsstation_1"
+private const val WHATS_NEW_ID = "whatsnew_dock_fix"
 
 @Composable
 private fun InfoCards(onOpenHelp: () -> Unit) {
@@ -403,6 +403,9 @@ private fun InfoCards(onOpenHelp: () -> Unit) {
             whatsNew = false
         }) {
             Bullet("AirCursor is now free for everyone – no plan, no key")
+            Bullet("Fixed: apps in the dock and the all-apps screen now open (and stay open)")
+            Bullet("Hand control is easier: lighter pinch, steadier click, drags start sooner and do not drop")
+            Bullet("Dock and menu bar in a lighter glass look")
             Bullet("TS Station 1.0: 51 hand-picked PC games, 22 web games that play at once, cloud gaming (GeForce NOW, Xbox) and your phone's own games – one library")
             Bullet("TS Station, the game console, now comes with AirCursor PC for everyone (in the dock)")
             Bullet("New lock screen (blurred wallpaper, big clock) and a start screen with logo and progress bar")

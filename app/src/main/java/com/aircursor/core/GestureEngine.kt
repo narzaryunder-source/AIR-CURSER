@@ -41,21 +41,21 @@ data class GestureConfig(
     val accelSlowPxPerSec: Float = 150f,
     val accelFastPxPerSec: Float = 1600f,
     /** Short tracking drop-outs (motion blur) are bridged instead of resetting everything. */
-    val handLostGraceMs: Long = 160,
+    val handLostGraceMs: Long = 200,
     // Pinch
     val pinchEnter: Float = 0.28f,
     val pinchExitFactor: Float = 1.5f,
-    val pinchFreezeMs: Long = 120,
+    val pinchFreezeMs: Long = 150,
     val pinchLookbackMs: Long = 100,
     val longPressMs: Long = 500,
     /** Movement (fraction of the shorter screen side) needed to turn a held pinch into a drag. */
-    val dragStartFraction: Float = 0.035f,
+    val dragStartFraction: Float = 0.03f,
     /**
      * A drag starts only after the pinch was held this long (then [dragStartFraction] of movement),
      * or at once for a big, deliberate move ([dragFlickFraction]). Small hand drift while pinching
      * therefore stays a click instead of becoming an accidental drag/selection.
      */
-    val dragHoldMs: Long = 250,
+    val dragHoldMs: Long = 200,
     val dragFlickFraction: Float = 0.09f,
     val tapCooldownMs: Long = 150,
     /** Absolute mode: after a frozen phase the cursor glides back to the finger instead of jumping. */
@@ -81,7 +81,7 @@ data class GestureConfig(
     /** A pinch (and its release) must be seen this many frames in a row – no accidental clicks. */
     val pinchConfirmFrames: Int = 2,
     /** While dragging, the fingers may open this much wider before the drag ends (sticky drag). */
-    val dragExitFactor: Float = 1.9f,
+    val dragExitFactor: Float = 2.1f,
     /** No palm / fist gestures this long after a click, drag or scroll (stops "drag -> pause"). */
     val gestureGuardMs: Long = 800,
     /** Dwell click: keep the cursor still to click, no pinch needed (accessibility). */

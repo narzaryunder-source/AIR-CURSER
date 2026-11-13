@@ -551,7 +551,12 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
     // ---- Voice assistant ----
 
-    private fun runPc(cmd: String) = CloudPcService.send(this, CloudPcService.ACTION_RUN, CloudPcDesktop.inSession(cmd))
+    /** A command in the desktop session: through the session helper (apps stay open), else the old way. */
+    private fun runPc(cmd: String) {
+        if (!CloudPcDesktop.sendToSession(this, cmd)) {
+            CloudPcService.send(this, CloudPcService.ACTION_RUN, CloudPcDesktop.inSession(cmd))
+        }
+    }
 
     /** The Air window in front (if any): voice commands for pages go there. */
     private fun frontBrowser(): com.aircursor.air.AirBrowser? = air?.top()?.browser

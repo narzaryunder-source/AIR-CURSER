@@ -109,7 +109,7 @@ class AirShell(
     private var lastMargins = ""
 
     private val barH get() = ui.u(24)
-    private val dockH get() = ui.u(58)
+    private val dockH get() = ui.u(54)
     private val dockGap get() = ui.u(6)
     private val autoHide get() = prefs.getBoolean("dock_autohide", false)
 
@@ -129,7 +129,7 @@ class AirShell(
         bar.orientation = LinearLayout.HORIZONTAL
         bar.gravity = Gravity.CENTER_VERTICAL
         bar.setPadding(ui.u(10), 0, ui.u(10), 0)
-        bar.background = GradientDrawable().apply { setColor(0xC2141519.toInt()) }
+        bar.background = GradientDrawable().apply { setColor(0x8C16181D.toInt()) }
         bar.elevation = ui.uf(4)
         val logo = ImageView(activity).apply {
             setImageResource(R.drawable.logo_pc)
@@ -170,9 +170,9 @@ class AirShell(
         dockScroll.isFillViewport = false
         dockScroll.addView(dock, FrameLayout.LayoutParams(-2, -1))
         dockBox.background = GradientDrawable().apply {
-            cornerRadius = ui.uf(18)
-            setColor(0xB81C1D22.toInt())
-            setStroke(ui.u(1).coerceAtLeast(1), 0x30FFFFFF)
+            cornerRadius = ui.uf(17)
+            setColor(0x47F2F4F8)
+            setStroke(ui.u(1).coerceAtLeast(1), 0x59FFFFFF)
         }
         dockBox.elevation = ui.uf(8)
         dockBox.addView(dockScroll, FrameLayout.LayoutParams(-2, -1))
@@ -464,7 +464,7 @@ class AirShell(
             contentDescription = item.label
             tooltipText = item.label
         }
-        box.addView(img, FrameLayout.LayoutParams(ui.u(42), ui.u(42), Gravity.CENTER))
+        box.addView(img, FrameLayout.LayoutParams(ui.u(40), ui.u(40), Gravity.CENTER))
         if (item.running) {
             box.addView(View(activity).apply {
                 background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xDDFFFFFF.toInt()) }
@@ -472,7 +472,7 @@ class AirShell(
                 bottomMargin = ui.u(2)
             })
         }
-        box.layoutParams = LinearLayout.LayoutParams(ui.u(50), -1)
+        box.layoutParams = LinearLayout.LayoutParams(ui.u(47), -1)
         // Magnify a little under the finger (like a dock), then act.
         box.setOnTouchListener { v, e ->
             when (e.actionMasked) {

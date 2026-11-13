@@ -124,6 +124,10 @@ object CloudPcDesktop {
             echo "export XDG_RUNTIME_DIR=${'$'}XDG_RUNTIME_DIR NO_AT_BRIDGE=1 LANG=C.UTF-8 PULSE_SERVER=unix:/tmp/pulse-native"
         } > /tmp/cloudpc-session.env
         startxfce4 &
+        # The session helper from the first second: runs the app's commands (dock, apps grid) inside
+        # this session, tells the phone which windows are open, and gives the app in front the fast cores.
+        rm -f /tmp/cloudpc-run.fifo
+        command -v cloudpc-focus >/dev/null && (cloudpc-focus >/dev/null 2>&1 &)
         # One helper (Android allows an app only ~32 programs, so no extra background shells):
         # first-start settings, app fixes, light mode, self-repair for the first minute, browser updates.
         (
@@ -150,7 +154,7 @@ object CloudPcDesktop {
             done
             # Security updates for the browser, quietly (at most every 3 days).
             command -v cloudpc-security-update >/dev/null && nice -n 19 cloudpc-security-update
-            # From now on this helper is the focus boost: the app in front gets the fast cores.
+            # (The session helper cloudpc-focus runs since the start; start it again if it ended.)
             command -v cloudpc-focus >/dev/null && exec cloudpc-focus >/dev/null 2>&1
         ) &
         wait ${'$'}XPID
@@ -165,4 +169,27 @@ object CloudPcDesktop {
 
     /** A shell command that runs inside the running desktop session (DISPLAY + session bus). */
     fun inSession(command: String) = ". /tmp/cloudpc-session.env 2>/dev/null; $command"
+
+    /**
+     * Runs [command] inside the running desktop session (through the session helper's pipe), so
+     * programs it starts stay open. False when the helper is not listening (then use ACTION_RUN).
+     */
+    fun sendToSession(c: Context, command: String): Boolean {
+        val fifo = File(CloudPcEngine.rootfs(c), "tmp/cloudpc-run.fifo")
+        return try {
+            if (!android.system.OsConstants.S_ISFIFO(android.system.Os.stat(fifo.path).st_mode)) return false
+            // Non-blocking open: fails at once when nobody reads (desktop not started yet).
+            val fd = android.system.Os.open(fifo.path, android.system.OsConstants.O_WRONLY or android.system.OsConstants.O_NONBLOCK, 0)
+            try {
+                val line = android.util.Base64.encodeToString(command.toByteArray(), android.util.Base64.NO_WRAP) + "\n"
+                val bytes = line.toByteArray()
+                if (bytes.size > 4096) return false   // one atomic write only
+                android.system.Os.write(fd, bytes, 0, bytes.size) == bytes.size
+            } finally {
+                android.system.Os.close(fd)
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
 }

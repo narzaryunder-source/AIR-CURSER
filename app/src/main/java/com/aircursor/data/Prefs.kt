@@ -26,10 +26,10 @@ data class BoolSetting(
 object AppSettings {
     val MARGIN = FloatSetting("margin", "Active box margin (box mode)", 0.15f, 0f, 0.35f) { "${(it * 100).roundToInt()}%" }
     val SENSITIVITY = FloatSetting("sensitivity", "Cursor speed", 1f, 0.4f, 2.5f) { "%.2fx".format(it) }
-    val MIN_CUTOFF = FloatSetting("min_cutoff3", "Smoothing (min cutoff)", 0.6f, 0.1f, 5f) { "%.2f Hz".format(it) }
+    val MIN_CUTOFF = FloatSetting("min_cutoff4", "Smoothing (min cutoff)", 0.55f, 0.1f, 5f) { "%.2f Hz".format(it) }
     val BETA = FloatSetting("beta", "Responsiveness (beta)", 0.01f, 0f, 0.05f) { "%.3f".format(it) }
     val DEAD_ZONE = FloatSetting("dead_zone3", "Anti-shake", 8f, 0f, 20f) { "${it.roundToInt()} px" }
-    val PINCH = FloatSetting("pinch", "Pinch distance", 0.28f, 0.15f, 0.45f) { "%.2f".format(it) }
+    val PINCH = FloatSetting("pinch2", "Pinch distance", 0.31f, 0.15f, 0.45f) { "%.2f".format(it) }
     val SCROLL_SPEED = FloatSetting("scroll_speed", "Scroll speed", 1.2f, 0.4f, 3f) { "%.1fx".format(it) }
     val CURSOR_SIZE = FloatSetting("cursor_size", "Cursor size", 1f, 0.6f, 2f) { "%.1fx".format(it) }
     val PREDICTION = FloatSetting("prediction3", "Lag compensation (prediction)", 0.2f, 0f, 1f) {

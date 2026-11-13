@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 32
+    const val VERSION = 33
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -765,7 +765,17 @@ object CloudPcTools {
         EVERY=${'$'}(for x in ${'$'}CORES; do echo "${'$'}{x%%:*}"; done | paste -sd, -)
         declare -A PLACED
         LAST=""
-        while sleep 1.5; do
+        # Commands from the AirCursor app (dock, apps grid, assistant) arrive on a pipe and run here,
+        # inside the desktop session, so the apps they start stay open. One line = one command (base64).
+        RUN=/tmp/cloudpc-run.fifo
+        [ -p "${'$'}RUN" ] || { rm -f "${'$'}RUN"; mkfifo -m 600 "${'$'}RUN"; }
+        exec 7<>"${'$'}RUN"
+        while true; do
+            CMD=""
+            if read -r -t 1.5 -u 7 CMD && [ -n "${'$'}CMD" ]; then
+                ( printf '%s' "${'$'}CMD" | base64 -d | setsid bash ) >/dev/null 2>&1 7<&- 9<&- &
+                continue
+            fi
             feed
             [ ${'$'}BOOST = 1 ] || continue
             if [ -f /root/.config/cloudpc/no-focus-boost ]; then
