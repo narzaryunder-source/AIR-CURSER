@@ -268,8 +268,8 @@ class PadControls(
                     moved += abs(dx) + abs(dy)
                     if (fingers >= 2) {
                         scrollAcc += dy
-                        while (scrollAcc >= 26f) { send(Cmd.Wheel(-1, 0)); scrollAcc -= 26f }   // fingers down = page up
-                        while (scrollAcc <= -26f) { send(Cmd.Wheel(1, 0)); scrollAcc += 26f }
+                        while (scrollAcc >= SCROLL_STEP) { send(Cmd.Wheel(-1, 0)); scrollAcc -= SCROLL_STEP }   // fingers down = page up
+                        while (scrollAcc <= -SCROLL_STEP) { send(Cmd.Wheel(1, 0)); scrollAcc += SCROLL_STEP }
                     } else if (fingers == 1) {
                         val speed = hypot(dx, dy) / dt * 1000f
                         move(RemoteInput.accelerate(dx, speed) * 1.4f, RemoteInput.accelerate(dy, speed) * 1.4f)
@@ -395,5 +395,10 @@ class PadControls(
             }
             true
         }
+    }
+
+    companion object {
+        /** Two fingers: one wheel step per this many points of finger travel. */
+        private const val SCROLL_STEP = 15f
     }
 }

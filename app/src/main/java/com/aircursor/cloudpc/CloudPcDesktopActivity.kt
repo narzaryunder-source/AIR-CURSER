@@ -116,10 +116,17 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private var remoteState = RemoteInputHost.State(false, "")
     private var remoteDialog: AlertDialog? = null
 
+    /** The other phone's pointer, drawn above Air windows and the dock (they get its clicks too). */
+    private var remoteCursor: RemoteCursor? = null
+
     private fun applyRemote(cmd: com.aircursor.core.RemoteInput.Cmd) {
-        // Monitor mode: the other phone works the PC on the monitor.
-        val v = monitor?.view ?: view ?: return
         if (lockView != null) return
+        val mv = monitor?.view
+        if (mv == null) {
+            remoteCursor?.let { it.apply(cmd); return }
+        }
+        // Monitor mode: the other phone works the PC on the monitor.
+        val v = mv ?: view ?: return
         when (cmd) {
             is com.aircursor.core.RemoteInput.Cmd.Move -> v.remoteMove(cmd.dx, cmd.dy)
             is com.aircursor.core.RemoteInput.Cmd.Button -> v.remoteButton(cmd.button, cmd.down)
@@ -136,7 +143,10 @@ class CloudPcDesktopActivity : ComponentActivity() {
         val was = remoteState.connected
         remoteState = st
         if (st.connected != null && was == null) Toast.makeText(this, "Phone keyboard connected", Toast.LENGTH_SHORT).show()
-        if (st.connected == null && was != null) Toast.makeText(this, "Phone keyboard disconnected", Toast.LENGTH_SHORT).show()
+        if (st.connected == null && was != null) {
+            Toast.makeText(this, "Phone keyboard disconnected", Toast.LENGTH_SHORT).show()
+            remoteCursor?.show(false)
+        }
         remoteDialog?.setMessage(remoteText())
     }.also { remote = it }
 
@@ -526,6 +536,11 @@ class CloudPcDesktopActivity : ComponentActivity() {
             }
         })
 
+        remoteCursor = RemoteCursor(this, root, { view }, { x, y ->
+            val l = IntArray(2)
+            root.getLocationOnScreen(l)
+            overPhoneUi(x + l[0], y + l[1])
+        }) { y -> shell?.pointerAt(y) }.also { root.addView(it, FrameLayout.LayoutParams(-1, -1)) }
         if (prefs.getBoolean("remote_on", false)) remoteHost().start()
         monitorMode().register()
         boot.bringToFront()
@@ -692,7 +707,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         val y = sy - loc[1]
         for (i in rootLayout.childCount - 1 downTo 0) {
             val c = rootLayout.getChildAt(i)
-            if (c === view || c === boot || c.visibility != View.VISIBLE) continue
+            if (c === view || c === boot || c === remoteCursor || c.visibility != View.VISIBLE) continue
             if (x >= c.x && x < c.x + c.width && y >= c.y && y < c.y + c.height) return true
         }
         return false
@@ -705,6 +720,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
         assistant?.bringToFront()
         monitorPad?.bringToFront()
         if (::boot.isInitialized && !bootDone) boot.bringToFront()
+        remoteCursor?.bringToFront()
         lockView?.bringToFront()
     }
 
@@ -1114,6 +1130,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     // ---- Password lock ----
 
     private fun showLock(mode: PcLockScreen.Mode) {
+        remoteCursor?.show(false)
         // The monitor would show the desktop behind the password screen: back to the phone first.
         monitor?.stop()
         lockView?.let { rootLayout.removeView(it) }

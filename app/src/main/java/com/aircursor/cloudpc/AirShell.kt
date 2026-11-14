@@ -626,6 +626,11 @@ class AirShell(
         }.start()
     }
 
+    /** The other phone's pointer reached the bottom edge: an auto-hidden dock comes up, like a Mac. */
+    fun pointerAt(y: Float) {
+        if (enabled && !gameOn && autoHide && y >= host.height - ui.uf(6)) showDockFor(4000)
+    }
+
     /** A tap on the PC picture: an auto-hidden dock goes away. */
     fun desktopTouched() {
         if (autoHide && dockBox.visibility == View.VISIBLE && grid == null) dockShownUntil = 0

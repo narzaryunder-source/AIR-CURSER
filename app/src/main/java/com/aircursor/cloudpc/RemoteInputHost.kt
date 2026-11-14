@@ -36,6 +36,7 @@ class RemoteInputHost(
     @Volatile private var client: Socket? = null
     private var registration: NsdManager.RegistrationListener? = null
     private var wrong = 0
+    private val wifi = LowLatencyWifi(context)
 
     /** The code stays the same between starts, so a paired phone reconnects by itself. */
     var code: String = prefs.getString("code", null) ?: newCode()
@@ -148,6 +149,7 @@ class RemoteInputHost(
             wrong = 0
             out.write("OK " + (Build.MODEL ?: "AirCursor PC").replace('\n', ' ') + "\n"); out.flush()
             val name = sock.inetAddress?.hostAddress ?: "phone"
+            wifi.hold(true)
             post(name)
             sock.soTimeout = 30_000   // the other phone pings every few seconds
             while (client === sock) {
@@ -159,6 +161,7 @@ class RemoteInputHost(
         } finally {
             try { sock.close() } catch (_: Exception) {}
             if (client === sock) client = null
+            if (client == null) wifi.hold(false)
             post()
         }
     }

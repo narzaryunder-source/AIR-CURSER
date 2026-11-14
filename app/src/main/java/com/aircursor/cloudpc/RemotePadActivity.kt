@@ -84,6 +84,8 @@ class RemotePadActivity : ComponentActivity() {
         })
     }
 
+    private val wifi by lazy { LowLatencyWifi(this) }
+
     // ---- Table keyboard (camera + hands) over the pad ----
     private var table: TableKeyboard? = null
     private val cameraPermission = registerForActivityResult(
@@ -119,6 +121,7 @@ class RemotePadActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        wifi.hold(false)
         closeTable()
         stopDiscovery()
         conn?.close()
@@ -131,6 +134,7 @@ class RemotePadActivity : ComponentActivity() {
     private var list: LinearLayout? = null
 
     private fun showFinder() {
+        wifi.hold(false)
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         fullScreen(false)
         root.removeAllViews()
@@ -309,6 +313,7 @@ class RemotePadActivity : ComponentActivity() {
     }
 
     private fun showPad(pcName: String) {
+        wifi.hold(true)
         closeTable()
         root.removeAllViews()
         val land = landscape()
