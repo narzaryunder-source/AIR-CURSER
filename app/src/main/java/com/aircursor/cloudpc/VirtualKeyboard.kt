@@ -31,6 +31,8 @@ import kotlin.math.roundToInt
 class VirtualKeyboard(
     context: Context,
     private val send: (Cmd) -> Unit,
+    /** Landscape: the keyboard fills the height it is given, with bigger letters. */
+    private val big: Boolean = false,
     private val phoneKeyboard: () -> Unit,
 ) : LinearLayout(context) {
     private val d = resources.displayMetrics.density
@@ -98,6 +100,10 @@ class VirtualKeyboard(
 
     /** About half the screen height, never more than a real keyboard needs. */
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        if (big) {
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+            return
+        }
         val screen = resources.displayMetrics.heightPixels
         val h = min(dp(300f), (screen * 0.5f).roundToInt())
         super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
@@ -119,7 +125,7 @@ class VirtualKeyboard(
             text = label
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, if (small) 11f else if (label.length > 2) 13f else 17f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, if (big) { if (small) 13f else if (label.length > 2) 15f else 21f } else { if (small) 11f else if (label.length > 2) 13f else 17f })
             typeface = Typeface.DEFAULT
             isSingleLine = true
             background = pill(color)

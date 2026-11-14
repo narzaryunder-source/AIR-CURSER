@@ -67,6 +67,14 @@ class RemotePadActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         root = FrameLayout(this).apply { setBackgroundColor(0xFF0E1016.toInt()) }
+        // Nothing under the status bar, the navigation bar or the camera notch.
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+            val i = insets.getInsets(
+                androidx.core.view.WindowInsetsCompat.Type.systemBars() or androidx.core.view.WindowInsetsCompat.Type.displayCutout(),
+            )
+            v.setPadding(i.left, i.top, i.right, i.bottom)
+            androidx.core.view.WindowInsetsCompat.CONSUMED
+        }
         setContentView(root)
         showFinder()
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
@@ -123,6 +131,8 @@ class RemotePadActivity : ComponentActivity() {
     private var list: LinearLayout? = null
 
     private fun showFinder() {
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        fullScreen(false)
         root.removeAllViews()
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -284,11 +294,36 @@ class RemotePadActivity : ComponentActivity() {
 
     private fun send(cmd: Cmd) = conn?.send(cmd)
 
+    /** The pad is landscape (laptop layout) unless the user picked portrait. */
+    private fun landscape() = !prefs.getBoolean("portrait", false)
+
+    private fun fullScreen(on: Boolean) {
+        androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply {
+            if (on) {
+                hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+
     private fun showPad(pcName: String) {
         closeTable()
         root.removeAllViews()
+        val land = landscape()
+        requestedOrientation = if (land) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        fullScreen(true)
         val pad = PadControls(this, { send(it) }, { dx, dy -> conn?.move(dx, dy) })
-        root.addView(pad.build(pcName, "Disconnect", listOf("📷  Table keyboard (camera)" to { askTable() })) {
+        val extras = listOf(
+            "📷  Table keyboard" to { askTable() },
+            (if (land) "⟳  Portrait" else "⟳  Landscape") to {
+                prefs.edit().putBoolean("portrait", land).apply()
+                showPad(pcName)
+            },
+        )
+        root.addView(pad.build(pcName, "Disconnect", extras, landscape = land) {
             prefs.edit().remove("name").apply()
             conn?.close(); conn = null; showFinder()
         }, FrameLayout.LayoutParams(-1, -1))

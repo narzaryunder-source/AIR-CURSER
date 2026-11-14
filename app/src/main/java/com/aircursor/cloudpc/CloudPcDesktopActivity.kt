@@ -267,6 +267,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
                 "Switch window" to altTab,
                 "TS Station" to { runPc("/opt/ts-station/ts-station") },
             ),
+            landscape = true,
         ) { m.stop() }
         monitorPad = v
         rootLayout.addView(v, FrameLayout.LayoutParams(-1, -1))

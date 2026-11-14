@@ -60,7 +60,14 @@ class PadControls(
      * The whole pad. [title] on top with a [closeLabel] button that calls [onClose]; [extras] are
      * shortcut buttons in the top bar (Monitor mode: apps, browser, windows).
      */
-    fun build(title: String, closeLabel: String, extras: List<Pair<String, () -> Unit>> = emptyList(), onClose: () -> Unit): View {
+    fun build(
+        title: String,
+        closeLabel: String,
+        extras: List<Pair<String, () -> Unit>> = emptyList(),
+        landscape: Boolean = false,
+        onClose: () -> Unit,
+    ): View {
+        if (landscape) return buildLandscape(title, closeLabel, extras, onClose)
         val col = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(0xFF0E1016.toInt())
@@ -139,8 +146,58 @@ class PadControls(
         return col
     }
 
+    /**
+     * Landscape, like a laptop: a big PC keyboard on the left, a black touchpad on the right with
+     * the left and right buttons under it. 🌐 still opens the phone's own keyboard.
+     */
+    private fun buildLandscape(title: String, closeLabel: String, extras: List<Pair<String, () -> Unit>>, onClose: () -> Unit): View {
+        val col = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(0xFF0E1016.toInt())
+        }
+        val top = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), dp(4), dp(6), dp(2))
+        }
+        top.addView(TextView(activity).apply {
+            text = "● $title"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextColor(0xFF3DDC97.toInt())
+            isSingleLine = true
+        }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
+        val ex = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
+        for ((label, action) in extras) ex.addView(smallButton(label) { action() }.apply { layoutParams = LinearLayout.LayoutParams(-2, dp(36)).apply { marginStart = dp(3); marginEnd = dp(3) } })
+        top.addView(HorizontalScrollView(activity).apply { isHorizontalScrollBarEnabled = false; addView(ex) }, LinearLayout.LayoutParams(0, -2, 1f))
+        val keys = KeyCatcher()
+        val vk = VirtualKeyboard(activity, send, big = true) { keys.show() }
+        top.addView(smallButton(closeLabel) {
+            vk.releaseMods()
+            releaseMods()
+            onClose()
+        }.apply { layoutParams = LinearLayout.LayoutParams(-2, dp(36)).apply { marginStart = dp(4) } })
+        col.addView(top)
+        val body = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
+        body.addView(vk, LinearLayout.LayoutParams(0, -1, 2.35f))
+        val right = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(6), dp(6), dp(8), dp(6))
+        }
+        right.addView(Touchpad(laptop = true), LinearLayout.LayoutParams(-1, 0, 1f))
+        val clicks = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
+        clicks.addView(holdButton("Left", laptop = true) { down -> send(Cmd.Button('l', down)) },
+            LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = dp(3) })
+        clicks.addView(holdButton("Right", laptop = true) { down -> send(Cmd.Button('r', down)) },
+            LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(3) })
+        right.addView(clicks, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(6) })
+        body.addView(right, LinearLayout.LayoutParams(0, -1, 1f))
+        col.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
+        col.addView(keys, LinearLayout.LayoutParams(1, 1))
+        return col
+    }
+
     /** Touchpad: move = pointer, tap = click, tap then hold+move = drag, two fingers = scroll, two-finger tap = right click. */
-    private inner class Touchpad : View(activity) {
+    private inner class Touchpad(private val laptop: Boolean = false) : View(activity) {
         private var lastX = 0f
         private var lastY = 0f
         private var lastT = 0L
@@ -157,15 +214,29 @@ class PadControls(
 
         init {
             background = GradientDrawable().apply {
-                cornerRadius = dp(18).toFloat()
-                setColor(0xFF1A1D26.toInt())
-                setStroke(dp(1), 0x26FFFFFF)
+                if (laptop) {
+                    // Like a laptop's touchpad: matt black glass with a thin edge.
+                    cornerRadius = dp(14).toFloat()
+                    colors = intArrayOf(0xFF111216.toInt(), 0xFF050506.toInt())
+                    gradientType = GradientDrawable.LINEAR_GRADIENT
+                    orientation = GradientDrawable.Orientation.TOP_BOTTOM
+                    setStroke(dp(1), 0x40FFFFFF)
+                } else {
+                    cornerRadius = dp(18).toFloat()
+                    setColor(0xFF1A1D26.toInt())
+                    setStroke(dp(1), 0x26FFFFFF)
+                }
             }
         }
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
-            canvas.drawText("Touchpad · tap = click · two fingers = scroll / right click", width / 2f, height - 18 * d, hint)
+            if (laptop) {
+                canvas.drawText("Touchpad", width / 2f, height - 30 * d, hint)
+                canvas.drawText("tap = click · 2 fingers = scroll", width / 2f, height - 12 * d, hint)
+            } else {
+                canvas.drawText("Touchpad · tap = click · two fingers = scroll / right click", width / 2f, height - 18 * d, hint)
+            }
         }
 
         override fun onTouchEvent(e: MotionEvent): Boolean {
@@ -308,11 +379,15 @@ class PadControls(
         setOnClickListener { onClick() }
     }
 
-    private fun holdButton(label: String, onHold: (Boolean) -> Unit) = Button(activity).apply {
+    private fun holdButton(label: String, laptop: Boolean = false, onHold: (Boolean) -> Unit) = Button(activity).apply {
         text = label
         isAllCaps = false
-        setTextColor(Color.WHITE)
-        background = pill(0xFF3B4256.toInt())
+        setTextColor(if (laptop) 0xCCFFFFFF.toInt() else Color.WHITE)
+        background = if (laptop) GradientDrawable().apply {
+            cornerRadius = dp(10).toFloat()
+            setColor(0xFF0A0A0C.toInt())
+            setStroke(dp(1), 0x40FFFFFF)
+        } else pill(0xFF3B4256.toInt())
         setOnTouchListener { v, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> { v.isPressed = true; onHold(true) }
