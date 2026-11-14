@@ -72,6 +72,7 @@ class TableKeyboard(
     private val stage = Stage(activity)
     private val status = TextView(activity)
     private var adjustButton: Button? = null
+    private var modeButton: Button? = null
     val view: View = build()
 
     // ---- camera + hand tracking ----
@@ -259,10 +260,17 @@ class TableKeyboard(
             stage.adjust = !stage.adjust
             adjustButton?.text = if (stage.adjust) "Done" else "Adjust"
             status.text = if (stage.adjust) "Drag the four corners so the keyboard lies on the table"
-            else "Show a hand to the camera · pinch = press"
+            else "Show a hand to the camera"
             stage.invalidate()
         }
         bar.addView(adjustButton)
+        modeButton = chip(if (stage.tapMode) "Press: tap" else "Press: pinch") {
+            stage.tapMode = !stage.tapMode
+            prefs.edit().putBoolean("tap", stage.tapMode).apply()
+            modeButton?.text = if (stage.tapMode) "Press: tap" else "Press: pinch"
+            stage.invalidate()
+        }
+        bar.addView(modeButton)
         status.apply {
             setTextColor(0xE6FFFFFF.toInt())
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
@@ -301,11 +309,25 @@ class TableKeyboard(
         var onPad = false
         var moved = 0f
         var longDone = false
+
+        // Tap mode: four fingertips (index..pinky), each watched for a quick dip.
+        val bend = FloatArray(4)
+        val dipping = BooleanArray(4)
+        val dipFrom = FloatArray(4)
+        val dipAt = LongArray(4)
+        val tipX = FloatArray(4)
+        val tipY = FloatArray(4)
+        var wristX = 0f
+        var wristY = 0f
+        var tipsAt = 0L
+        var quietUntil = 0L
     }
 
     /** The camera picture with the keyboard on the table, the hand dots, and all the key logic. */
     private inner class Stage(context: Context) : View(context) {
         var adjust = false
+        /** Keys are pressed by tapping a finger down (like on a table) instead of a pinch. */
+        var tapMode = prefs.getBoolean("tap", false)
         @Volatile private var frame: Bitmap? = null
         private val keys = ArrayList<TKey>()
         private val hands = arrayOf(Hand(), Hand())
@@ -439,10 +461,16 @@ class TableKeyboard(
                 val pinched = h.pinch.update(g)
                 if (!adjust) handle(h, pinched, if (fresh) 0f else h.x - oldX, if (fresh) 0f else h.y - oldY, now)
                 h.pinched = pinched
+                if (fresh) h.tipsAt = 0
+                taps(h, lm, g, now, f.width * scale, f.height * scale, ox, oy)
             }
             for (i in hands.indices) if (!used[i] && now - hands[i].seenAt >= 600) hands[i].pinched = false
             if (!adjust) {
-                status.text = if (list.isEmpty()) "Show a hand to the camera · pinch = press" else "Pinch = press · touchpad: pinch and move"
+                status.text = when {
+                    list.isEmpty() -> "Show a hand to the camera"
+                    tapMode -> "Tap a finger down = press · touchpad: pinch and move"
+                    else -> "Pinch = press · touchpad: pinch and move"
+                }
             }
             invalidate()
         }
@@ -456,7 +484,7 @@ class TableKeyboard(
                 h.moved = 0f
                 h.longDone = false
                 h.onPad = p[0] >= padLeft && p[0] <= planeW && p[1] in 0f..planeH
-                if (!h.onPad) keyAt(p[0], p[1])?.let { press(it) }
+                if (!h.onPad && !tapMode) keyAt(p[0], p[1])?.let { press(it) }
             } else if (pinched && h.onPad) {
                 h.moved += abs(dx) + abs(dy)
                 if (h.moved > 6 * d) move(dx / d * 2.4f, dy / d * 2.4f)
@@ -466,6 +494,58 @@ class TableKeyboard(
                 }
             } else if (!pinched && h.pinched && h.onPad) {
                 if (!h.longDone && h.moved <= 6 * d && now - h.downAt < 500) click('l')
+            }
+        }
+
+        /**
+         * Tap mode. One camera cannot see the table being touched, so a "tap" is the movement itself:
+         * a fingertip dips quickly (compared with its own knuckle) and stops, while the hand as a
+         * whole stays still. The finger that dipped the most presses the key under its tip.
+         */
+        private fun taps(h: Hand, lm: List<Landmark>, g: HandGeometry, now: Long, fw: Float, fh: Float, ox: Float, oy: Float) {
+            val wx = lm[HandIdx.WRIST].x * fw + ox
+            val wy = lm[HandIdx.WRIST].y * fh + oy
+            val sizePx = max(g.handSize * fh, 1f)
+            val dt = (now - h.tipsAt) / 1000f
+            val first = h.tipsAt == 0L || dt > 0.25f || dt <= 0f
+            val handSpeed = if (first) 0f else hypot(wx - h.wristX, wy - h.wristY) / sizePx / dt
+            var best = -1
+            var bestDip = 0f
+            for (i in 0 until 4) {
+                val tip = TIPS[i]
+                val bend = (lm[tip].y - lm[KNUCKLES[i]].y) / g.handSize
+                if (!first && tapMode && !adjust) {
+                    val v = (bend - h.bend[i]) / dt
+                    if (!h.dipping[i]) {
+                        if (v > 1.5f && handSpeed < 1.2f) {
+                            h.dipping[i] = true
+                            h.dipFrom[i] = h.bend[i]
+                            h.dipAt[i] = now
+                        }
+                    } else if (v < 0.3f) {
+                        val dip = bend - h.dipFrom[i]
+                        if (dip > 0.12f && now - h.dipAt[i] < 400 && dip > bestDip) { best = i; bestDip = dip }
+                        h.dipping[i] = false
+                    } else if (now - h.dipAt[i] > 400) {
+                        h.dipping[i] = false
+                    }
+                } else {
+                    h.dipping[i] = false
+                }
+                h.bend[i] = bend
+                h.tipX[i] = lm[tip].x * fw + ox
+                h.tipY[i] = lm[tip].y * fh + oy
+            }
+            h.wristX = wx
+            h.wristY = wy
+            h.tipsAt = now
+            if (best >= 0 && now >= h.quietUntil) {
+                // Neighbouring fingers move along with the tapping one: one key per tap.
+                h.quietUntil = now + 180
+                for (i in 0 until 4) h.dipping[i] = false
+                val p = plane(h.tipX[best], h.tipY[best])
+                if (p[0] >= padLeft && p[0] <= planeW && p[1] in 0f..planeH) click('l')
+                else keyAt(p[0], p[1])?.let { press(it) }
             }
         }
 
@@ -556,7 +636,12 @@ class TableKeyboard(
             var padHover = false
             if (!adjust) for (h in hands) if (now - h.seenAt < 600) {
                 val p = plane(h.x, h.y)
-                if (p[0] >= padLeft && p[0] <= planeW && p[1] in 0f..planeH) padHover = true else keyAt(p[0], p[1])?.let { hover += it }
+                if (p[0] >= padLeft && p[0] <= planeW && p[1] in 0f..planeH) padHover = true
+                else if (!tapMode) keyAt(p[0], p[1])?.let { hover += it }
+                if (tapMode) for (i in 0 until 4) {
+                    val t = plane(h.tipX[i], h.tipY[i])
+                    if (t[0] < padLeft) keyAt(t[0], t[1])?.let { hover += it }
+                }
             }
             val shift = Keysyms.SHIFT_L in heldMods
             var again = false
@@ -592,6 +677,10 @@ class TableKeyboard(
                 canvas.drawCircle(h.x, h.y, (if (h.pinched) 9 else 12) * d, dot)
                 dot.color = 0x66000000
                 canvas.drawCircle(h.x, h.y, 4 * d, dot)
+                if (tapMode) {
+                    dot.color = 0xFFFFC53D.toInt()
+                    for (i in 0 until 4) canvas.drawCircle(h.tipX[i], h.tipY[i], 5 * d, dot)
+                }
             }
             if (again) postInvalidateOnAnimation()
         }
@@ -599,5 +688,7 @@ class TableKeyboard(
 
     companion object {
         private const val TAG = "TableKeyboard"
+        private val TIPS = intArrayOf(HandIdx.INDEX_TIP, HandIdx.MIDDLE_TIP, HandIdx.RING_TIP, HandIdx.PINKY_TIP)
+        private val KNUCKLES = intArrayOf(HandIdx.INDEX_MCP, HandIdx.MIDDLE_MCP, HandIdx.RING_MCP, HandIdx.PINKY_MCP)
     }
 }
