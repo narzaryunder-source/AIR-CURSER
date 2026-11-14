@@ -1,3 +1,5 @@
+import java.net.URI
+
 
 plugins {
     id("com.android.application")
@@ -104,7 +106,25 @@ val copyCloudPcTools by tasks.registering(Copy::class) {
     into(layout.buildDirectory.dir("generated/cloudpc-assets/cloudpc"))
 }
 android.sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/cloudpc-assets").get().asFile)
-tasks.named("preBuild") { dependsOn(copyCloudPcTools) }
+// Table keyboard (camera): downloads the MediaPipe hand landmark model into assets (only if missing).
+val downloadHandModel by tasks.registering {
+    val modelUrl =
+        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task"
+    val outFile = layout.projectDirectory.file("src/main/assets/hand_landmarker.task").asFile
+    outputs.file(outFile)
+    doLast {
+        if (!outFile.exists() || outFile.length() < 100_000L) {
+            outFile.parentFile.mkdirs()
+            logger.lifecycle("Downloading hand_landmarker.task ...")
+            URI(modelUrl).toURL().openStream().use { input ->
+                outFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            logger.lifecycle("Saved ${outFile.length()} bytes to $outFile")
+        }
+    }
+}
+
+tasks.named("preBuild") { dependsOn(copyCloudPcTools, downloadHandModel) }
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.09.03")
@@ -125,6 +145,13 @@ dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
     // Unpacks the ready-made AirCursor PC (tar.xz).
     implementation("org.tukaani:xz:1.9")
+
+    // Table keyboard: camera + on-device hand tracking (nothing leaves the phone).
+    val cameraX = "1.3.4"
+    implementation("androidx.camera:camera-core:$cameraX")
+    implementation("androidx.camera:camera-camera2:$cameraX")
+    implementation("androidx.camera:camera-lifecycle:$cameraX")
+    implementation("com.google.mediapipe:tasks-vision:0.10.14")
     // Air browser: Mozilla's GeckoView engine (arm64 phones; same phones as AirCursor PC). A full browser
     // engine, so Google sign-in works – unlike Android's in-app WebView. Keep it current (security).
     implementation("org.mozilla.geckoview:geckoview-arm64-v8a:159.0.20261022150525")

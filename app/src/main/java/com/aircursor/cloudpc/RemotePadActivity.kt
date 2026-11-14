@@ -69,6 +69,40 @@ class RemotePadActivity : ComponentActivity() {
         root = FrameLayout(this).apply { setBackgroundColor(0xFF0E1016.toInt()) }
         setContentView(root)
         showFinder()
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (table != null) closeTable() else finish()
+            }
+        })
+    }
+
+    // ---- Table keyboard (camera + hands) over the pad ----
+    private var table: TableKeyboard? = null
+    private val cameraPermission = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { ok ->
+        if (ok) openTable() else Toast.makeText(this, "The table keyboard needs the camera", Toast.LENGTH_LONG).show()
+    }
+
+    private fun askTable() {
+        val granted = androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (granted) openTable() else cameraPermission.launch(android.Manifest.permission.CAMERA)
+    }
+
+    private fun openTable() {
+        if (table != null || conn == null) return
+        val t = TableKeyboard(this, { send(it) }, { dx, dy -> conn?.move(dx, dy) }) { closeTable() }
+        table = t
+        root.addView(t.view, FrameLayout.LayoutParams(-1, -1))
+        t.start()
+    }
+
+    private fun closeTable() {
+        val t = table ?: return
+        table = null
+        t.stop()
+        root.removeView(t.view)
     }
 
     override fun onStart() {
@@ -77,6 +111,7 @@ class RemotePadActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        closeTable()
         stopDiscovery()
         conn?.close()
         conn = null
@@ -250,9 +285,10 @@ class RemotePadActivity : ComponentActivity() {
     private fun send(cmd: Cmd) = conn?.send(cmd)
 
     private fun showPad(pcName: String) {
+        closeTable()
         root.removeAllViews()
         val pad = PadControls(this, { send(it) }, { dx, dy -> conn?.move(dx, dy) })
-        root.addView(pad.build(pcName, "Disconnect") {
+        root.addView(pad.build(pcName, "Disconnect", listOf("📷  Table keyboard (camera)" to { askTable() })) {
             prefs.edit().remove("name").apply()
             conn?.close(); conn = null; showFinder()
         }, FrameLayout.LayoutParams(-1, -1))
