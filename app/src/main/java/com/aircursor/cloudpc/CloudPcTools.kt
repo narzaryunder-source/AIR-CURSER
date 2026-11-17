@@ -101,7 +101,11 @@ object CloudPcTools {
         put("usr/local/bin/cloudpc-benchmark", BENCHMARK, exec = true)
         put("usr/local/bin/cloudpc-vscode", asset(c, "vscode.sh"), exec = true)
         // Developer Setup: Python (pip, venv), FFmpeg, Node.js, git, compiler, and a check that works.
-        put("usr/local/bin/cloudpc-devtools", asset(c, "devtools.sh"), exec = true)
+        // Optional tool: a missing file must never stop the desktop from starting.
+        try {
+            put("usr/local/bin/cloudpc-devtools", asset(c, "devtools.sh"), exec = true)
+        } catch (_: java.io.IOException) {
+        }
         // TS Station, the game console – for everyone, kept up to date by the app.
         for (f in listOf("server.py", "ts-station", "ts-station.svg", "VERSION")) {
             put("opt/ts-station/$f", asset(c, "tsstation/$f"), exec = f == "server.py" || f == "ts-station")
