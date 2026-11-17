@@ -502,9 +502,12 @@ class AirShell(
                     }
                 }
             }
-            contentDescription = item.label
-            tooltipText = item.label
+            // No tooltip here: a view with a tooltip keeps every touch for itself, so the icon's
+            // tap never reached the box below (taps worked only on the icon's edges).
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
+        box.contentDescription = item.label
+        box.tooltipText = item.label
         box.addView(img, FrameLayout.LayoutParams(ui.u(40), ui.u(40), Gravity.CENTER))
         if (item.running) {
             box.addView(View(activity).apply {

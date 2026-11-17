@@ -175,7 +175,11 @@ class PadControls(
             vk.releaseMods()
             releaseMods()
             onClose()
-        }.apply { layoutParams = LinearLayout.LayoutParams(-2, dp(36)).apply { marginStart = dp(4) } })
+        }.apply {
+            setPadding(dp(16), 0, dp(16), 0)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            layoutParams = LinearLayout.LayoutParams(-2, dp(34)).apply { marginStart = dp(4); marginEnd = dp(6) }
+        })
         col.addView(top)
         val body = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
         body.addView(vk, LinearLayout.LayoutParams(0, -1, 2.35f))
@@ -206,8 +210,13 @@ class PadControls(
         private var fingers = 0
         private var maxFingers = 0
         private var scrollAcc = 0f
-        private var lastTapAt = 0L
+        private var lastTapAt = Long.MIN_VALUE / 2
         private var dragging = false
+        // A finger only starts moving the pointer after a small distance: putting it down or lifting
+        // it for a tap no longer nudges the pointer off its target.
+        private var started = false
+        private var pendX = 0f
+        private var pendY = 0f
         private val hint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = 0x55FFFFFF; textSize = 14 * d; textAlign = Paint.Align.CENTER
         }
@@ -243,9 +252,10 @@ class PadControls(
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     fingers = 1; maxFingers = 1; moved = 0f; scrollAcc = 0f
+                    started = false; pendX = 0f; pendY = 0f
                     lastX = e.x; lastY = e.y; lastT = SystemClock.uptimeMillis(); downAt = lastT
                     // Tap, then touch again quickly and move: drag (like a laptop touchpad).
-                    if (downAt - lastTapAt < 260) {
+                    if (downAt - lastTapAt < TAP_MS) {
                         dragging = true
                         send(Cmd.Button('l', true))
                     }
@@ -271,8 +281,16 @@ class PadControls(
                         while (scrollAcc >= SCROLL_STEP) { send(Cmd.Wheel(-1, 0)); scrollAcc -= SCROLL_STEP }   // fingers down = page up
                         while (scrollAcc <= -SCROLL_STEP) { send(Cmd.Wheel(1, 0)); scrollAcc += SCROLL_STEP }
                     } else if (fingers == 1) {
+                        var mx = dx
+                        var my = dy
+                        if (!started) {
+                            pendX += dx; pendY += dy
+                            if (hypot(pendX, pendY) < DEAD_ZONE) { lastX = x; lastY = y; lastT = now; return true }
+                            started = true
+                            mx = pendX; my = pendY
+                        }
                         val speed = hypot(dx, dy) / dt * 1000f
-                        move(RemoteInput.accelerate(dx, speed) * 1.4f, RemoteInput.accelerate(dy, speed) * 1.4f)
+                        move(RemoteInput.accelerate(mx, speed) * GAIN, RemoteInput.accelerate(my, speed) * GAIN)
                     }
                     lastX = x; lastY = y; lastT = now
                 }
@@ -281,8 +299,8 @@ class PadControls(
                     if (dragging) {
                         send(Cmd.Button('l', false))
                         dragging = false
-                        lastTapAt = 0
-                    } else if (e.actionMasked == MotionEvent.ACTION_UP && moved < 12f && now - downAt < 260) {
+                        lastTapAt = Long.MIN_VALUE / 2
+                    } else if (e.actionMasked == MotionEvent.ACTION_UP && moved < 12f && now - downAt < TAP_MS) {
                         if (maxFingers >= 2) send(Cmd.Click('r'))
                         else { send(Cmd.Click('l')); lastTapAt = now }
                     }
@@ -400,5 +418,11 @@ class PadControls(
     companion object {
         /** Two fingers: one wheel step per this many points of finger travel. */
         private const val SCROLL_STEP = 15f
+        /** Pointer speed (with the acceleration on top): a little slower than before, more precise. */
+        private const val GAIN = 1.15f
+        /** Points a finger moves before the pointer follows (taps stay put). */
+        private const val DEAD_ZONE = 2.5f
+        /** A tap (click) is shorter than this; also the time for tap-then-drag. */
+        private const val TAP_MS = 350L
     }
 }

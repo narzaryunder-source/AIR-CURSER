@@ -77,52 +77,12 @@ class RemotePadActivity : ComponentActivity() {
         }
         setContentView(root)
         showFinder()
-        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                if (table != null) closeTable() else finish()
-            }
-        })
     }
 
     private val wifi by lazy { LowLatencyWifi(this) }
 
-    // ---- Table keyboard (camera + hands) over the pad ----
-    private var table: TableKeyboard? = null
-    private val cameraPermission = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
-    ) { ok ->
-        if (ok) openTable() else Toast.makeText(this, "The table keyboard needs the camera", Toast.LENGTH_LONG).show()
-    }
-
-    private fun askTable() {
-        val granted = androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (granted) openTable() else cameraPermission.launch(android.Manifest.permission.CAMERA)
-    }
-
-    private fun openTable() {
-        if (table != null || conn == null) return
-        val t = TableKeyboard(this, { send(it) }, { dx, dy -> conn?.move(dx, dy) }) { closeTable() }
-        table = t
-        root.addView(t.view, FrameLayout.LayoutParams(-1, -1))
-        t.start()
-    }
-
-    private fun closeTable() {
-        val t = table ?: return
-        table = null
-        t.stop()
-        root.removeView(t.view)
-    }
-
-    override fun onStart() {
-        super.onStart()
-        startDiscovery()
-    }
-
     override fun onStop() {
         wifi.hold(false)
-        closeTable()
         stopDiscovery()
         conn?.close()
         conn = null
@@ -317,9 +277,6 @@ class RemotePadActivity : ComponentActivity() {
             .show()
     }
 
-    /** The pad is landscape (laptop layout) unless the user picked portrait. */
-    private fun landscape() = !prefs.getBoolean("portrait", false)
-
     private fun fullScreen(on: Boolean) {
         androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply {
             if (on) {
@@ -333,21 +290,12 @@ class RemotePadActivity : ComponentActivity() {
 
     private fun showPad(pcName: String) {
         wifi.hold(true)
-        closeTable()
         root.removeAllViews()
-        val land = landscape()
-        requestedOrientation = if (land) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        // Like a laptop: landscape, full screen, keyboard on the left, touchpad on the right.
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         fullScreen(true)
         val pad = PadControls(this, { send(it) }, { dx, dy -> conn?.move(dx, dy) })
-        val extras = listOf(
-            "📷  Table keyboard" to { askTable() },
-            (if (land) "⟳  Portrait" else "⟳  Landscape") to {
-                prefs.edit().putBoolean("portrait", land).apply()
-                showPad(pcName)
-            },
-        )
-        root.addView(pad.build(pcName, "Disconnect", extras, landscape = land) {
+        root.addView(pad.build(pcName, "Disconnect", landscape = true) {
             prefs.edit().remove("name").apply()
             conn?.close(); conn = null; showFinder()
         }, FrameLayout.LayoutParams(-1, -1))

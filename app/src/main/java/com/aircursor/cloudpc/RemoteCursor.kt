@@ -116,8 +116,8 @@ class RemoteCursor(
 
     private fun move(dx: Float, dy: Float) {
         if (root.width == 0) return
-        // A touchpad stroke of about 300 points crosses the screen (with the pad's acceleration).
-        val k = root.width / 420f
+        // A touchpad stroke of about 400 points crosses the screen (with the pad's acceleration).
+        val k = root.width / 470f
         tx = (tx + dx * k).coerceIn(0f, root.width - 1f)
         ty = (ty + dy * k).coerceIn(0f, root.height - 1f)
         lastMoveAt = SystemClock.uptimeMillis()
@@ -189,15 +189,17 @@ class RemoteCursor(
 
     private fun wheel(dy: Int, dx: Int) {
         if (onPhone()) {
-            // A mouse wheel event for the phone's windows (Air pages, lists): positive = up.
+            // A wheel event for the phone's windows (Air pages, lists): positive = up. Not marked as a
+            // mouse: Android sends mouse events to its own cursor position (0, 0 for a made-up event),
+            // so the scroll would land in the corner instead of under the pointer.
             val now = SystemClock.uptimeMillis()
-            val props = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_MOUSE })
+            val props = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_FINGER })
             val coords = arrayOf(MotionEvent.PointerCoords().apply {
                 x = tx; y = ty
                 setAxisValue(MotionEvent.AXIS_VSCROLL, -dy.toFloat())
                 setAxisValue(MotionEvent.AXIS_HSCROLL, dx.toFloat())
             })
-            val e = MotionEvent.obtain(now, now, MotionEvent.ACTION_SCROLL, 1, props, coords, 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0)
+            val e = MotionEvent.obtain(now, now, MotionEvent.ACTION_SCROLL, 1, props, coords, 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0)
             root.dispatchGenericMotionEvent(e)
             e.recycle()
         } else {

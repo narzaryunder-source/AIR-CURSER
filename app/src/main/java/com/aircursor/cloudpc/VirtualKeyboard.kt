@@ -50,16 +50,20 @@ class VirtualKeyboard(
     /** Keys with a second symbol on Shift, and the letter keys (they follow Shift and Caps). */
     private val charKeys = ArrayList<Pair<TextView, Pair<Char, Char>>>()
 
-    private val keyColor = 0xFF2A2F3D.toInt()
-    private val specialColor = 0xFF1F2330.toInt()
-    private val pressedColor = 0xFF4A5470.toInt()
+    // Graphite keys like a laptop's: letters a little lighter than the function keys, Enter blue.
+    private val keyColor = 0xFF353A46.toInt()
+    private val specialColor = 0xFF242833.toInt()
+    private val enterColor = 0xFF2F6BFF.toInt()
+    private val pressedColor = 0xFF5D6987.toInt()
     private val onceColor = 0xFF2F6BFF.toInt()
     private val lockedColor = 0xFF14B87A.toInt()
+    private val labelColor = 0xFFF3F5F9.toInt()
+    private val specialLabelColor = 0xFFB9C1D0.toInt()
 
     init {
         orientation = VERTICAL
-        setBackgroundColor(0xFF0B0D12.toInt())
-        setPadding(dp(3f), dp(4f), dp(3f), dp(6f))
+        setBackgroundColor(0xFF0D0F14.toInt())
+        setPadding(dp(4f), dp(4f), dp(4f), dp(6f))
         row(0.78f) {
             special("Esc", Keysyms.ESCAPE, 1.2f)
             for (i in 0 until 12) special("F${i + 1}", Keysyms.F1 + i, 1f, small = true)
@@ -78,10 +82,10 @@ class VirtualKeyboard(
             capsKey = special("Caps", 0, 1.8f) { toggleCaps() }
             for (c in "asdfghjkl") letter(c)
             for ((n, s) in ";'".zip(":\"")) char(n, s)
-            special("Enter", Keysyms.RETURN, 2f)
+            special("Enter ⏎", Keysyms.RETURN, 2f, color = enterColor)
         }
         row(1f) {
-            modifier("Shift", Keysyms.SHIFT_L, 2.3f)
+            modifier("⇧ Shift", Keysyms.SHIFT_L, 2.3f)
             for (c in "zxcvbnm") letter(c)
             for ((n, s) in ",./".zip("<>?")) char(n, s)
             special("↑", Keysyms.UP, 1.1f, repeat = true)
@@ -91,7 +95,7 @@ class VirtualKeyboard(
             modifier("Win", Keysyms.SUPER_L, 1.2f)
             modifier("Alt", Keysyms.ALT_L, 1.2f)
             special("🌐", 0, 1.1f) { releaseMods(); phoneKeyboard() }
-            special("Space", 0x20, 4.4f, repeat = true)
+            special("space", 0x20, 4.4f, repeat = true, color = keyColor)
             special("←", Keysyms.LEFT, 1.1f, repeat = true)
             special("↓", Keysyms.DOWN, 1.1f, repeat = true)
             special("→", Keysyms.RIGHT, 1.1f, repeat = true)
@@ -121,21 +125,46 @@ class VirtualKeyboard(
     }
 
     private fun key(label: String, weight: Float, color: Int, small: Boolean = false): TextView {
+        val word = label.length > 2
         val t = TextView(context).apply {
             text = label
             gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, if (big) { if (small) 13f else if (label.length > 2) 15f else 21f } else { if (small) 11f else if (label.length > 2) 13f else 17f })
-            typeface = Typeface.DEFAULT
+            setTextColor(if (color == keyColor && !word) labelColor else if (color == enterColor) Color.WHITE else specialLabelColor)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, if (big) { if (small) 12f else if (word) 13.5f else 20f } else { if (small) 11f else if (word) 12.5f else 17f })
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             isSingleLine = true
+            includeFontPadding = false
             background = pill(color)
             isHapticFeedbackEnabled = true
         }
-        current?.addView(t, LayoutParams(0, -1, weight).apply { setMargins(dp(1.5f), dp(2f), dp(1.5f), dp(2f)) })
+        current?.addView(t, LayoutParams(0, -1, weight).apply { setMargins(dp(2f), dp(2.5f), dp(2f), dp(2.5f)) })
         return t
     }
 
-    private fun pill(color: Int) = GradientDrawable().apply { cornerRadius = dp(6f).toFloat(); setColor(color) }
+    /** A key cap: a soft top highlight on the face and a darker edge below it, like a real key. */
+    private fun pill(color: Int): android.graphics.drawable.Drawable {
+        val r = dp(if (big) 8f else 6f).toFloat()
+        val edge = GradientDrawable().apply { cornerRadius = r; setColor(shade(color, 0.55f)) }
+        val face = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(shade(color, 1.16f), color)).apply {
+            cornerRadius = r
+            setStroke(1, 0x18FFFFFF)
+        }
+        return android.graphics.drawable.LayerDrawable(arrayOf(edge, face)).apply { setLayerInset(1, 0, 0, 0, dp(2f)) }
+    }
+
+    private fun shade(c: Int, f: Float): Int {
+        fun ch(v: Int) = (v * f).roundToInt().coerceIn(0, 255)
+        return Color.argb(Color.alpha(c), ch(Color.red(c)), ch(Color.green(c)), ch(Color.blue(c)))
+    }
+
+    /** Number and symbol keys: the Shift symbol small on top, the key's own below. */
+    private fun dual(normal: Char, shifted: Char): CharSequence {
+        val s = android.text.SpannableStringBuilder()
+        s.append(shifted.toString(), android.text.style.RelativeSizeSpan(0.6f), 0)
+        s.setSpan(android.text.style.ForegroundColorSpan(specialLabelColor), 0, 1, 0)
+        s.append("\n").append(normal.toString())
+        return s
+    }
 
     /** A letter: Shift or Caps make it a capital. */
     private fun letter(c: Char) {
@@ -147,6 +176,13 @@ class VirtualKeyboard(
     /** A number or symbol key with its Shift symbol. */
     private fun char(normal: Char, shifted: Char) {
         val t = key(normal.toString(), 1f, keyColor)
+        if (big) {
+            t.isSingleLine = false
+            t.maxLines = 2
+            t.setLineSpacing(0f, 0.82f)
+            t.text = dual(normal, shifted)
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+        }
         charKeys += t to (normal to shifted)
         press(t, keyColor, repeat = false) { typeChar(if (upper(false)) shifted else normal) }
     }
@@ -157,10 +193,11 @@ class VirtualKeyboard(
         weight: Float,
         small: Boolean = false,
         repeat: Boolean = false,
+        color: Int = specialColor,
         action: (() -> Unit)? = null,
     ): TextView {
-        val t = key(label, weight, specialColor, small)
-        press(t, specialColor, repeat) {
+        val t = key(label, weight, color, small)
+        press(t, color, repeat) {
             if (action != null) action() else {
                 send(Cmd.Key(sym))
                 releaseOnce()
@@ -269,6 +306,8 @@ class VirtualKeyboard(
     private fun updateLabels() {
         for ((t, pair) in charKeys) {
             val letter = pair.first.isLetter()
+            // Symbol keys in the big layout show both characters all the time.
+            if (!letter && big) continue
             t.text = (if (upper(letter)) pair.second else pair.first).toString()
         }
     }

@@ -85,6 +85,8 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        // Robolectric: real Android views in unit tests (touch routing of the remote pointer).
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
@@ -106,25 +108,7 @@ val copyCloudPcTools by tasks.registering(Copy::class) {
     into(layout.buildDirectory.dir("generated/cloudpc-assets/cloudpc"))
 }
 android.sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/cloudpc-assets").get().asFile)
-// Table keyboard (camera): downloads the MediaPipe hand landmark model into assets (only if missing).
-val downloadHandModel by tasks.registering {
-    val modelUrl =
-        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task"
-    val outFile = layout.projectDirectory.file("src/main/assets/hand_landmarker.task").asFile
-    outputs.file(outFile)
-    doLast {
-        if (!outFile.exists() || outFile.length() < 100_000L) {
-            outFile.parentFile.mkdirs()
-            logger.lifecycle("Downloading hand_landmarker.task ...")
-            URI(modelUrl).toURL().openStream().use { input ->
-                outFile.outputStream().use { output -> input.copyTo(output) }
-            }
-            logger.lifecycle("Saved ${outFile.length()} bytes to $outFile")
-        }
-    }
-}
-
-tasks.named("preBuild") { dependsOn(copyCloudPcTools, downloadHandModel) }
+tasks.named("preBuild") { dependsOn(copyCloudPcTools) }
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.09.03")
@@ -146,12 +130,6 @@ dependencies {
     // Unpacks the ready-made AirCursor PC (tar.xz).
     implementation("org.tukaani:xz:1.9")
 
-    // Table keyboard: camera + on-device hand tracking (nothing leaves the phone).
-    val cameraX = "1.3.4"
-    implementation("androidx.camera:camera-core:$cameraX")
-    implementation("androidx.camera:camera-camera2:$cameraX")
-    implementation("androidx.camera:camera-lifecycle:$cameraX")
-    implementation("com.google.mediapipe:tasks-vision:0.10.14")
     // Air browser: Mozilla's GeckoView engine (arm64 phones; same phones as AirCursor PC). A full browser
     // engine, so Google sign-in works – unlike Android's in-app WebView. Keep it current (security).
     implementation("org.mozilla.geckoview:geckoview-arm64-v8a:159.0.20261022150525")
@@ -164,4 +142,31 @@ dependencies {
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+}
+
+// Robolectric's Android jar (200 MB, only for unit tests), downloaded once from Google's Maven
+// Central mirror; tests then run offline from build/robolectric.
+val robolectricJar = "android-all-instrumented-15-robolectric-12650502-i7.jar"
+val robolectricDir = layout.buildDirectory.dir("robolectric")
+val downloadRobolectricAndroid by tasks.registering {
+    val out = robolectricDir.map { it.file(robolectricJar) }
+    outputs.file(out)
+    doLast {
+        val f = out.get().asFile
+        if (!f.exists() || f.length() < 100_000_000L) {
+            f.parentFile.mkdirs()
+            val tmp = File(f.path + ".part")
+            URI("https://maven-central.storage-download.googleapis.com/maven2/org/robolectric/android-all-instrumented/" +
+                "15-robolectric-12650502-i7/$robolectricJar").toURL().openStream().use { input ->
+                tmp.outputStream().use { output -> input.copyTo(output) }
+            }
+            tmp.renameTo(f)
+        }
+    }
+}
+tasks.withType<Test>().configureEach {
+    dependsOn(downloadRobolectricAndroid)
+    systemProperty("robolectric.offline", "true")
+    systemProperty("robolectric.dependency.dir", robolectricDir.get().asFile.absolutePath)
 }

@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 36
+    const val VERSION = 37
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -100,6 +100,8 @@ object CloudPcTools {
         put("usr/local/bin/cloudpc-security-update", SECURITY_UPDATE, exec = true)
         put("usr/local/bin/cloudpc-benchmark", BENCHMARK, exec = true)
         put("usr/local/bin/cloudpc-vscode", asset(c, "vscode.sh"), exec = true)
+        // Developer Setup: Python (pip, venv), FFmpeg, Node.js, git, compiler, and a check that works.
+        put("usr/local/bin/cloudpc-devtools", asset(c, "devtools.sh"), exec = true)
         // TS Station, the game console – for everyone, kept up to date by the app.
         for (f in listOf("server.py", "ts-station", "ts-station.svg", "VERSION")) {
             put("opt/ts-station/$f", asset(c, "tsstation/$f"), exec = f == "server.py" || f == "ts-station")
@@ -274,6 +276,11 @@ object CloudPcTools {
             "usr/share/applications/cloudpc-benchmark.desktop",
             entry("Benchmark", "cloudpc-benchmark", "utilities-system-monitor", "System;", "Test graphics speed (FPS) with your AirBoost profile"),
         )
+        put(
+            "usr/share/applications/cloudpc-devtools.desktop",
+            entry("Developer Setup", "cloudpc-devtools", "applications-development", "Development;",
+                "Install and check Python, a local web server, FFmpeg, Node.js and git for building apps and websites"),
+        )
 
         // Desktop icons (only added once, so the user can delete them). A clean desktop: the main
         // ones on it, the other tools in a "Tools" folder.
@@ -282,6 +289,7 @@ object CloudPcTools {
             "Getting-Started.desktop" to "usr/share/applications/aircursor-guide.desktop",
             "Air-Store.desktop" to "usr/share/applications/airstore.desktop",
             "Tools/Benchmark.desktop" to "usr/share/applications/cloudpc-benchmark.desktop",
+            "Tools/Developer-Setup.desktop" to "usr/share/applications/cloudpc-devtools.desktop",
             "Tools/Firefox.desktop" to "usr/share/applications/firefox.desktop",
             "Tools/Terminal.desktop" to "usr/share/applications/xfce4-terminal.desktop",
             "Tools/Change-Wallpaper.desktop" to "usr/share/applications/aircursor-wallpaper.desktop",
