@@ -90,7 +90,7 @@ run() {   # $1 = 1 for the safe second try
         elif [ $i -eq $P ] && [ $HEAVY = 1 ] && [[ "${ARGS[$i]}" == *blender* ]] && [ ! -f /root/.config/cloudpc/no-blender-preset ]; then
             # Blender on a phone's CPU-drawn screen: the cheap viewport settings (each one only if this
             # Blender version has it). Turn off: create ~/.config/cloudpc/no-blender-preset
-            cmd+=(--python-expr $'import bpy\nP = bpy.context.preferences\nfor o, k, v in ((P.system, "viewport_aa", "OFF"), (P.system, "anisotropic_filter", "FILTER_0"), (P.system, "use_overlay_smooth_wire", False), (P.system, "memory_cache_limit", 1024), (P.edit, "undo_steps", 16), (P.view, "smooth_view", 0), (P.view, "show_splash", False)):\n    try:\n        setattr(o, k, v)\n    except Exception:\n        pass\n')
+            cmd+=(--python-expr $'import bpy\nP = bpy.context.preferences\nfor o, k, v in ((P.system, "viewport_aa", "OFF"), (P.system, "anisotropic_filter", "FILTER_0"), (P.system, "use_overlay_smooth_wire", False), (P.system, "memory_cache_limit", 1024), (P.edit, "undo_steps", 16), (P.view, "smooth_view", 0), (P.view, "show_splash", False), (P.system, "use_region_overlap", False), (P.system, "use_gpu_subdivision", False), (P.view, "use_save_prompt", True)):\n    try:\n        setattr(o, k, v)\n    except Exception:\n        pass\n')
         elif [ $i -eq $P ] && [ $ELECTRON = 1 ]; then
             # Electron apps – first try: no zygote and no GPU process = 3 programs fewer, software
             # drawing. Second try: Chromium's normal start (only the sandbox off).
@@ -165,6 +165,15 @@ fi
 # session helper rests.
 GAME_ON=0
 if [ $GAME = 1 ] && [ $HEAVY = 0 ]; then echo "$$" > /tmp/cloudpc-game-on; GAME_ON=1; fi
+# Heavy apps (Blender, video editors, Krita, Godot…): the phone's CPU for them. The desktop's own
+# helpers get the lowest priority (they still run when the app is idle), and the phone puts its Air
+# windows away (its browser engine uses CPU and memory too). Off: ~/.config/cloudpc/no-heavy-mode
+if [ $HEAVY = 1 ] && [ ! -f /root/.config/cloudpc/no-heavy-mode ]; then
+    for p in xfdesktop xfce4-panel Thunar thunar tumblerd xfsettingsd xfce4-notifyd xfce4-power-manager; do
+        for pid in $(pgrep -x "$p" 2>/dev/null); do renice -n 15 -p "$pid" >/dev/null 2>&1; done
+    done
+    (printf '%s' "aircursor-web:air:minimize" | timeout 15 xclip -quiet -selection clipboard >/dev/null 2>&1 &)
+fi
 restore_resolution() {
     if [ $GAME_ON = 1 ]; then
         GAME_ON=0

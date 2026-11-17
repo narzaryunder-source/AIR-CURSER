@@ -57,6 +57,9 @@ class RemoteCursor(
     private val charMap: KeyCharacterMap = KeyCharacterMap.load(KeyCharacterMap.VIRTUAL_KEYBOARD)
 
     init {
+        // Above Air windows and the dock, which are raised (elevation) over the PC picture.
+        elevation = 2000f * d
+        outlineProvider = null
         isClickable = false
         isFocusable = false
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO

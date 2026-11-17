@@ -707,10 +707,30 @@ class CloudPcDesktopActivity : ComponentActivity() {
         val y = sy - loc[1]
         for (i in rootLayout.childCount - 1 downTo 0) {
             val c = rootLayout.getChildAt(i)
-            if (c === view || c === boot || c === remoteCursor || c.visibility != View.VISIBLE) continue
-            if (x >= c.x && x < c.x + c.width && y >= c.y && y < c.y + c.height) return true
+            if (c === view || c === boot || c === remoteCursor) continue
+            if (showsAt(c, x - c.x, y - c.y)) return true
         }
         return false
+    }
+
+    /**
+     * True when [v] shows something at (x, y) in its own coordinates. Empty, see-through layers
+     * that fill the screen (the layer that holds Air windows, for example) do not count: only
+     * what is drawn there (a window, a button, a picture, a coloured panel) does.
+     */
+    private fun showsAt(v: View, x: Float, y: Float): Boolean {
+        if (v.visibility != View.VISIBLE || v.alpha < 0.05f) return false
+        if (x < 0f || y < 0f || x >= v.width || y >= v.height) return false
+        if (v is android.view.ViewGroup) {
+            for (i in v.childCount - 1 downTo 0) {
+                val c = v.getChildAt(i)
+                if (showsAt(c, x + v.scrollX - c.x, y + v.scrollY - c.y)) return true
+            }
+            val bg = v.background
+            val clear = bg == null || (bg is android.graphics.drawable.ColorDrawable && android.graphics.Color.alpha(bg.color) == 0)
+            return !clear || v.isClickable
+        }
+        return true
     }
 
     /** The PC toolbar, the assistant and the lock screen stay above Air's windows. */
