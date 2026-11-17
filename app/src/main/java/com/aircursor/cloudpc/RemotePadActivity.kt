@@ -275,7 +275,11 @@ class RemotePadActivity : ComponentActivity() {
                 if (conn !== c) return@post
                 if (ok) {
                     prefs.edit().putString("name", name).putString("code", code).putString("addr", "$host:$port").apply()
-                    showPad(pcName ?: name)
+                    // "Model|v81": the PC phone's app version. No version = older than this check.
+                    val parts = (pcName ?: name).split("|v")
+                    val pcVersion = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                    showPad(parts[0].ifBlank { name })
+                    if (pcVersion < com.aircursor.BuildConfig.VERSION_CODE) warnOldPc(pcVersion)
                 } else {
                     conn = null
                     prefs.edit().remove("code").apply()
@@ -297,6 +301,21 @@ class RemotePadActivity : ComponentActivity() {
     // ---- The keyboard and touchpad (shared with Monitor mode) ----
 
     private fun send(cmd: Cmd) = conn?.send(cmd)
+
+    /** The PC phone runs an older AirCursor: the pointer and click fixes live on that phone. */
+    private fun warnOldPc(pcVersion: Int) {
+        val mine = com.aircursor.BuildConfig.VERSION_NAME
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Update the PC phone")
+            .setMessage(
+                "The phone that runs AirCursor PC has an older AirCursor" +
+                    (if (pcVersion > 0) " (1.0.$pcVersion)" else "") + " than this phone ($mine).\n\n" +
+                    "The pointer over the dock and windows, and clicking there, are drawn by that phone. " +
+                    "Install the same AirCursor version on it, close AirCursor PC there and open it again.",
+            )
+            .setPositiveButton("OK", null)
+            .show()
+    }
 
     /** The pad is landscape (laptop layout) unless the user picked portrait. */
     private fun landscape() = !prefs.getBoolean("portrait", false)

@@ -147,7 +147,7 @@ class RemoteInputHost(
                 return
             }
             wrong = 0
-            out.write("OK " + (Build.MODEL ?: "AirCursor PC").replace('\n', ' ') + "\n"); out.flush()
+            out.write("OK " + (Build.MODEL ?: "AirCursor PC").replace('\n', ' ').replace('|', ' ') + "|v" + com.aircursor.BuildConfig.VERSION_CODE + "\n"); out.flush()
             val name = sock.inetAddress?.hostAddress ?: "phone"
             wifi.hold(true)
             post(name)
