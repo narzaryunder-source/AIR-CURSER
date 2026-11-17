@@ -6,7 +6,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.RectF
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyCharacterMap
@@ -280,10 +279,12 @@ class RemoteCursor(
     // ---- drawing ----
 
     private val arrow = Path()
-    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.FILL }
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        style = Paint.Style.FILL
+        setShadowLayer(3f * d, 0f, 1.5f * d, 0x99000000.toInt())
+    }
     private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; style = Paint.Style.STROKE; strokeWidth = 1.4f * d; strokeJoin = Paint.Join.ROUND }
-    private val bmpPaint = Paint(Paint.FILTER_BITMAP_FLAG)
-    private val rect = RectF()
 
     override fun onDraw(canvas: Canvas) {
         // Glide to the target: quick, but no jumps when moves arrive in bursts.
@@ -294,17 +295,9 @@ class RemoteCursor(
             drawY += gy * 0.55f
             postInvalidateOnAnimation()
         }
-        val shape = DesktopInput.cursorShape
-        if (!onPhone() && shape != null && !shape.isRecycled) {
-            // Over the PC: the PC's own pointer picture (text cursor, hand, resize arrows…).
-            val s = DesktopInput.desktopScale
-            val x = drawX - DesktopInput.cursorHotX * s
-            val y = drawY - DesktopInput.cursorHotY * s
-            rect.set(x, y, x + shape.width * s, y + shape.height * s)
-            canvas.drawBitmap(shape, null, rect, bmpPaint)
-            return
-        }
-        val u = d * 1.15f
+        // Always our own clear arrow, above the dock and every window (not the PC's dark pointer,
+        // which looked as if it were behind the dock).
+        val u = d * 1.35f
         arrow.rewind()
         arrow.moveTo(drawX, drawY)
         arrow.lineTo(drawX, drawY + 17 * u)
