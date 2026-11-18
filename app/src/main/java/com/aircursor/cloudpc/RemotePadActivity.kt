@@ -57,7 +57,7 @@ class RemotePadActivity : ComponentActivity() {
     private val nsd by lazy { getSystemService(NsdManager::class.java) }
     private var discovery: NsdManager.DiscoveryListener? = null
     private val found = LinkedHashMap<String, NsdServiceInfo>()
-    private var conn: Connection? = null
+    private var conn: com.aircursor.core.RemoteLink? = null
     private lateinit var root: FrameLayout
     private lateinit var status: TextView
     private val d by lazy { resources.displayMetrics.density }
@@ -227,7 +227,7 @@ class RemotePadActivity : ComponentActivity() {
 
     private fun connect(host: String, port: Int, code: String, name: String) {
         conn?.close()
-        val c = Connection(host, port, code)
+        val c = com.aircursor.core.RemoteLink(host, port, code)
         conn = c
         status.text = "Connecting to $name…"
         c.open { ok, pcName ->
@@ -318,68 +318,5 @@ class RemotePadActivity : ComponentActivity() {
         setTextColor(Color.WHITE)
         background = pill(0xFF2B3040.toInt())
         setOnClickListener { onClick() }
-    }
-
-    /** The link to the PC phone: one writer thread, pointer moves merged, a ping every 4 s. */
-    private class Connection(private val host: String, private val port: Int, private val code: String) {
-        private val queue = LinkedBlockingQueue<String>()
-        @Volatile private var sock: Socket? = null
-        @Volatile private var closed = false
-        private var mdx = 0f
-        private var mdy = 0f
-        private val lock = Object()
-        var onClosed: (() -> Unit)? = null
-
-        fun open(done: (Boolean, String?) -> Unit) {
-            Thread({
-                try {
-                    val s = Socket()
-                    s.connect(InetSocketAddress(host, port), 5000)
-                    s.tcpNoDelay = true
-                    s.soTimeout = 6000
-                    val out = OutputStreamWriter(s.getOutputStream(), Charsets.UTF_8)
-                    val input = BufferedReader(InputStreamReader(s.getInputStream(), Charsets.UTF_8))
-                    out.write(RemoteInput.hello(code) + "\n"); out.flush()
-                    val answer = input.readLine() ?: ""
-                    if (!answer.startsWith("OK")) {
-                        s.close()
-                        done(false, if (answer == "NO") "NO" else null)
-                        return@Thread
-                    }
-                    sock = s
-                    done(true, answer.removePrefix("OK").trim().ifEmpty { null })
-                    writeLoop(s, out)
-                } catch (_: Exception) {
-                    if (sock == null) done(false, null)
-                } finally {
-                    if (!closed) { closed = true; onClosed?.invoke() }
-                }
-            }, "remote-pad").start()
-        }
-
-        private fun writeLoop(s: Socket, out: OutputStreamWriter) {
-            var lastPing = SystemClock.uptimeMillis()
-            while (!closed) {
-                val line = queue.poll(8, TimeUnit.MILLISECONDS)
-                val move = synchronized(lock) {
-                    if (mdx != 0f || mdy != 0f) Cmd.Move(mdx, mdy).also { mdx = 0f; mdy = 0f } else null
-                }
-                if (move != null) out.write(RemoteInput.encode(move) + "\n")
-                if (line != null) out.write(line + "\n")
-                val now = SystemClock.uptimeMillis()
-                if (now - lastPing > 4000) { out.write("P\n"); lastPing = now }
-                if (move != null || line != null || now == lastPing) out.flush()
-            }
-            s.close()
-        }
-
-        fun move(dx: Float, dy: Float) = synchronized(lock) { mdx += dx; mdy += dy }
-
-        fun send(c: Cmd) { if (!closed) queue.offer(RemoteInput.encode(c)) }
-
-        fun close() {
-            closed = true
-            try { sock?.close() } catch (_: Exception) {}
-        }
     }
 }

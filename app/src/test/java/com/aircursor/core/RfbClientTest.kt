@@ -163,3 +163,17 @@ class RfbClientTest {
         RfbClient(ByteArrayInputStream(server(2, 2, security = listOf(2)) {}), ByteArrayOutputStream()).handshake()
     }
 }
+
+class RfbPacingTest {
+    @org.junit.Test
+    fun pacingWaitsOnlyWithoutRecentInput() {
+        val now = 10_000_000_000L
+        val last = now - 5_000_000L   // last update asked 5 ms ago
+        // 30 FPS pacing, no input: wait the rest of the 33 ms.
+        org.junit.Assert.assertEquals(28L, pacingWaitMs(last, 33, now, 0L))
+        // Typing just now: no wait.
+        org.junit.Assert.assertEquals(0L, pacingWaitMs(last, 33, now, now + INPUT_WINDOW_NS))
+        // No pacing set.
+        org.junit.Assert.assertEquals(0L, pacingWaitMs(last, 0, now, 0L))
+    }
+}

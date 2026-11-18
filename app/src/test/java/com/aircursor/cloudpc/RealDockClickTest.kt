@@ -20,7 +20,12 @@ import java.io.File
 @Config(sdk = [35], qualifiers = "w800dp-h400dp-land")
 class RealDockClickTest {
     @Test
-    fun pointerClickOnDockIconLaunchesTheApp() {
+    fun aClickJustAboveTheIconOpensItToo() = pointerClickOnDockIconLaunchesTheApp(aboveDock = true)
+
+    @Test
+    fun pointerClickOnDockIconLaunchesTheApp() = pointerClickOnDockIconLaunchesTheApp(aboveDock = false)
+
+    private fun pointerClickOnDockIconLaunchesTheApp(aboveDock: Boolean) {
         val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
         val rootfs = CloudPcEngine.rootfs(activity)
         File(rootfs, "root/.config/xfce4").mkdirs()
@@ -31,8 +36,6 @@ class RealDockClickTest {
         )
         val root = FrameLayout(activity)
         val commands = ArrayList<String>()
-        val desktop = View(activity)
-        root.addView(desktop, FrameLayout.LayoutParams(-1, -1))
         activity.setContentView(root)
         AirShell(activity, root, object : AirShell.Actions {
             override fun runPc(cmd: String) { commands += cmd }
@@ -68,7 +71,7 @@ class RealDockClickTest {
             var hit = false
             for (i in root.childCount - 1 downTo 0) {
                 val c = root.getChildAt(i)
-                if (c === desktop || c is RemoteCursor || c.visibility != View.VISIBLE) continue
+                if (c is RemoteCursor || c.visibility != View.VISIBLE) continue
                 if (x >= c.x && x < c.x + c.width && y >= c.y && y < c.y + c.height && (c.background != null || c.isClickable)) hit = true
             }
             hit
@@ -85,7 +88,9 @@ class RealDockClickTest {
             pv = pv.parent as View
         }
         val cx = ox + icon.width / 2f
-        val cy = oy + icon.height / 2f
+        // Above the dock: 4 px over its top edge, on the PC picture (any part of the arrow on the icon).
+        val dockTop = oy - icon.top - (icon.parent as View).top - ((icon.parent as View).parent as View).top
+        val cy = if (aboveDock) dockTop - 4f else oy + icon.height / 2f
 
         cursor.apply(Cmd.Move(0f, 0f))
         looper.idle()

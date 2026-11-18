@@ -36,6 +36,8 @@ class RemoteInputHost(
     @Volatile private var client: Socket? = null
     private var registration: NsdManager.RegistrationListener? = null
     private var wrong = 0
+    private val pump = com.aircursor.core.InputPump()
+    private val drain = Runnable { pump.drain { onCommand(it) } }
     private val wifi = LowLatencyWifi(context)
 
     /** The code stays the same between starts, so a paired phone reconnects by itself. */
@@ -155,7 +157,8 @@ class RemoteInputHost(
             while (client === sock) {
                 val line = try { input.readLine() } catch (_: SocketTimeoutException) { break } ?: break
                 val cmd = RemoteInput.parse(line) ?: continue
-                if (cmd != RemoteInput.Cmd.Ping) main.post { onCommand(cmd) }
+                // Ahead of the drawing work on the screen thread; moves merged while it is busy.
+                if (pump.offer(cmd)) main.postAtFrontOfQueue(drain)
             }
         } catch (_: Exception) {
         } finally {

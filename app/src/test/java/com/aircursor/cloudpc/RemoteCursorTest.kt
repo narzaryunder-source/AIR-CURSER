@@ -99,4 +99,32 @@ class RemoteCursorTest {
         s.idle()
         assertTrue("scroll event on the icon", s.scrolls > 0)
     }
+
+    @Test
+    fun aClickInAPageNextToAButtonStaysInThePage() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val root = FrameLayout(activity)
+        var buttonClicks = 0
+        var pageTouches = 0
+        // A page (one leaf view, like the browser's picture) with a toolbar button right above it.
+        val window = FrameLayout(activity).apply { background = ColorDrawable(0xFF101010.toInt()) }
+        val button = View(activity).apply { setOnClickListener { buttonClicks++ } }
+        val page = View(activity).apply { setOnTouchListener { _, _ -> pageTouches++; true } }
+        window.addView(button, FrameLayout.LayoutParams(100, 40).apply { leftMargin = 300; topMargin = 0 })
+        window.addView(page, FrameLayout.LayoutParams(-1, -1).apply { topMargin = 40 })
+        root.addView(window, FrameLayout.LayoutParams(800, 600).apply { leftMargin = 100; topMargin = 100 })
+        val cursor = RemoteCursor(activity, root, { null }, { x, y -> x >= 100 && x < 900 && y >= 100 && y < 700 })
+        root.addView(cursor, FrameLayout.LayoutParams(-1, -1))
+        activity.setContentView(root)
+        root.measure(View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.EXACTLY))
+        root.layout(0, 0, 1000, 1000)
+        // Tip on the page, 3 px under the button.
+        cursor.apply(Cmd.Move(0f, 0f))
+        val k = 1000 / 470f
+        cursor.apply(Cmd.Move((450f - 500f) / k, (143f - 500f) / k))
+        cursor.apply(Cmd.Click('l'))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("the button next to the tip is not clicked", 0, buttonClicks)
+        assertTrue("the page got the tap", pageTouches > 0)
+    }
 }

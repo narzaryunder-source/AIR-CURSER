@@ -193,11 +193,26 @@ class RfbClient(input: InputStream, output: OutputStream) {
     @Volatile var minFrameIntervalMs = 0L
     private var lastRequestNs = 0L
 
+    /** Until then (System.nanoTime) the person is typing or pointing: screen updates without pacing. */
+    @Volatile private var inputUntilNs = 0L
+
+    /**
+     * Keys and pointer moves were just sent: the next screen update is asked for at once, so what
+     * you type shows up immediately (the steady-FPS pacing is for animations and games).
+     */
+    fun inputNow() {
+        inputUntilNs = System.nanoTime() + INPUT_WINDOW_NS
+        // A pacing pause in progress ends now.
+        synchronized(pace) { pace.notifyAll() }
+    }
+
+    private val pace = Object()
+
     private fun requestNext() {
-        val gap = minFrameIntervalMs
-        if (gap > 0) {
-            val waitMs = (lastRequestNs + gap * 1_000_000 - System.nanoTime()) / 1_000_000
-            if (waitMs in 1..1000) Thread.sleep(waitMs)
+        while (true) {
+            val waitMs = pacingWaitMs(lastRequestNs, minFrameIntervalMs, System.nanoTime(), inputUntilNs)
+            if (waitMs <= 0) break
+            synchronized(pace) { pace.wait(waitMs) }
         }
         lastRequestNs = System.nanoTime()
         requestUpdate(incremental = true)
@@ -396,4 +411,13 @@ object Keysyms {
         codePoint in 0x20..0x7e || codePoint in 0xa0..0xff -> codePoint
         else -> 0x01000000 or codePoint
     }
+}
+
+/** How long screen updates wait for the steady-FPS pacing: none right after input (typing, pointing). */
+internal const val INPUT_WINDOW_NS = 300_000_000L
+
+internal fun pacingWaitMs(lastRequestNs: Long, gapMs: Long, nowNs: Long, inputUntilNs: Long): Long {
+    if (gapMs <= 0 || nowNs < inputUntilNs) return 0
+    val waitMs = (lastRequestNs + gapMs * 1_000_000 - nowNs) / 1_000_000
+    return if (waitMs in 1..1000) waitMs else 0
 }

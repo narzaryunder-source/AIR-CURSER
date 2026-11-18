@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RectF
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyCharacterMap
@@ -133,6 +134,7 @@ class RemoteCursor(
     private fun button(b: Char, down: Boolean) {
         if (b == 'l') {
             if (down) {
+                snapToButton()
                 if (onPhone()) {
                     focusPhone()
                     phoneDownAt = SystemClock.uptimeMillis()
@@ -152,6 +154,7 @@ class RemoteCursor(
     }
 
     private fun click(b: Char) {
+        snapToButton()
         if (onPhone()) {
             focusPhone()
             if (b == 'l') {
@@ -166,6 +169,93 @@ class RemoteCursor(
             focusDesktop()
             val v = desktop() ?: return
             if (b == 'l') v.click(screenX(), screenY(), RfbClient.BUTTON_LEFT) else { v.hover(screenX(), screenY()); v.remoteClick(b) }
+        }
+    }
+
+    // ---- a click near a button lands on it (any part of the arrow over the dock icon counts) ----
+
+    /** The deepest visible view of the phone at (x, y) in root coordinates, with its bounds there. */
+    private fun deepestAt(v: View, x: Float, y: Float, ox: Float, oy: Float): Pair<View, RectF>? {
+        if (v.visibility != VISIBLE || v.alpha < 0.05f || v === this) return null
+        val l = ox + v.left + v.translationX
+        val t = oy + v.top + v.translationY
+        if (x < l || y < t || x >= l + v.width || y >= t + v.height) return null
+        if (v is android.view.ViewGroup) {
+            for (i in v.childCount - 1 downTo 0) {
+                val hit = deepestAt(v.getChildAt(i), x, y, l - v.scrollX, t - v.scrollY) ?: continue
+                // An empty, see-through layer: what is under it counts.
+                if (seeThrough(hit.first)) continue
+                return hit
+            }
+        }
+        return v to RectF(l, t, l + v.width, t + v.height)
+    }
+
+    private fun seeThrough(v: View) = v is android.view.ViewGroup && v.background == null && !clickable(v)
+
+    private fun phoneViewAt(x: Float, y: Float): Pair<View, RectF>? {
+        val pc = desktop()
+        for (i in root.childCount - 1 downTo 0) {
+            val c = root.getChildAt(i)
+            if (c === this || c === pc) continue
+            val hit = deepestAt(c, x, y, 0f, 0f) ?: continue
+            // A full-screen see-through layer (holds Air windows): look further down.
+            if (seeThrough(hit.first)) continue
+            return hit
+        }
+        return null
+    }
+
+    /** Bounds of [v] in root coordinates (null if it is not inside the root). */
+    private fun rectOf(v: View): RectF? {
+        var x = 0f
+        var y = 0f
+        var c: View = v
+        while (c !== root) {
+            val p = c.parent as? View ?: return null
+            x += c.left + c.translationX - p.scrollX
+            y += c.top + c.translationY - p.scrollY
+            c = p
+        }
+        return RectF(x, y, x + v.width, y + v.height)
+    }
+
+    private fun clickable(v: View): Boolean = v.isClickable || v.hasOnClickListeners() || v.isLongClickable
+
+    /**
+     * When the arrow's tip is just off a button of the phone (the PC picture next to the dock, or the
+     * dock's own glass between icons), the click goes to the nearest button the arrow touches. Never
+     * inside web pages or the PC picture's own content, where the tip is exact.
+     */
+    private fun snapToButton() {
+        val at = phoneViewAt(tx, ty)
+        if (at != null) {
+            val (v, _) = at
+            if (clickable(v)) return
+            // Web pages, pictures, text: leaves of the view tree, exact tip.
+            if (v !is android.view.ViewGroup) return
+        }
+        val u = d
+        val probes = floatArrayOf(
+            0f, 6f, 3f, 10f, 0f, 12f, 6f, 15f,      // along the arrow's body
+            0f, -8f, -8f, 0f, 8f, 0f, 0f, 8f,       // around the tip
+            -6f, -6f, 6f, -6f, -6f, 6f, 6f, 6f,
+        )
+        var i = 0
+        while (i < probes.size) {
+            val px = tx + probes[i] * u
+            val py = ty + probes[i + 1] * u
+            i += 2
+            val hit = phoneViewAt(px, py) ?: continue
+            // The button may be a parent of what is under the probe (an icon inside a box).
+            var v: View? = hit.first
+            while (v != null && v !== root && !clickable(v)) v = v.parent as? View
+            if (v == null || v === root) continue
+            val r = rectOf(v) ?: continue
+            tx = tx.coerceIn(r.left + 1f, r.right - 2f)
+            ty = ty.coerceIn(r.top + 1f, r.bottom - 2f)
+            postInvalidateOnAnimation()
+            return
         }
     }
 
@@ -293,8 +383,8 @@ class RemoteCursor(
         val gx = tx - drawX
         val gy = ty - drawY
         if (kotlin.math.abs(gx) < 0.5f && kotlin.math.abs(gy) < 0.5f) { drawX = tx; drawY = ty } else {
-            drawX += gx * 0.55f
-            drawY += gy * 0.55f
+            drawX += gx * 0.75f
+            drawY += gy * 0.75f
             postInvalidateOnAnimation()
         }
         // Always our own clear arrow, above the dock and every window (not the PC's dark pointer,

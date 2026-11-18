@@ -377,6 +377,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
 
     private fun sendPointer(x: Int, y: Int, mask: Int) {
         lastInputMs = SystemClock.uptimeMillis()
+        client?.inputNow()
         if (!pointerSeen || x != lastFbX || y != lastFbY) {
             pointerSeen = true
             lastFbX = x
@@ -394,6 +395,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
 
     private fun sendMoveCoalesced(x: Int, y: Int) {
         lastInputMs = SystemClock.uptimeMillis()
+        client?.inputNow()
         lastFbX = x
         lastFbY = y
         pointerSeen = true
@@ -426,6 +428,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
     fun sendKey(keysym: Int) {
         lastInputMs = SystemClock.uptimeMillis()
         val c = client ?: return
+        c.inputNow()
         val mods = sticky.toList()
         sticky.clear()
         onStickyChanged?.invoke()
@@ -442,6 +445,7 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
 
     private fun sendKeyState(keysym: Int, down: Boolean) {
         val c = client ?: return
+        c.inputNow()
         sender.execute {
             try {
                 c.key(keysym, down)
