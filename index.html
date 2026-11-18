@@ -149,6 +149,10 @@ footer {
   .stop::before { content: ""; position: absolute; left: 0; right: 0; height: 60vh; margin-top: -22vh; background: linear-gradient(to bottom, transparent, rgba(8, 7, 15, 0.85) 45%); z-index: -1; pointer-events: none; }
   .stop { position: relative; }
 }
+/* promo pictures: the scene alone on a clear background */
+.capture .bar, .capture .dots, .capture main, .capture footer { display: none; }
+.capture body { background: transparent; }
+:root.capture { color-scheme: light; background: transparent; }
 /* without 3D the words need no room kept free for a scene */
 .no3d .stop { padding-block: 110px 64px; }
 .no3d .stop::before { display: none; }
@@ -241,7 +245,7 @@ footer {
     <div class="copy">
       <div class="tag">Free for everyone</div>
       <h2>Carry a PC. <span class="glow">Leave the laptop.</span></h2>
-      <p>Install the app, tap Install PC, and your desktop is ready.</p>
+      <p>Install the app, set up the PC once, and your desktop is ready.</p>
       <div class="actions"><a class="btn primary" href="https://github.com/narzaryunder-source/AIR-CURSER/releases/latest/download/AirCursor.apk">Download AirCursor</a></div>
       <div class="chips"><span>Android 8.0+</span><span>64-bit phones</span><span>Free</span></div>
     </div>
@@ -257,6 +261,12 @@ footer {
 <script>
 (() => {
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // Promo pictures: ?still=<stop>&t=<s>&zoom=&dx=&dy= renders one stop alone (no page, clear background).
+  // ?hq renders at full screen sharpness (for the promo video).
+  const Q = new URLSearchParams(location.search);
+  const CAPTURE = Q.has("still");
+  const HQ = CAPTURE || Q.has("hq");
+  if (CAPTURE) document.documentElement.classList.add("capture");
 
   // ---------------- 2D helpers ----------------
   function rr(c, x, y, w, h, r) {
@@ -581,7 +591,7 @@ footer {
   } catch (e) { still(); return; }
 
   const small = Math.min(innerWidth, innerHeight) < 600;
-  renderer.setPixelRatio(Math.min(small ? 1.5 : 2, window.devicePixelRatio || 1));
+  renderer.setPixelRatio(HQ ? (window.devicePixelRatio || 1) : Math.min(small ? 1.5 : 2, window.devicePixelRatio || 1));
   renderer.outputEncoding = THREE.sRGBEncoding;
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0x08070f, 40, 95);
@@ -731,7 +741,7 @@ footer {
   dc.fillStyle = rg; dc.fillRect(0, 0, 64, 64);
   const dotTex = new THREE.CanvasTexture(dotCv);
   // stars
-  const STARS = small ? 450 : 900;
+  const STARS = small && !HQ ? 450 : 900;
   const sp = new Float32Array(STARS * 3), scol = new Float32Array(STARS * 3);
   for (let i = 0; i < STARS; i++) {
     const r = 45 + rnd() * 60, th = rnd() * Math.PI * 2, ph = Math.acos(2 * rnd() - 1);
@@ -777,6 +787,8 @@ footer {
   const PC_X = { browser: 3.8, build: 4.6 };
   const WIN = [[-1.4, 4.4, 0, 0.3], [8.4, 4.6, -3, -0.25], [0.6, -5.2, 2, 0.32]];
   const MON = [-4.2, 3, -7];
+  // middle of each stop's scene, for promo pictures
+  const CAP = [[4.2, -0.8], [-2.8, 0.3], [3.6, 0], [-4.2, -1.2], [4.6, 1.2], [-3.4, -0.5], [1.2, 0], [0, 5]];
   const kf = K.map((k) => Object.assign({}, DEF, k));
   const mixA = (a, b, u) => a.map((v, i) => lerp(v, b[i], u));
 
@@ -797,7 +809,7 @@ footer {
     const w = innerWidth, h = innerHeight;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
-    narrow = w < 820 || w / h < 0.9;
+    narrow = !CAPTURE && (w < 820 || w / h < 0.9);
     camera.updateProjectionMatrix();
     measure();
   }
@@ -825,9 +837,9 @@ footer {
   }
 
   function frame(now) {
-    const time = (now - t0) / 1000;
-    const want = tourAt();
-    f = reduce ? want : f + (want - f) * 0.085;
+    const time = CAPTURE ? +(Q.get("t") || 7.6) : (now - t0) / 1000;
+    const want = CAPTURE ? +Q.get("still") : tourAt();
+    f = reduce || CAPTURE ? want : f + (want - f) * 0.085;
     const i = Math.min(kf.length - 2, Math.floor(f));
     const u = ease(f - i);
     const A = kf[i], B = kf[i + 1];
@@ -839,9 +851,17 @@ footer {
     const dist = cam[2] * (narrow ? Math.max(1.25, 0.95 / camera.aspect) : 1);
     const lift = narrow ? 0.42 * dist * Math.tan((camera.fov / 2) * Math.PI / 180) : 0;
     sx += (px - sx) * 0.05; sy += (py - sy) * 0.05;
-    camera.position.set(cam[0] * nx + sx * 1.6, cam[1] - sy * 1.0, dist);
-    camera.lookAt(tmp.set(tgt[0] * nx, tgt[1] - lift, tgt[2]));
-    scene.fog.near = dist + 4; scene.fog.far = dist + 60;   // the haze starts behind the scene
+    if (CAPTURE) {
+      // aim at the middle of this stop's scene (the words are not there)
+      const c = CAP[Math.round(f)], z = cam[2] * +(Q.get("zoom") || 1);
+      camera.position.set(cam[0], cam[1], z);
+      camera.lookAt(tmp.set(c[0] + +(Q.get("dx") || 0), c[1] + +(Q.get("dy") || 0), tgt[2]));
+      scene.fog.near = z + 4; scene.fog.far = z + 60;
+    } else {
+      camera.position.set(cam[0] * nx + sx * 1.6, cam[1] - sy * 1.0, dist);
+      camera.lookAt(tmp.set(tgt[0] * nx, tgt[1] - lift, tgt[2]));
+      scene.fog.near = dist + 4; scene.fog.far = dist + 60;   // the haze starts behind the scene
+    }
 
     const pcP = mixA(A.pc, B.pc, u), kbP = mixA(A.kb, B.kb, u);
     const bob = reduce ? 0 : Math.sin(time * 0.8) * 0.18;
@@ -853,7 +873,7 @@ footer {
     // the PC screen: the look of the nearest stop
     const scr = (u < 0.5 ? A : B).screen;
     if (scr !== lastScreen) { lastScreen = scr; screenT0 = time; }
-    const st = reduce ? 7.6 : (scr === "story" ? (time % 11.5) : time - screenT0);
+    const st = reduce ? 7.6 : CAPTURE ? time : (scr === "story" ? (time % 11.5) : time - screenT0);
     pc.clearRect(0, 0, AW, AH); pc.save(); rr(pc, 0, 0, AW, AH, 44); pc.clip(); SCREENS[scr](pc, st); pc.restore();
     pcTex.needsUpdate = true; monTex.needsUpdate = true;
     if (kbPhone.visible) { drawKB(reduce ? 7.6 : time % 11.5); kbTex.needsUpdate = true; }
@@ -919,7 +939,7 @@ footer {
     ring2.rotation.set(1.1, reduce ? 0 : -time * 0.1, -0.3);
     // sparks from the keyboard phone to the PC phone, arcing out to one side
     const spa = m("spark") * (kbPhone.visible ? 1 : 0);
-    sparkMat.opacity += (spa * 0.95 - sparkMat.opacity) * 0.1;
+    sparkMat.opacity = CAPTURE ? spa * 0.95 : sparkMat.opacity + (spa * 0.95 - sparkMat.opacity) * 0.1;
     if (sparkMat.opacity > 0.01) {
       dir.subVectors(pcPhone.position, kbPhone.position).normalize();
       sparkCurve.v0.copy(kbPhone.position).addScaledVector(dir, 3 * kbPhone.scale.x);
