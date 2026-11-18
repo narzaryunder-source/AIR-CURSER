@@ -127,4 +127,35 @@ class RemoteCursorTest {
         assertEquals("the button next to the tip is not clicked", 0, buttonClicks)
         assertTrue("the page got the tap", pageTouches > 0)
     }
+
+    @Test
+    fun twoFingerScrollingScrollsAPageLikeAFinger() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val root = FrameLayout(activity)
+        // A window with a long list (a page), like YouTube in an Air window.
+        val list = android.widget.ScrollView(activity).apply { background = ColorDrawable(0xFF202020.toInt()) }
+        val content = android.widget.LinearLayout(activity).apply { orientation = android.widget.LinearLayout.VERTICAL }
+        repeat(60) { content.addView(android.widget.TextView(activity).apply { text = "Row $it"; height = 60 }, android.widget.LinearLayout.LayoutParams(-1, 60)) }
+        list.addView(content)
+        root.addView(list, FrameLayout.LayoutParams(800, 600).apply { leftMargin = 100; topMargin = 100 })
+        val cursor = RemoteCursor(activity, root, { null }, { x, y -> x >= 100 && x < 900 && y >= 100 && y < 700 })
+        root.addView(cursor, FrameLayout.LayoutParams(-1, -1))
+        activity.setContentView(root)
+        root.measure(View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.EXACTLY))
+        root.layout(0, 0, 1000, 1000)
+        val looper = shadowOf(Looper.getMainLooper())
+        cursor.apply(Cmd.Move(0f, 0f))   // pointer in the middle of the list
+        val tipX = javaClass.let { RemoteCursor::class.java.getDeclaredField("tx").apply { isAccessible = true }.get(cursor) }
+        // Two fingers moving up 120 points, in steps, then lifted.
+        repeat(12) {
+            cursor.apply(Cmd.Scroll(0f, -10f))
+            looper.idleFor(java.time.Duration.ofMillis(16))
+        }
+        cursor.apply(Cmd.ScrollEnd)
+        looper.idleFor(java.time.Duration.ofMillis(50))
+        // 120 points of finger movement, scaled to this screen like the pointer, minus the touch slop.
+        val expected = 120f * root.width / 470f * RemoteCursor.SWIPE_GAIN - android.view.ViewConfiguration.get(activity).scaledTouchSlop
+        assertTrue("the list scrolled down like a finger swipe (${list.scrollY} of ~$expected)", list.scrollY >= expected * 0.85f)
+        assertEquals("the pointer stayed where it was", tipX, RemoteCursor::class.java.getDeclaredField("tx").apply { isAccessible = true }.get(cursor))
+    }
 }

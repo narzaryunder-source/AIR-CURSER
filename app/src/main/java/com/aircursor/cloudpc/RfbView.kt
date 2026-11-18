@@ -577,6 +577,43 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
         repeat(kotlin.math.abs(dx)) { wheel(lastFbX, lastFbY, if (dx > 0) WHEEL_RIGHT else WHEEL_LEFT) }
     }
 
+    // Two-finger scrolling from the other phone: finger movement -> wheel steps, then a short glide.
+    private var rsAcc = 0f
+    private var rsVel = 0f
+    private var rsLast = 0L
+
+    private val rsGlide = object : Runnable {
+        override fun run() {
+            rsVel *= 0.92f
+            if (kotlin.math.abs(rsVel) < 60f) { rsVel = 0f; return }
+            rsSteps(rsVel * 0.016f)
+            postOnAnimation(this)
+        }
+    }
+
+    /** Finger movement in touchpad points; fingers down = content down (like a phone). */
+    fun remoteScroll(dx: Float, dy: Float) {
+        removeCallbacks(rsGlide)
+        val now = SystemClock.uptimeMillis()
+        val dt = (now - rsLast).coerceIn(1L, 100L)
+        rsVel = if (now - rsLast > 120) dy / dt * 1000f else rsVel * 0.5f + dy / dt * 1000f * 0.5f
+        rsLast = now
+        rsSteps(dy)
+    }
+
+    fun remoteScrollEnd() {
+        // A quick flick keeps the page going for a moment, like a phone.
+        if (SystemClock.uptimeMillis() - rsLast < 80 && kotlin.math.abs(rsVel) > 400f) postOnAnimation(rsGlide)
+        else rsVel = 0f
+    }
+
+    private fun rsSteps(dy: Float) {
+        rsAcc += dy
+        var n = 0
+        while (rsAcc >= REMOTE_SCROLL_STEP && n < 20) { wheel(lastFbX, lastFbY, RfbClient.WHEEL_UP); rsAcc -= REMOTE_SCROLL_STEP; n++ }
+        while (rsAcc <= -REMOTE_SCROLL_STEP && n < 20) { wheel(lastFbX, lastFbY, RfbClient.WHEEL_DOWN); rsAcc += REMOTE_SCROLL_STEP; n++ }
+    }
+
     fun remoteKeyState(keysym: Int, down: Boolean) {
         lastInputMs = SystemClock.uptimeMillis()
         sendKeyState(keysym, down)
@@ -1017,6 +1054,8 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
 
     companion object {
         const val WHEEL_LEFT = 32
+        /** Touchpad points of two-finger movement per wheel step (small = fast). */
+        const val REMOTE_SCROLL_STEP = 7f
         const val WHEEL_RIGHT = 64
     }
 }

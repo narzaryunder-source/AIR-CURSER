@@ -135,6 +135,8 @@ class CloudPcDesktopActivity : ComponentActivity() {
             is com.aircursor.core.RemoteInput.Cmd.Key -> v.sendKey(cmd.keysym)
             is com.aircursor.core.RemoteInput.Cmd.KeyState -> v.remoteKeyState(cmd.keysym, cmd.down)
             is com.aircursor.core.RemoteInput.Cmd.Text -> v.typeText(cmd.text)
+            is com.aircursor.core.RemoteInput.Cmd.Scroll -> v.remoteScroll(cmd.dx, cmd.dy)
+            com.aircursor.core.RemoteInput.Cmd.ScrollEnd -> v.remoteScrollEnd()
             com.aircursor.core.RemoteInput.Cmd.Ping -> Unit
         }
     }

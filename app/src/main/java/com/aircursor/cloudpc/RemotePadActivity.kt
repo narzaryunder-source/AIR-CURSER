@@ -247,15 +247,35 @@ class RemotePadActivity : ComponentActivity() {
                 }
             }
         }
+        // A Wi-Fi hiccup: the pad stays, the link comes back by itself.
+        c.onReconnecting = { on -> main.post { if (conn === c) reconnecting(on) } }
         c.onClosed = {
             main.post {
                 if (conn === c) {
+                    reconnecting(false)
                     conn = null
                     Toast.makeText(this, "Disconnected", Toast.LENGTH_SHORT).show()
                     showFinder()
                 }
             }
         }
+    }
+
+    private var banner: TextView? = null
+
+    private fun reconnecting(on: Boolean) {
+        banner?.let { root.removeView(it) }
+        banner = null
+        if (!on) return
+        val b = TextView(this).apply {
+            text = "Reconnecting…"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setPadding(dp(14), dp(6), dp(14), dp(6))
+            background = GradientDrawable().apply { cornerRadius = dp(14).toFloat(); setColor(0xE6C2410C.toInt()) }
+        }
+        banner = b
+        root.addView(b, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(6) })
     }
 
     // ---- The keyboard and touchpad (shared with Monitor mode) ----

@@ -65,7 +65,7 @@ class RemoteInputHost(
 
     fun renewCode() {
         newCode()
-        closeClient()
+        closeClient(bye = true)
         post()
     }
 
@@ -76,7 +76,12 @@ class RemoteInputHost(
         val s = try {
             ServerSocket().apply {
                 reuseAddress = true
-                bind(InetSocketAddress(0))
+                // The same port every time: a phone whose link dropped finds this phone again at once.
+                try {
+                    bind(InetSocketAddress(PORT))
+                } catch (_: Exception) {
+                    bind(InetSocketAddress(0))
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "listen failed", e)
@@ -97,8 +102,12 @@ class RemoteInputHost(
         post()
     }
 
-    private fun closeClient() {
-        client?.let { try { it.close() } catch (_: Exception) {} }
+    /** [bye]: the phone is told not to reconnect (another phone took over, or a new code). */
+    private fun closeClient(bye: Boolean = false) {
+        client?.let {
+            if (bye) try { it.getOutputStream().write("BYE\n".toByteArray()); it.getOutputStream().flush() } catch (_: Exception) {}
+            try { it.close() } catch (_: Exception) {}
+        }
         client = null
     }
 
@@ -125,7 +134,7 @@ class RemoteInputHost(
     private fun acceptLoop(s: ServerSocket) {
         while (server === s) {
             val sock = try { s.accept() } catch (_: Exception) { break }
-            closeClient()   // one phone at a time: the newest wins
+            closeClient(bye = true)   // one phone at a time: the newest wins
             client = sock
             Thread({ serve(sock) }, "remote-input-client").start()
         }
@@ -171,5 +180,6 @@ class RemoteInputHost(
 
     companion object {
         private const val TAG = "RemoteInputHost"
+        const val PORT = 47820
     }
 }

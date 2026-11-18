@@ -248,12 +248,21 @@ class PadControls(
             }
         }
 
+        // Two (or more) fingers anywhere in this touch: scrolling only, the pointer stays still –
+        // also while the first finger lands a moment before the second, and after one lifts.
+        private var multi = false
+        private var scrolling = false
+        private var lastEventT = 0L
+        private var speed = 0f
+
         override fun onTouchEvent(e: MotionEvent): Boolean {
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     fingers = 1; maxFingers = 1; moved = 0f; scrollAcc = 0f
                     started = false; pendX = 0f; pendY = 0f
+                    multi = false; scrolling = false; speed = 0f
                     lastX = e.x; lastY = e.y; lastT = SystemClock.uptimeMillis(); downAt = lastT
+                    lastEventT = e.eventTime
                     // Tap, then touch again quickly and move: drag (like a laptop touchpad).
                     if (downAt - lastTapAt < TAP_MS) {
                         dragging = true
@@ -262,40 +271,60 @@ class PadControls(
                 }
                 MotionEvent.ACTION_POINTER_DOWN -> {
                     fingers = e.pointerCount; maxFingers = maxOf(maxFingers, fingers)
+                    multi = true
+                    if (dragging) {
+                        // A second finger during tap-and-drag: the drag ends, scrolling starts.
+                        send(Cmd.Button('l', false))
+                        dragging = false
+                    }
                     lastX = avg(e, true); lastY = avg(e, false)
                 }
                 MotionEvent.ACTION_POINTER_UP -> {
                     fingers = e.pointerCount - 1
+                    if (fingers < 2 && scrolling) {
+                        send(Cmd.ScrollEnd)
+                        scrolling = false
+                    }
                     lastX = avg(e, true, e.actionIndex); lastY = avg(e, false, e.actionIndex)
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val x = avg(e, true)
                     val y = avg(e, false)
-                    val now = SystemClock.uptimeMillis()
                     val dx = (x - lastX) / d
                     val dy = (y - lastY) / d
-                    val dt = (now - lastT).coerceAtLeast(1)
+                    // Speed from the touch screen's own timestamps (steady even when events arrive unevenly).
+                    val dt = (e.eventTime - lastEventT).coerceIn(4L, 100L)
+                    lastEventT = e.eventTime
                     moved += abs(dx) + abs(dy)
                     if (fingers >= 2) {
-                        scrollAcc += dy
-                        while (scrollAcc >= SCROLL_STEP) { send(Cmd.Wheel(-1, 0)); scrollAcc -= SCROLL_STEP }   // fingers down = page up
-                        while (scrollAcc <= -SCROLL_STEP) { send(Cmd.Wheel(1, 0)); scrollAcc += SCROLL_STEP }
-                    } else if (fingers == 1) {
+                        if (dx != 0f || dy != 0f) {
+                            send(Cmd.Scroll(dx, dy))
+                            scrolling = true
+                        }
+                    } else if (fingers == 1 && !multi) {
                         var mx = dx
                         var my = dy
                         if (!started) {
                             pendX += dx; pendY += dy
-                            if (hypot(pendX, pendY) < DEAD_ZONE) { lastX = x; lastY = y; lastT = now; return true }
+                            // Wait a moment (a second finger may be on its way) unless the move is clear.
+                            val early = e.eventTime - e.downTime < MULTI_WAIT_MS
+                            val dist = hypot(pendX, pendY)
+                            if (dist < DEAD_ZONE || (early && dist < 10f)) { lastX = x; lastY = y; return true }
                             started = true
                             mx = pendX; my = pendY
                         }
-                        val speed = hypot(dx, dy) / dt * 1000f
+                        val v = hypot(dx, dy) / dt * 1000f
+                        speed = if (speed == 0f) v else speed * 0.5f + v * 0.5f
                         move(RemoteInput.accelerate(mx, speed) * GAIN, RemoteInput.accelerate(my, speed) * GAIN)
                     }
-                    lastX = x; lastY = y; lastT = now
+                    lastX = x; lastY = y
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     val now = SystemClock.uptimeMillis()
+                    if (scrolling) {
+                        send(Cmd.ScrollEnd)
+                        scrolling = false
+                    }
                     if (dragging) {
                         send(Cmd.Button('l', false))
                         dragging = false
@@ -418,6 +447,8 @@ class PadControls(
     companion object {
         /** Two fingers: one wheel step per this many points of finger travel. */
         private const val SCROLL_STEP = 15f
+        /** A second finger usually lands within this time of the first: the pointer waits for it. */
+        private const val MULTI_WAIT_MS = 60L
         /** Pointer speed (with the acceleration on top): a little slower than before, more precise. */
         private const val GAIN = 1.15f
         /** Points a finger moves before the pointer follows (taps stay put). */

@@ -21,6 +21,8 @@ class RemoteInputTest {
         roundTrip(Cmd.KeyState(Keysyms.CONTROL_L, false))
         roundTrip(Cmd.Text("नमस्ते hello 👋\nline"))
         roundTrip(Cmd.Ping)
+        roundTrip(Cmd.Scroll(0f, -12.5f))
+        roundTrip(Cmd.ScrollEnd)
     }
 
     @Test
@@ -35,7 +37,7 @@ class RemoteInputTest {
     @Test
     fun rejectsBadInput() {
         for (bad in listOf("", "X", "M 1", "M NaN 1", "M 99999 0", "B x d", "B l z", "C", "W 500 0",
-            "K 5", "K -1", "KD abc", "T", "T !!!notbase64", "P extra")) {
+            "K 5", "K -1", "KD abc", "T", "T !!!notbase64", "P extra", "S 1", "S NaN 0", "S 99999 0", "SE x")) {
             assertNull(bad, RemoteInput.parse(bad))
         }
     }

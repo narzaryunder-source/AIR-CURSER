@@ -85,6 +85,7 @@ class RemoteCursor(
 
     /** Lets go of everything held (connection lost, lock screen). */
     fun release() {
+        if (scrollTarget != ScrollTarget.NONE) scrollEnd()
         if (phoneDownAt != 0L) touch(MotionEvent.ACTION_CANCEL)
         phoneDownAt = 0L
         if (desktopDown) desktop()?.release(screenX(), screenY())
@@ -106,6 +107,8 @@ class RemoteCursor(
             is Cmd.Button -> button(cmd.button, cmd.down)
             is Cmd.Click -> click(cmd.button)
             is Cmd.Wheel -> wheel(cmd.dy, cmd.dx)
+            is Cmd.Scroll -> scroll(cmd.dx, cmd.dy)
+            Cmd.ScrollEnd -> scrollEnd()
             is Cmd.Key -> key(cmd.keysym)
             is Cmd.KeyState -> keyState(cmd.keysym, cmd.down)
             is Cmd.Text -> text(cmd.text)
@@ -277,6 +280,63 @@ class RemoteCursor(
         e.recycle()
     }
 
+    // ---- two-finger scrolling ----
+    // On the phone's windows (YouTube, Air pages, lists) it is a real finger swipe at the pointer:
+    // pages scroll exactly as with a finger, and a quick flick keeps gliding. On the PC picture it
+    // becomes wheel steps (with a short glide).
+
+    private enum class ScrollTarget { NONE, PHONE, PC }
+
+    private var scrollTarget = ScrollTarget.NONE
+    private var swipeDownAt = 0L
+    private var swipeX = 0f
+    private var swipeY = 0f
+    private val autoEnd = Runnable { scrollEnd() }
+
+    private fun scroll(dx: Float, dy: Float) {
+        if (scrollTarget == ScrollTarget.NONE) {
+            if (onPhone()) {
+                scrollTarget = ScrollTarget.PHONE
+                swipeDownAt = SystemClock.uptimeMillis()
+                swipeX = tx
+                swipeY = ty
+                swipe(MotionEvent.ACTION_DOWN)
+            } else {
+                scrollTarget = ScrollTarget.PC
+                desktop()?.hover(screenX(), screenY())
+            }
+        }
+        if (scrollTarget == ScrollTarget.PHONE) {
+            val k = root.width / 470f * SWIPE_GAIN
+            swipeX = (swipeX + dx * k).coerceIn(0f, root.width - 1f)
+            swipeY = (swipeY + dy * k).coerceIn(0f, root.height - 1f)
+            swipe(MotionEvent.ACTION_MOVE)
+        } else {
+            desktop()?.remoteScroll(dx, dy)
+        }
+        // Fingers lifted without a word (link lost): end the swipe anyway.
+        removeCallbacks(autoEnd)
+        postDelayed(autoEnd, 400)
+    }
+
+    private fun scrollEnd() {
+        removeCallbacks(autoEnd)
+        when (scrollTarget) {
+            ScrollTarget.PHONE -> swipe(MotionEvent.ACTION_UP)
+            ScrollTarget.PC -> desktop()?.remoteScrollEnd()
+            ScrollTarget.NONE -> Unit
+        }
+        scrollTarget = ScrollTarget.NONE
+    }
+
+    private fun swipe(action: Int) {
+        val now = SystemClock.uptimeMillis()
+        val e = MotionEvent.obtain(swipeDownAt, now, action, swipeX, swipeY, 0)
+        e.source = InputDevice.SOURCE_TOUCHSCREEN
+        root.dispatchTouchEvent(e)
+        e.recycle()
+    }
+
     private fun wheel(dy: Int, dx: Int) {
         if (onPhone()) {
             // A wheel event for the phone's windows (Air pages, lists): positive = up. Not marked as a
@@ -401,5 +461,10 @@ class RemoteCursor(
         arrow.close()
         canvas.drawPath(arrow, fill)
         canvas.drawPath(arrow, edge)
+    }
+
+    companion object {
+        /** Page movement per finger movement in two-finger scrolling (on top of the pointer scale). */
+        const val SWIPE_GAIN = 1.4f
     }
 }

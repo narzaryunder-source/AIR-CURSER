@@ -19,6 +19,8 @@ class InputPump {
         val last = items.lastOrNull()
         if (c is Cmd.Move && last is Cmd.Move) {
             items[items.size - 1] = Cmd.Move(last.dx + c.dx, last.dy + c.dy)
+        } else if (c is Cmd.Scroll && last is Cmd.Scroll) {
+            items[items.size - 1] = Cmd.Scroll(last.dx + c.dx, last.dy + c.dy)
         } else if (c != Cmd.Ping) {
             items.addLast(c)
         }

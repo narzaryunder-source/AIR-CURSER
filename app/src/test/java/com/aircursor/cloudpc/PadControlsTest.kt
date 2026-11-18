@@ -83,9 +83,30 @@ class PadControlsTest {
         for (i in 1..12) pad.dispatchTouchEvent(ev(t, 10 + i * 16L, MotionEvent.ACTION_MOVE, 100f to (100f - i * 12f), 160f to (100f - i * 12f)))
         pad.dispatchTouchEvent(ev(t, 220, MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 100f to -44f, 160f to -44f))
         pad.dispatchTouchEvent(ev(t, 230, MotionEvent.ACTION_UP, 100f to -44f))
-        val wheels = sent.filterIsInstance<Cmd.Wheel>()
-        assertTrue("two fingers up = wheel down steps: $sent", wheels.size >= 3 && wheels.all { it.dy > 0 })
-        assertTrue("no right click after scrolling: $sent", sent.none { it is Cmd.Click })
+        val scrolls = sent.filterIsInstance<Cmd.Scroll>()
+        assertTrue("two fingers up = scroll movement upwards: $sent", scrolls.size >= 10 && scrolls.all { it.dy < 0 })
+        assertTrue("scrolling ends: $sent", sent.contains(Cmd.ScrollEnd))
+        assertEquals("the pointer did not move", 0, moves)
+        assertTrue("no click after scrolling: $sent", sent.none { it is Cmd.Click })
+    }
+
+    @Test
+    fun theFirstFingerLandingEarlyDoesNotMoveThePointer() {
+        val (_, root) = setUp()
+        val pad = touchpad(root)
+        val t = SystemClock.uptimeMillis()
+        // First finger down and already sliding a little, the second lands 40 ms later.
+        pad.dispatchTouchEvent(ev(t, 0, MotionEvent.ACTION_DOWN, 100f to 100f))
+        pad.dispatchTouchEvent(ev(t, 16, MotionEvent.ACTION_MOVE, 100f to 94f))
+        pad.dispatchTouchEvent(ev(t, 32, MotionEvent.ACTION_MOVE, 100f to 86f))
+        pad.dispatchTouchEvent(ev(t, 40, MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 100f to 84f, 160f to 100f))
+        for (i in 1..6) pad.dispatchTouchEvent(ev(t, 40 + i * 16L, MotionEvent.ACTION_MOVE, 100f to (84f - i * 12f), 160f to (100f - i * 12f)))
+        // One finger lifts first, the other keeps sliding: still no pointer movement.
+        pad.dispatchTouchEvent(ev(t, 150, MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 100f to 12f, 160f to 28f))
+        for (i in 1..5) pad.dispatchTouchEvent(ev(t, 150 + i * 16L, MotionEvent.ACTION_MOVE, (100f + i * 20f) to 12f))
+        pad.dispatchTouchEvent(ev(t, 260, MotionEvent.ACTION_UP, 200f to 12f))
+        assertEquals("the pointer stayed still during the two-finger gesture: $sent", 0, moves)
+        assertTrue("it scrolled: $sent", sent.any { it is Cmd.Scroll })
     }
 
     @Test

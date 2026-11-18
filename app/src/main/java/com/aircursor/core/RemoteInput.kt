@@ -14,6 +14,8 @@ import java.util.Base64
  *   B <l|m|r> <d|u>      mouse button down / up (drag)
  *   C <l|m|r>            click
  *   W <dy> <dx>          scroll wheel steps (dy > 0 = down)
+ *   S <dx> <dy>          two-finger scrolling: finger movement in touchpad points (content follows)
+ *   SE                   two-finger scrolling ended (the page may keep gliding)
  *   K <keysym>           key press (down + up), e.g. Enter, arrows
  *   KD <keysym> / KU <keysym>   key held / released (Ctrl, Alt, Shift, Win)
  *   T <base64 utf-8>     type text
@@ -31,6 +33,8 @@ object RemoteInput {
         data class Button(val button: Char, val down: Boolean) : Cmd()
         data class Click(val button: Char) : Cmd()
         data class Wheel(val dy: Int, val dx: Int) : Cmd()
+        data class Scroll(val dx: Float, val dy: Float) : Cmd()
+        data object ScrollEnd : Cmd()
         data class Key(val keysym: Int) : Cmd()
         data class KeyState(val keysym: Int, val down: Boolean) : Cmd()
         data class Text(val text: String) : Cmd()
@@ -51,6 +55,8 @@ object RemoteInput {
         is Cmd.Button -> "B ${c.button} ${if (c.down) 'd' else 'u'}"
         is Cmd.Click -> "C ${c.button}"
         is Cmd.Wheel -> "W ${c.dy} ${c.dx}"
+        is Cmd.Scroll -> "S ${fmt(c.dx)} ${fmt(c.dy)}"
+        Cmd.ScrollEnd -> "SE"
         is Cmd.Key -> "K ${c.keysym}"
         is Cmd.KeyState -> "${if (c.down) "KD" else "KU"} ${c.keysym}"
         is Cmd.Text -> "T " + Base64.getEncoder().encodeToString(c.text.toByteArray(Charsets.UTF_8))
@@ -69,12 +75,13 @@ object RemoteInput {
         val p = line.trim().split(' ')
         return try {
             when (p[0]) {
-                "M" -> if (p.size != 3) null else {
+                "M", "S" -> if (p.size != 3) null else {
                     val dx = p[1].toFloat()
                     val dy = p[2].toFloat()
                     if (!dx.isFinite() || !dy.isFinite() || kotlin.math.abs(dx) > MAX_MOVE || kotlin.math.abs(dy) > MAX_MOVE) null
-                    else Cmd.Move(dx, dy)
+                    else if (p[0] == "M") Cmd.Move(dx, dy) else Cmd.Scroll(dx, dy)
                 }
+                "SE" -> if (p.size == 1) Cmd.ScrollEnd else null
                 "B" -> if (p.size != 3) null else {
                     val b = button(p[1])
                     when {

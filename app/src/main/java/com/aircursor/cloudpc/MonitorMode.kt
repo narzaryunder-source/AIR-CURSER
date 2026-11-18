@@ -126,6 +126,8 @@ class MonitorMode(
             is Cmd.Key -> v.sendKey(cmd.keysym)
             is Cmd.KeyState -> v.remoteKeyState(cmd.keysym, cmd.down)
             is Cmd.Text -> v.typeText(cmd.text)
+            is Cmd.Scroll -> v.remoteScroll(cmd.dx, cmd.dy)
+            Cmd.ScrollEnd -> v.remoteScrollEnd()
             Cmd.Ping -> Unit
         }
     }
