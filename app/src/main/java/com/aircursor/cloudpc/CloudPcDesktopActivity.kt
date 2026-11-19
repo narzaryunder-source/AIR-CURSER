@@ -141,9 +141,13 @@ class CloudPcDesktopActivity : ComponentActivity() {
         }
     }
 
+    /** Keeps this phone's own keyboard away while another phone is the keyboard. */
+    private val keyboardGuard by lazy { SoftKeyboardGuard(window) }
+
     private fun remoteHost(): RemoteInputHost = remote ?: RemoteInputHost(this, { applyRemote(it) }) { st ->
         val was = remoteState.connected
         remoteState = st
+        keyboardGuard.otherPhoneIsKeyboard(st.connected != null)
         if (st.connected != null && was == null) Toast.makeText(this, "Phone keyboard connected", Toast.LENGTH_SHORT).show()
         if (st.connected == null && was != null) {
             Toast.makeText(this, "Phone keyboard disconnected", Toast.LENGTH_SHORT).show()
@@ -331,6 +335,16 @@ class CloudPcDesktopActivity : ComponentActivity() {
             return
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Use the whole screen, also the strip next to the camera hole (otherwise it stays black).
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                } else {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+            }
+        }
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).apply {
             hide(WindowInsetsCompat.Type.systemBars())
@@ -486,6 +500,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
             override fun phoneKeyboard() = phoneKeyboardMenu()
             override fun monitor() = monitorMenu()
             override fun changed() = keepControlsOnTop()
+            override fun fullWindow() = air?.fullScreenFront == true
         })
         root.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or, ob ->
             if (r - l != or - ol || b - t != ob - ot) shell?.applyInsets()
@@ -692,6 +707,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
             override fun windowsChanged() {
                 keepControlsOnTop()
                 shell?.rebuildDock()
+                shell?.windowsChanged()   // a full-size window reaches the bottom edge; the dock steps aside
             }
         },
     ).also {
@@ -1168,6 +1184,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
             override fun onForgot() = forgotPassword()
         })
         lockView = l
+        keyboardGuard.passwordScreen(true)   // the password is typed on this phone
         rootLayout.addView(l, FrameLayout.LayoutParams(-1, -1))
         // With a hardware keyboard, typing goes straight into the password box.
         if (resources.configuration.keyboard != android.content.res.Configuration.KEYBOARD_NOKEYS) l.focusPassword()
@@ -1176,6 +1193,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private fun hideLock() {
         lockView?.let { rootLayout.removeView(it) }
         lockView = null
+        keyboardGuard.passwordScreen(false)
         view?.locked = false
         side.visibility = View.VISIBLE
         DesktopInput.target = view
@@ -1744,6 +1762,10 @@ class CloudPcDesktopActivity : ComponentActivity() {
 
     @Suppress("DEPRECATION")
     private fun toggleKeyboard() {
+        if (keyboardGuard.blocking) {
+            Toast.makeText(this, "Another phone is your keyboard. Disconnect it to use this keyboard.", Toast.LENGTH_SHORT).show()
+            return
+        }
         val v = view ?: return
         val imm = getSystemService(InputMethodManager::class.java) ?: return
         v.requestFocus()

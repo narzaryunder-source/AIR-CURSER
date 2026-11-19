@@ -65,6 +65,9 @@ class AirWindows(
     val anyShown get() = wins.any { !it.minimized }
     fun top(): Win? = wins.lastOrNull { !it.minimized }
 
+    /** The window in front fills the screen (maximized or a full-screen video): nothing else should cover its edges. */
+    val fullScreenFront: Boolean get() = top()?.let { it.maximized || it.videoFull } == true
+
     /** The Air browser (one window, many tabs). [url] null: just show it. */
     fun openBrowser(url: String?) {
         val w = wins.firstOrNull { it.key == BROWSER } ?: create(BROWSER, null, maximized = prefs.getBoolean("win_max_$BROWSER", true))
@@ -120,6 +123,7 @@ class AirWindows(
             override fun fullScreen(b: AirBrowser, on: Boolean) {
                 win.videoFull = on
                 layout(win)
+                callbacks.windowsChanged()
             }
             override fun assistant() = callbacks.assistant()
             override fun changed(b: AirBrowser) = callbacks.windowsChanged()
@@ -139,8 +143,11 @@ class AirWindows(
     }
 
     fun show(w: Win) {
+        val wasHidden = w.minimized
         w.minimized = false
         focus(w)
+        // Back from minimized: once the window is on screen again, attach its page to the surface again.
+        if (wasHidden) w.frame.post { if (!w.minimized) w.browser.reattach() }
     }
 
     fun focus(w: Win) {
@@ -191,6 +198,7 @@ class AirWindows(
         w.maximized = !w.maximized
         prefs.edit().putBoolean("win_max_${w.key}", w.maximized).apply()
         layout(w)
+        callbacks.windowsChanged()   // the dock steps aside for a full-size window and comes back after
     }
 
     /** A game starts from TS Station: every window steps aside. */

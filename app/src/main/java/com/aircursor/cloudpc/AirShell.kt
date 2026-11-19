@@ -70,6 +70,9 @@ class AirShell(
         fun tour()
         fun phoneKeyboard()
         fun monitor()
+
+        /** The Air window in front is full size (maximized or full-screen video): the dock steps aside. */
+        fun fullWindow(): Boolean = false
     }
 
     class App(
@@ -126,7 +129,39 @@ class AirShell(
     private val barH get() = ui.u(24)
     private val dockH get() = ui.u(54)
     private val dockGap get() = ui.u(6)
-    private val autoHide get() = prefs.getBoolean("dock_autohide", false)
+    /** The user's choice ("Hide the dock automatically"). */
+    private val userAutoHide get() = prefs.getBoolean("dock_autohide", false)
+
+    /**
+     * The dock steps aside for a full-size Air window, so that window reaches the bottom of the screen
+     * (no strip of desktop under it); the handle or the pointer at the bottom edge brings the dock back.
+     */
+    private val autoHide get() = userAutoHide || actions.fullWindow()
+
+    /** What [autoHide] was when the dock was last arranged. */
+    private var lastAuto = false
+
+    /** Air's windows changed (front window, minimized, full size on/off): dock and space follow. */
+    fun windowsChanged() {
+        syncAutoHide()
+        applyInsets()
+    }
+
+    private fun syncAutoHide() {
+        val now = autoHide
+        if (now == lastAuto) return
+        lastAuto = now
+        if (!enabled || gameOn) return
+        if (now) {
+            hideDock()
+        } else {
+            dockBox.animate().cancel()
+            dockBox.visibility = View.VISIBLE
+            dockBox.translationY = 0f
+            handle.visibility = View.GONE
+            actions.changed()
+        }
+    }
 
     private lateinit var widgets: ShellWidgets
 
@@ -191,10 +226,14 @@ class AirShell(
         }
         dockBox.elevation = ui.uf(8)
         dockBox.addView(dockScroll, FrameLayout.LayoutParams(-2, -1))
-        handle.background = GradientDrawable().apply {
-            cornerRadius = ui.uf(3)
-            setColor(0x99FFFFFF.toInt())
-        }
+        // A thin bar to look at, a tall area to hit with a thumb (the dock comes back from here).
+        handle.background = android.graphics.drawable.InsetDrawable(
+            GradientDrawable().apply {
+                cornerRadius = ui.uf(3)
+                setColor(0x99FFFFFF.toInt())
+            },
+            ui.u(25), ui.u(18), ui.u(25), ui.u(3),
+        )
         handle.setOnTouchListener { _, e ->
             if (e.action == MotionEvent.ACTION_DOWN) showDockFor(5000)
             true
@@ -208,9 +247,7 @@ class AirShell(
             leftMargin = ui.u(12)
             rightMargin = ui.u(12)
         })
-        host.addView(handle, FrameLayout.LayoutParams(ui.u(90), ui.u(5), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-            bottomMargin = ui.u(3)
-        })
+        host.addView(handle, FrameLayout.LayoutParams(ui.u(140), ui.u(26), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
         widgets = ShellWidgets(activity, host, ui, barH)
         main.post(tick)
     }
@@ -234,6 +271,7 @@ class AirShell(
         val game = guest("/tmp/cloudpc-game-on").exists()
         if (game != gameOn) {
             gameOn = game
+            lastAuto = autoHide
             bar.visibility = if (game) View.GONE else View.VISIBLE
             dockBox.visibility = if (game || autoHide) View.GONE else View.VISIBLE
             handle.visibility = if (!game && autoHide) View.VISIBLE else View.GONE
@@ -271,6 +309,7 @@ class AirShell(
         updateBar()
         // Widgets on the empty desktop only (no PC window, no Air window, no apps grid).
         widgets.update(pcWins.isEmpty() && actions.airWindows()?.top() == null && grid == null)
+        syncAutoHide()
         applyInsets()   // cheap; tells the PC only when the space changes (e.g. after an AirBoost resize)
         if (autoHide && dockBox.visibility == View.VISIBLE && grid == null && now > dockShownUntil) hideDock()
     }
@@ -303,6 +342,7 @@ class AirShell(
     private fun setEnabled(on: Boolean) {
         if (on == enabled) return
         enabled = on
+        lastAuto = autoHide
         bar.visibility = if (on) View.VISIBLE else View.GONE
         if (on && !autoHide) dockBox.visibility = View.VISIBLE else dockBox.visibility = View.GONE
         handle.visibility = if (on && autoHide) View.VISIBLE else View.GONE
@@ -357,7 +397,7 @@ class AirShell(
             AirUi.Item("Air Store", R.drawable.ic_ui_store) { actions.runPc("airstore") },
             AirUi.Item("All apps", R.drawable.ic_ui_tabs) { openGrid(false) },
             AirUi.Item("AirBoost and PC style…", R.drawable.ic_ui_bolt, separatorBefore = true) { actions.boostMenu() },
-            AirUi.Item("Hide the dock automatically", R.drawable.ic_ui_minimize, checked = autoHide) { setAutoHide(!autoHide) },
+            AirUi.Item("Hide the dock automatically", R.drawable.ic_ui_minimize, checked = userAutoHide) { setAutoHide(!userAutoHide) },
             AirUi.Item("Widgets on the desktop", R.drawable.ic_ui_sun, checked = widgets.on) { widgets.setOn(!widgets.on) },
             AirUi.Item("Another phone as keyboard & touchpad…", R.drawable.ic_ui_phone) { actions.phoneKeyboard() },
             AirUi.Item("Monitor / TV (monitor mode)…", R.drawable.ic_ui_desktop) { actions.monitor() },
@@ -599,11 +639,7 @@ class AirShell(
 
     private fun setAutoHide(on: Boolean) {
         prefs.edit().putBoolean("dock_autohide", on).apply()
-        if (on) hideDock() else {
-            dockBox.visibility = View.VISIBLE
-            handle.visibility = View.GONE
-            dockBox.translationY = 0f
-        }
+        syncAutoHide()
         lastMargins = ""
         applyInsets()
     }

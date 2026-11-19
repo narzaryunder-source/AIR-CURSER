@@ -407,7 +407,24 @@ class AirBrowser(
     fun setTextureBackend(on: Boolean) {
         if (on == textureBackend) return
         textureBackend = on
+        // The drawing surface is replaced. A page that is showing must be attached to the new surface
+        // again (the same release + set a tab switch does); swapping the surface under a live page
+        // left the window black while the page kept running.
+        val live = gecko.session
+        if (live != null) gecko.releaseSession()
         gecko.setViewBackend(if (on) GeckoView.BACKEND_TEXTURE_VIEW else GeckoView.BACKEND_SURFACE_VIEW)
+        if (live != null) gecko.setSession(live)
+    }
+
+    /**
+     * The window was hidden (minimized) and is back: attach the page to its drawing surface again,
+     * so it never comes back black.
+     */
+    fun reattach() {
+        val live = gecko.session ?: return
+        gecko.releaseSession()
+        gecko.setSession(live)
+        live.setActive(true)
     }
 
     /** The window manager changed the size: show the right maximize/restore picture. */
