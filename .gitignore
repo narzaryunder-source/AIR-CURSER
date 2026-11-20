@@ -10,3 +10,4 @@ captures/
 # Downloaded at build time by the downloadHandModel Gradle task
 app/src/main/assets/hand_landmarker.task
 __pycache__/
+.kotlin/
