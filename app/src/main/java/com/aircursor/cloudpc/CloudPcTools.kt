@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 37
+    const val VERSION = 38
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -132,6 +132,8 @@ object CloudPcTools {
             put("$LIB/phone-browser/$name", "#!/bin/sh\nexec cloudpc-open-on-phone \"\$@\"\n", exec = true)
         }
         put("usr/local/bin/cloudpc-claude", CLAUDE, exec = true)
+        put("usr/local/bin/cloudpc-opencode", OPENCODE, exec = true)
+        put("usr/local/bin/cloudpc-antigravity", ANTIGRAVITY, exec = true)
         put("usr/local/bin/cloudpc-web", WEB, exec = true)
         put("usr/local/bin/cloudpc-windows-keys", WINDOWS_KEYS, exec = true)
         // Sound: PulseAudio → "Phone speaker" → the AirCursor app.
@@ -378,6 +380,14 @@ object CloudPcTools {
         AiApp(
             "cloudpc-ai-claude-code", "Claude Code", "xfce4-terminal --title=\"Claude Code\" -x cloudpc-claude",
             "utilities-terminal", "AI coding assistant in the terminal – you sign in on your phone",
+        ),
+        AiApp(
+            "cloudpc-ai-opencode", "OpenCode", "xfce4-terminal --title=\"OpenCode\" -x cloudpc-opencode",
+            "utilities-terminal", "Open-source AI coding agent – free AI models, no account needed",
+        ),
+        AiApp(
+            "cloudpc-ai-antigravity", "Antigravity CLI", "xfce4-terminal --title=\"Antigravity\" -x cloudpc-antigravity",
+            "utilities-terminal", "Google's AI coding agent in the terminal – you sign in with Google on your phone",
         ),
         AiApp(
             "cloudpc-ai-pc-assistant", "PC Assistant (Claude)",
@@ -1140,6 +1150,42 @@ object CloudPcTools {
             set -- "Namaste! Run pc-doctor and look at the screen with pc-screenshot. Tell me in simple Hinglish what makes this PC slow or broken, then fix it step by step (ask before deleting anything)." "${'$'}@"
         fi
         claude "${'$'}@"
+        exec bash
+    """.trimIndent() + "\n"
+
+    /**
+     * OpenCode in a terminal. "--standalone": its server stops with the window instead of staying in
+     * the background (phone memory; Android also closes programs above its limit).
+     */
+    private val OPENCODE = agentLauncher(
+        "OpenCode", "opencode", "opencode --standalone",
+        "Free AI models work without an account (type /models to pick one). To use your own AI account, type /connect.",
+    )
+
+    /** Google's Antigravity CLI ("agy") in a terminal. */
+    private val ANTIGRAVITY = agentLauncher(
+        "Antigravity CLI", "agy", "agy",
+        "The first start asks you to sign in with your Google account – the sign-in page opens on your phone.",
+    )
+
+    /** A coding agent in a terminal, started in ~/Projects, with sign-in pages in the phone's browser. */
+    private fun agentLauncher(name: String, program: String, run: String, help: String) = """
+        #!/bin/bash
+        export PATH="/$LIB/phone-browser:${'$'}PATH" BROWSER=cloudpc-open-on-phone
+        mkdir -p /root/Projects
+        cd /root/Projects || cd /root || exit 1
+        if ! command -v $program >/dev/null 2>&1; then
+            echo "$name is not installed yet: Air Store → AI & Coding → $name → Install."
+            exec bash
+        fi
+        clear
+        echo "$name"
+        echo "$help"
+        echo "Sign-in pages open in your PHONE's browser. If one shows a code: copy it on the phone,"
+        echo "then AirCursor toolbar → Paste, then press Enter."
+        echo "Your projects are in /root/Projects."
+        echo ""
+        $run "${'$'}@"
         exec bash
     """.trimIndent() + "\n"
 

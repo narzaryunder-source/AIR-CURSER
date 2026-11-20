@@ -57,6 +57,59 @@ install_claude_code() {
     fi
 }
 
+cpu_arch() {   # arm64 on phones; x64 on computers
+    case "$(uname -m)" in
+        aarch64|arm64) echo arm64 ;;
+        x86_64|amd64) echo x64 ;;
+        *) echo "" ;;
+    esac
+}
+
+install_opencode() {
+    # OpenCode (open-source coding agent, opencode.ai): one program, official Linux build.
+    local arch tgz=/tmp/opencode.tar.gz dir=/tmp/opencode.new
+    arch=$(cpu_arch)
+    [ -n "$arch" ] || { bad "OpenCode needs a 64-bit phone"; return 1; }
+    echo "Installing OpenCode (about 120 MB)..."
+    rm -rf "$dir" && mkdir -p "$dir"
+    if curl -fL --retry 3 -o "$tgz" "https://opencode.ai/update/api/latest/cli/opencode/opencode-linux-$arch.tar.gz" &&
+        tar -xzf "$tgz" -C "$dir" && [ -x "$dir/opencode" ]; then
+        install -m 755 "$dir/opencode" /usr/local/bin/opencode
+        ok "OpenCode installed. Open it from the dock or menu (AI & Coding), or run:  opencode"
+    else
+        bad "OpenCode install failed – check the internet and try again"
+    fi
+    rm -rf "$tgz" "$dir"
+}
+
+install_antigravity_cli() {
+    # Google Antigravity CLI ("agy"): Google's own installer, which checks its download (SHA-512).
+    [ -n "$(cpu_arch)" ] || { bad "Antigravity needs a 64-bit phone"; return 1; }
+    echo "Installing Antigravity CLI (about 90 MB download)..."
+    if curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin && [ -x /usr/local/bin/agy ]; then
+        ok "Antigravity CLI installed. Open it from the dock or menu (AI & Coding), or run:  agy"
+    else
+        bad "Antigravity CLI install failed – check the internet and try again"
+    fi
+}
+
+install_antigravity_ide() {
+    # Google Antigravity IDE (a big code editor app): Google's own package repository, so it updates
+    # with the system. About 720 MB installed – slow on most phones.
+    echo "Installing Antigravity IDE (big: about 150 MB download, 720 MB on the phone)..."
+    mkdir -p /etc/apt/keyrings
+    # The key is in text form (.asc): apt reads it as it is, no gpg needed.
+    if curl -fsSLo /etc/apt/keyrings/antigravity-repo-key.asc https://us-central1-apt.pkg.dev/doc/repo-signing-key.gpg; then
+        echo "deb [signed-by=/etc/apt/keyrings/antigravity-repo-key.asc] https://us-central1-apt.pkg.dev/projects/antigravity-auto-updater-dev/ antigravity-debian main" \
+            > /etc/apt/sources.list.d/antigravity.list
+        if apt-get update && apt-get install -y --no-install-recommends antigravity; then
+            ok "Antigravity IDE installed. Open it from the menu (Development). The first start takes a while."
+            return 0
+        fi
+    fi
+    bad "Antigravity IDE install failed – check the internet and free space, then try again"
+}
+
 install_ollama() {
     echo "Installing Ollama (offline AI). Small models only on phones!"
     apt-get install -y zstd >/dev/null 2>&1 || true
@@ -194,6 +247,9 @@ install_id() {
     case "$1" in
         vscode) install_vscode ;;
         claude) install_claude_code ;;
+        opencode) install_opencode ;;
+        antigravity) install_antigravity_cli ;;
+        antigravity-ide) install_antigravity_ide ;;
         ollama) install_ollama ;;
         blender) install_apt blender ;;
         libreoffice) install_apt libreoffice ;;
@@ -228,6 +284,9 @@ remove_id() {
         vscode) rm -rf /opt/code-server; rm -f /usr/local/bin/code-server; dpkg -s code >/dev/null 2>&1 && pkgs="code" ;;
         libreoffice) pkgs=$(dpkg-query -W -f='${Package}\n' 'libreoffice*' 2>/dev/null | tr '\n' ' ') ;;
         claude) npm uninstall -g @anthropic-ai/claude-code; return ;;
+        opencode) rm -f /usr/local/bin/opencode; return ;;
+        antigravity) rm -f /usr/local/bin/agy; return ;;
+        antigravity-ide) pkgs="antigravity"; rm -f /etc/apt/sources.list.d/antigravity.list /etc/apt/keyrings/antigravity-repo-key.asc ;;
         ollama) rm -rf /usr/local/bin/ollama /usr/local/bin/ai-chat /usr/local/lib/ollama /usr/share/ollama; return ;;
         gdrive) pkgs="rclone"; rm -f /usr/local/bin/google-drive "$REAL_HOME/Desktop/Google-Drive.desktop" ;;
         brave) pkgs="brave-browser brave-keyring" ;;
