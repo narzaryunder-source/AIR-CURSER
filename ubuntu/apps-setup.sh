@@ -36,6 +36,17 @@ JSON
     # Older AirCursor versions pointed the menu entry at a wrapper: point it back at the app.
     sed -i 's|^Exec=/usr/local/bin/vscode |Exec=/usr/share/code/code |' "$SRC"/code*.desktop 2>/dev/null
 fi
+# Apps that keep their sign-in in the keyring (Claude Desktop and other Electron apps): a keyring
+# without a password of its own, so no window ever asks to create one, and sign-ins stay saved.
+# It starts only when an app asks for it (D-Bus), never in the background. The PC itself is
+# private to the AirCursor app.
+KR="$H/.local/share/keyrings"
+if [ -x /usr/bin/gnome-keyring-daemon ] && [ ! -e "$KR/default" ] && ! ls "$KR"/*.keyring >/dev/null 2>&1; then
+    mkdir -p "$KR" && chmod 700 "$KR"
+    printf '[keyring]\ndisplay-name=login\nctime=0\nmtime=0\nlock-on-idle=false\nlock-after=false\n' > "$KR/login.keyring"
+    printf 'login' > "$KR/default"
+    chmod 600 "$KR/login.keyring" "$KR/default"
+fi
 # Games installed in /usr/games: also start from the terminal.
 for f in /usr/games/*; do [ -f "$f" ] && [ ! -e "/usr/local/bin/${f##*/}" ] && ln -s "$f" /usr/local/bin/ 2>/dev/null; done
 

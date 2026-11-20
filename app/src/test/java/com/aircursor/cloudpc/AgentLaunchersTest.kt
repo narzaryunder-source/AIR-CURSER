@@ -67,6 +67,23 @@ class AgentLaunchersTest {
     }
 
     @Test
+    fun codexGeminiAndCopilotStartWithSignInOnThePhone() {
+        for ((field, program, hint) in listOf(
+            Triple("CODEX", "codex", "Sign in with ChatGPT"),
+            Triple("GEMINI", "gemini", "Google account"),
+            Triple("COPILOT", "copilot", "/login"),
+        )) {
+            val (out, log) = run(field, program)
+            assertTrue(out, out.contains(hint))
+            val (pwd, args, browser, firstPath) = log.readText().trim().split("|")
+            assertTrue(pwd, pwd.endsWith("/Projects"))
+            assertEquals("hello", args)
+            assertEquals("cloudpc-open-on-phone", browser)
+            assertEquals("/usr/local/lib/cloudpc/phone-browser", firstPath)
+        }
+    }
+
+    @Test
     fun notInstalledPointsToTheAirStore() {
         val (out, log) = run("OPENCODE")
         assertTrue(out, out.contains("OpenCode is not installed yet: Air Store → AI & Coding → OpenCode → Install."))

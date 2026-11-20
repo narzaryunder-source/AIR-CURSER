@@ -10,12 +10,12 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 38
+    const val VERSION = 39
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
-        "app-store.sh", "app-store.py", "ubuntu-extras.sh", "install-deb.sh", "windows-layout.sh", "wallpaper-gui.sh",
-        "launch.sh", "apps-setup.sh", "style.sh", "airstore.py", "airstore.html", "web-icons.py", "shell-index.py",
+        "app-store.sh", "app-store.py", "ubuntu-extras.sh", "install-deb.sh", "install-appimage.sh", "as-user.py",
+        "windows-layout.sh", "wallpaper-gui.sh", "launch.sh", "apps-setup.sh", "style.sh", "airstore.py", "airstore.html", "web-icons.py", "shell-index.py",
     )
 
     fun needsSetup(c: Context): Boolean =
@@ -64,6 +64,7 @@ object CloudPcTools {
             "cloudpc-apps" to "apps-setup.sh",
             "ubuntu-extras" to "ubuntu-extras.sh",
             "aircursor-install-deb" to "install-deb.sh",
+            "aircursor-install-appimage" to "install-appimage.sh",
             "aircursor-windows-layout" to "windows-layout.sh",
             "aircursor-wallpaper" to "wallpaper-gui.sh",
             "aircursor-style" to "style.sh",
@@ -71,6 +72,9 @@ object CloudPcTools {
         for ((name, script) in wrappers) {
             put("usr/local/bin/$name", "#!/bin/sh\nexport SUDO_USER=root\nexec bash /$LIB/$script \"\$@\"\n", exec = true)
         }
+        // Electron apps (Claude Desktop…) cannot draw their windows as root: cloudpc-launch starts
+        // them as the PC's own user through this.
+        put("usr/local/bin/cloudpc-as-user", "#!/bin/sh\nexec python3 -I /$LIB/as-user.py \"\$@\"\n", exec = true)
         // App Store: the new window (GTK) when Python's GTK support is there, else the simple one.
         put(
             "usr/local/bin/aircursor-store",
@@ -134,6 +138,9 @@ object CloudPcTools {
         put("usr/local/bin/cloudpc-claude", CLAUDE, exec = true)
         put("usr/local/bin/cloudpc-opencode", OPENCODE, exec = true)
         put("usr/local/bin/cloudpc-antigravity", ANTIGRAVITY, exec = true)
+        put("usr/local/bin/cloudpc-codex", CODEX, exec = true)
+        put("usr/local/bin/cloudpc-gemini", GEMINI, exec = true)
+        put("usr/local/bin/cloudpc-copilot", COPILOT, exec = true)
         put("usr/local/bin/cloudpc-web", WEB, exec = true)
         put("usr/local/bin/cloudpc-windows-keys", WINDOWS_KEYS, exec = true)
         // Sound: PulseAudio → "Phone speaker" → the AirCursor app.
@@ -248,6 +255,12 @@ object CloudPcTools {
             "usr/share/applications/aircursor-install-deb.desktop",
             "[Desktop Entry]\nType=Application\nName=Install app package\nExec=aircursor-install-deb %f\n" +
                 "Icon=system-software-install\nNoDisplay=true\nMimeType=application/vnd.debian.binary-package;\n",
+        )
+        // AppImages (Cursor, LM Studio…): unpacked once, then they open like any app (no FUSE on phones).
+        put(
+            "usr/share/applications/aircursor-install-appimage.desktop",
+            "[Desktop Entry]\nType=Application\nName=Install AppImage\nExec=aircursor-install-appimage %f\n" +
+                "Icon=system-software-install\nNoDisplay=true\nMimeType=application/vnd.appimage;application/x-iso9660-appimage;\n",
         )
         for (ai in AI_APPS) put("usr/share/applications/${ai.id}.desktop", ai.desktopEntry())
 
@@ -388,6 +401,18 @@ object CloudPcTools {
         AiApp(
             "cloudpc-ai-antigravity", "Antigravity CLI", "xfce4-terminal --title=\"Antigravity\" -x cloudpc-antigravity",
             "utilities-terminal", "Google's AI coding agent in the terminal – you sign in with Google on your phone",
+        ),
+        AiApp(
+            "cloudpc-ai-codex", "Codex CLI", "xfce4-terminal --title=\"Codex\" -x cloudpc-codex",
+            "utilities-terminal", "OpenAI's coding agent in the terminal – you sign in with ChatGPT on your phone",
+        ),
+        AiApp(
+            "cloudpc-ai-gemini-cli", "Gemini CLI", "xfce4-terminal --title=\"Gemini CLI\" -x cloudpc-gemini",
+            "utilities-terminal", "Google's Gemini in the terminal – you sign in with Google on your phone",
+        ),
+        AiApp(
+            "cloudpc-ai-copilot", "GitHub Copilot CLI", "xfce4-terminal --title=\"Copilot\" -x cloudpc-copilot",
+            "utilities-terminal", "GitHub Copilot in the terminal – you sign in with GitHub on your phone",
         ),
         AiApp(
             "cloudpc-ai-pc-assistant", "PC Assistant (Claude)",
@@ -1166,6 +1191,24 @@ object CloudPcTools {
     private val ANTIGRAVITY = agentLauncher(
         "Antigravity CLI", "agy", "agy",
         "The first start asks you to sign in with your Google account – the sign-in page opens on your phone.",
+    )
+
+    /** OpenAI's Codex CLI in a terminal. */
+    private val CODEX = agentLauncher(
+        "Codex CLI", "codex", "codex",
+        "Choose \"Sign in with ChatGPT\" – the sign-in page opens on your phone.",
+    )
+
+    /** Google's Gemini CLI in a terminal. */
+    private val GEMINI = agentLauncher(
+        "Gemini CLI", "gemini", "gemini",
+        "Sign in with your Google account – the sign-in page opens on your phone.",
+    )
+
+    /** GitHub Copilot CLI in a terminal. */
+    private val COPILOT = agentLauncher(
+        "GitHub Copilot CLI", "copilot", "copilot",
+        "Type /login to sign in with GitHub – the page opens on your phone (enter the code it shows).",
     )
 
     /** A coding agent in a terminal, started in ~/Projects, with sign-in pages in the phone's browser. */

@@ -43,10 +43,37 @@ install_vscode() {
     rm -f "$tgz"
 }
 
-install_node() {
-    if command -v node >/dev/null 2>&1 && [ "$(node -v | cut -c2- | cut -d. -f1)" -ge 18 ]; then return 0; fi
-    echo "Installing Node.js 20..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs
+install_node() {   # $1 = lowest Node.js version the app needs (default 18)
+    local need="${1:-18}"
+    if command -v node >/dev/null 2>&1 && [ "$(node -v | cut -c2- | cut -d. -f1)" -ge "$need" ]; then return 0; fi
+    echo "Installing Node.js 22..."
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
+}
+
+install_npm_tool() {   # $1 = name, $2 = npm package, $3 = command, $4 = lowest Node.js version
+    echo "Installing $1..."
+    if install_node "${4:-18}" && npm install -g "$2" && command -v "$3" >/dev/null 2>&1; then
+        ok "$1 installed. Open it from AI Apps, or run:  $3"
+    else
+        bad "$1 install failed – check the internet and try again"
+    fi
+}
+
+install_claude_desktop() {
+    # Claude Desktop (Anthropic's official Linux app, beta): Anthropic's own package repository, so it
+    # updates with the system. Without the "recommended" extras: they are for Cowork, which needs a
+    # virtual machine (KVM) that phones do not give apps. gnome-keyring keeps the sign-in saved.
+    echo "Installing Claude Desktop (about 180 MB download)..."
+    mkdir -p /usr/share/keyrings
+    if curl -fsSLo /usr/share/keyrings/claude-desktop-archive-keyring.asc https://downloads.claude.ai/claude-desktop/key.asc; then
+        echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main" \
+            > /etc/apt/sources.list.d/claude-desktop.list
+        if apt-get update && apt-get install -y --no-install-recommends claude-desktop gnome-keyring; then
+            ok "Claude Desktop installed. Open Claude from the Start menu or its desktop icon, then sign in."
+            return 0
+        fi
+    fi
+    bad "Claude Desktop install failed – check the internet and free space, then try again"
 }
 
 install_claude_code() {
@@ -229,6 +256,9 @@ install_apt() {
 label_for() {
     case "$1" in
         vscode) echo "VS Code" ;; claude) echo "Claude Code" ;; ollama) echo "Offline AI (Ollama)" ;;
+        claude-desktop) echo "Claude Desktop" ;; codex) echo "Codex CLI" ;; gemini-cli) echo "Gemini CLI" ;;
+        copilot-cli) echo "GitHub Copilot CLI" ;; opencode) echo "OpenCode" ;; antigravity) echo "Antigravity CLI" ;;
+        antigravity-ide) echo "Antigravity IDE" ;;
         blender) echo "Blender" ;; libreoffice) echo "LibreOffice" ;; gimp) echo "GIMP" ;;
         inkscape) echo "Inkscape" ;; python) echo "Python" ;; vlc) echo "VLC" ;; gdrive) echo "Google Drive" ;; brave) echo "Brave" ;; github) echo "GitHub" ;;
         shotcut) echo "Shotcut" ;; kdenlive) echo "Kdenlive" ;; games) echo "Games pack" ;;
@@ -247,6 +277,10 @@ install_id() {
     case "$1" in
         vscode) install_vscode ;;
         claude) install_claude_code ;;
+        claude-desktop) install_claude_desktop ;;
+        codex) install_npm_tool "Codex CLI" @openai/codex codex 18 ;;
+        gemini-cli) install_npm_tool "Gemini CLI" @google/gemini-cli gemini 20 ;;
+        copilot-cli) install_npm_tool "GitHub Copilot CLI" @github/copilot copilot 22 ;;
         opencode) install_opencode ;;
         antigravity) install_antigravity_cli ;;
         antigravity-ide) install_antigravity_ide ;;
@@ -284,6 +318,11 @@ remove_id() {
         vscode) rm -rf /opt/code-server; rm -f /usr/local/bin/code-server; dpkg -s code >/dev/null 2>&1 && pkgs="code" ;;
         libreoffice) pkgs=$(dpkg-query -W -f='${Package}\n' 'libreoffice*' 2>/dev/null | tr '\n' ' ') ;;
         claude) npm uninstall -g @anthropic-ai/claude-code; return ;;
+        claude-desktop) pkgs="claude-desktop"; rm -f /etc/apt/sources.list.d/claude-desktop.list ;;
+        appimage-*) rm -rf "/opt/appimages/${1#appimage-}" "/usr/share/applications/$1.desktop"; ok "Removed"; return ;;
+        codex) npm uninstall -g @openai/codex; return ;;
+        gemini-cli) npm uninstall -g @google/gemini-cli; return ;;
+        copilot-cli) npm uninstall -g @github/copilot; return ;;
         opencode) rm -f /usr/local/bin/opencode; return ;;
         antigravity) rm -f /usr/local/bin/agy; return ;;
         antigravity-ide) pkgs="antigravity"; rm -f /etc/apt/sources.list.d/antigravity.list /etc/apt/keyrings/antigravity-repo-key.asc ;;

@@ -60,7 +60,7 @@ private val TOPICS = listOf(
             "New apps appear on the desktop and in the Start menu. Games go into the Games folder.",
             "Web apps (YouTube, Gmail, WhatsApp, AI websites) are added instantly, no download.",
             "Search 60,000+ more apps with the search button.",
-            "Website downloads: choose the ARM64 .deb file and tap it – it gets a desktop icon too.",
+            "Website downloads: choose the ARM64 .deb or AppImage file and open it – it gets a desktop icon too.",
             "Windows .exe programs do not run – use the Linux version from the App Store.",
         ),
     ),

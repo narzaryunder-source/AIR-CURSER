@@ -1325,6 +1325,11 @@ class AirBrowser(
             }
             val scheme = Uri.parse(uri).scheme?.lowercase(Locale.ROOT) ?: return GeckoResult.allow()
             if (scheme in WEB_SCHEMES) return GeckoResult.allow()
+            // A PC app's link (claude://… after its sign-in page): back to that app in the PC.
+            if (PcLinks.forPc(uri, CloudPcEngine.rootfs(activity))) {
+                host.openFileInPc(uri)
+                return GeckoResult.deny()
+            }
             openExternal(uri)   // app links: mail, phone, WhatsApp, Play Store…
             return GeckoResult.deny()
         }

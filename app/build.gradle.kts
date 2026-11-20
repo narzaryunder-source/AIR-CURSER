@@ -110,7 +110,7 @@ android {
 val copyCloudPcTools by tasks.registering(Copy::class) {
     from(rootProject.file("ubuntu")) {
         include(
-            "app-store.sh", "app-store.py", "ubuntu-extras.sh", "install-deb.sh", "windows-layout.sh", "wallpaper-gui.sh",
+            "app-store.sh", "app-store.py", "ubuntu-extras.sh", "install-deb.sh", "install-appimage.sh", "as-user.py", "windows-layout.sh", "wallpaper-gui.sh",
             "launch.sh", "apps-setup.sh", "style.sh", "aircursor-wallpaper.svg", "airstore.py", "airstore.html",
             "aircursor-logo.svg", "air-logo.svg", "web-icons.py", "aircursor-city.jpg", "aircursor-start.svg", "vscode.sh", "devtools.sh", "shell-index.py", "airmac/xfwm4/*",
         )

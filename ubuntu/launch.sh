@@ -52,6 +52,27 @@ if [ -n "$REAL" ]; then
         grep -qsE 'chrome-sandbox|/usr/share/code/|electron' "$REAL"; then
         ELECTRON=1   # a small start script for an Electron app
     fi
+    # An unpacked AppImage (/opt/appimages/<app>/AppRun, see aircursor-install-appimage): an Electron
+    # app when Chromium's files are inside (its AppRun passes the flags on to the app).
+    if [ $ELECTRON = 0 ] && [[ "$REAL" == /opt/appimages/*/* ]]; then
+        A=${REAL#/opt/appimages/}; A=/opt/appimages/${A%%/*}
+        PAK=$(find "$A" -maxdepth 4 -name resources.pak -print -quit 2>/dev/null)
+        if [ -n "$PAK" ]; then
+            ELECTRON=1
+            P2=$(dirname "$PAK")
+            [ -e "$P2/resources/app.asar" ] || [ -d "$P2/resources/app" ] || BROWSER=1
+        fi
+    fi
+fi
+
+# Electron apps (Claude Desktop, Cursor, Antigravity…) refuse to draw their windows as root (each
+# window's page program stops: "Running as root without --no-sandbox is not supported") and stay
+# empty: they run as the PC's own user instead, with the same home folder, sound and keyring.
+# Off: create ~/.config/cloudpc/electron-as-root
+ASUSER=0
+if [ $ELECTRON = 1 ] && [ $BROWSER = 0 ] && [ "$(id -u)" = 0 ] && [ ! -f /root/.config/cloudpc/electron-as-root ] &&
+    command -v cloudpc-as-user >/dev/null 2>&1; then
+    ASUSER=1
 fi
 
 LOG=$(mktemp /tmp/cloudpc-app.XXXXXX)
@@ -98,6 +119,7 @@ run() {   # $1 = 1 for the safe second try
             [ "$safe" = 0 ] && cmd+=(--no-zygote --disable-gpu --in-process-gpu)
         fi
     done
+    [ $ASUSER = 1 ] && cmd=(cloudpc-as-user "${cmd[@]}")
     t0=$(date +%s)
     if [ "$safe" = 1 ]; then
         # Safe mode: simplest drawing paths for GTK, Qt and OpenGL.
