@@ -79,8 +79,9 @@ NAME=$(field Name)
 BASE=${DESK##*/}; BASE=${BASE%.desktop}
 [ -n "$BASE" ] || BASE=${FILE_NAME%.*}
 # A short id: "Cursor-1.2.3-aarch64.AppImage" / "cursor.desktop" → "cursor"
-ID=$(printf '%s' "$BASE" | tr 'A-Z' 'a-z' | sed -E 's/[-_ .]?(v?[0-9][0-9.]*)?([-_.](aarch64|arm64|x86_64|amd64))?$//; s/[^a-z0-9.-]+/-/g; s/^-+|-+$//g')
-[ -n "$ID" ] || ID=app
+ID=$(printf '%s' "$BASE" | tr 'A-Z' 'a-z' | sed -E 's/[-_ .]?(v?[0-9][0-9.]*)?([-_.](aarch64|arm64|x86_64|amd64))?$//; s/[^a-z0-9.-]+/-/g; s/^[.-]+|-+$//g')
+# Never "." or ".." (that would be /opt/appimages itself or /opt): a plain name only.
+case "$ID" in ""|*..*) ID=app ;; esac
 NAME=${NAME:-$BASE}
 DEST="$DEST_ROOT/$ID"
 mkdir -p "$DEST_ROOT"

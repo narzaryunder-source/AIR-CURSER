@@ -7,7 +7,6 @@ AirCursor launcher (game mode, FPS overlay) and keeps settings and play history.
 Only 127.0.0.1 and a random key: other apps on the phone cannot use it.
 """
 import glob
-import html
 import json
 import mimetypes
 import os

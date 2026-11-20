@@ -36,11 +36,22 @@ Java_com_aircursor_assistant_WhisperNative_nativeInit(JNIEnv *env, jclass, jstri
     return reinterpret_cast<jlong>(ctx);
 }
 
-extern "C" JNIEXPORT jstring JNICALL
+// The text goes back as UTF-8 bytes (Kotlin decodes them): NewStringUTF only takes "modified UTF-8"
+// and stops the app (debuggable builds check every call) on emoji like "🎵" or on a character
+// Whisper cut in half – both happen in its output.
+static jbyteArray bytes(JNIEnv *env, const std::string &s) {
+    jbyteArray out = env->NewByteArray(static_cast<jsize>(s.size()));
+    if (out != nullptr && !s.empty()) {
+        env->SetByteArrayRegion(out, 0, static_cast<jsize>(s.size()), reinterpret_cast<const jbyte *>(s.data()));
+    }
+    return out;
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
 Java_com_aircursor_assistant_WhisperNative_nativeTranscribe(JNIEnv *env, jclass, jlong handle, jfloatArray audio,
                                                            jstring language, jstring prompt, jint threads, jint audioCtx) {
     auto *ctx = reinterpret_cast<whisper_context *>(handle);
-    if (ctx == nullptr) return env->NewStringUTF("");
+    if (ctx == nullptr || audio == nullptr) return bytes(env, "");
     const std::string lang = str(env, language);
     const std::string hint = str(env, prompt);
 
@@ -63,14 +74,18 @@ Java_com_aircursor_assistant_WhisperNative_nativeTranscribe(JNIEnv *env, jclass,
 
     const jsize n = env->GetArrayLength(audio);
     jfloat *samples = env->GetFloatArrayElements(audio, nullptr);
+    if (samples == nullptr) return bytes(env, "");   // out of memory
     const int rc = whisper_full(ctx, p, samples, n);
     env->ReleaseFloatArrayElements(audio, samples, JNI_ABORT);
-    if (rc != 0) return env->NewStringUTF("");
+    if (rc != 0) return bytes(env, "");
 
     std::string text;
     const int segments = whisper_full_n_segments(ctx);
-    for (int i = 0; i < segments; ++i) text += whisper_full_get_segment_text(ctx, i);
-    return env->NewStringUTF(text.c_str());
+    for (int i = 0; i < segments; ++i) {
+        const char *seg = whisper_full_get_segment_text(ctx, i);
+        if (seg != nullptr) text += seg;
+    }
+    return bytes(env, text);
 }
 
 extern "C" JNIEXPORT void JNICALL

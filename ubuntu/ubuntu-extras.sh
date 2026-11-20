@@ -319,7 +319,10 @@ remove_id() {
         libreoffice) pkgs=$(dpkg-query -W -f='${Package}\n' 'libreoffice*' 2>/dev/null | tr '\n' ' ') ;;
         claude) npm uninstall -g @anthropic-ai/claude-code; return ;;
         claude-desktop) pkgs="claude-desktop"; rm -f /etc/apt/sources.list.d/claude-desktop.list ;;
-        appimage-*) rm -rf "/opt/appimages/${1#appimage-}" "/usr/share/applications/$1.desktop"; ok "Removed"; return ;;
+        appimage-*)
+            local a="${1#appimage-}"
+            case "$a" in ""|.*|*/*|*..*) bad "Unknown app: $1"; return ;; esac
+            rm -rf "/opt/appimages/$a" "/usr/share/applications/$1.desktop"; ok "Removed"; return ;;
         codex) npm uninstall -g @openai/codex; return ;;
         gemini-cli) npm uninstall -g @google/gemini-cli; return ;;
         copilot-cli) npm uninstall -g @github/copilot; return ;;

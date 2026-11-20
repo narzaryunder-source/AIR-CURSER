@@ -26,9 +26,10 @@ object WhisperNative {
 
     @JvmStatic external fun nativeInit(libDir: String, modelPath: String): Long
 
+    /** The words as UTF-8 bytes (see [WhisperText.decode]). */
     @JvmStatic external fun nativeTranscribe(
         handle: Long, audio: FloatArray, language: String, prompt: String?, threads: Int, audioCtx: Int,
-    ): String
+    ): ByteArray?
 
     @JvmStatic external fun nativeFree(handle: Long)
 }
@@ -219,7 +220,7 @@ class WhisperVoice(context: Context) {
         // tiny model wrote nonsense with it in tests, so it keeps the full window.
         val ctx = if (m == WhisperModel.BASE) AUDIO_CTX else 0
         val raw = WhisperNative.nativeTranscribe(handle, audio, WhisperText.LANGUAGE, WhisperText.HINT, threads, ctx)
-        WhisperText.clean(raw)
+        WhisperText.clean(WhisperText.decode(raw))
     }
 
     /** Frees the model (about its file size of memory). */

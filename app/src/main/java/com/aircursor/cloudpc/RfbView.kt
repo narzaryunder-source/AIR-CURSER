@@ -143,6 +143,12 @@ class RfbView(context: Context, private val socketPath: String) : View(context),
     }
 
     private fun connectLoop(g: Int) {
+        // The PC's picture arrives on time even while its programs keep every core busy (this thread
+        // mostly waits for the next frame, so it takes almost no CPU from them).
+        try {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DISPLAY)
+        } catch (_: Exception) {
+        }
         val start = SystemClock.uptimeMillis()
         while (running && g == generation) {
             try {

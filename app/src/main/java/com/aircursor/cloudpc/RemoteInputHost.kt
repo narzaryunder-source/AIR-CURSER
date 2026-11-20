@@ -19,8 +19,10 @@ import java.net.SocketTimeoutException
 /**
  * The PC phone's side of "another phone as keyboard and touchpad": listens on the local network
  * (Wi-Fi or hotspot), shows up for the other phone by name (Android network service discovery),
- * and accepts one phone at a time that knows the 6-digit code shown on this screen. Five wrong
- * codes make a new code. Commands are handed to [onCommand] on the main thread.
+ * and accepts one phone at a time that knows the 6-digit code shown on this screen. Codes are
+ * checked one at a time with a pause after a wrong one, and five wrong codes make a new code
+ * ([PairingGate]). A connection without the right code never disturbs the paired phone.
+ * Commands are handed to [onCommand] on the main thread.
  */
 class RemoteInputHost(
     private val context: Context,
@@ -35,13 +37,15 @@ class RemoteInputHost(
     @Volatile private var server: ServerSocket? = null
     @Volatile private var client: Socket? = null
     private var registration: NsdManager.RegistrationListener? = null
-    private var wrong = 0
+    private val gate = com.aircursor.core.PairingGate(currentCode = { code }, renewCode = { newCode(); post() })
+    /** Connections still giving their code: a few at most (each wrong code costs a pause). */
+    private val handshakes = java.util.concurrent.atomic.AtomicInteger()
     private val pump = com.aircursor.core.InputPump()
     private val drain = Runnable { pump.drain { onCommand(it) } }
     private val wifi = LowLatencyWifi(context)
 
     /** The code stays the same between starts, so a paired phone reconnects by itself. */
-    var code: String = prefs.getString("code", null) ?: newCode()
+    @Volatile var code: String = prefs.getString("code", null) ?: newCode()
         private set
 
     val running get() = server != null
@@ -134,30 +138,33 @@ class RemoteInputHost(
     private fun acceptLoop(s: ServerSocket) {
         while (server === s) {
             val sock = try { s.accept() } catch (_: Exception) { break }
-            closeClient(bye = true)   // one phone at a time: the newest wins
-            client = sock
+            // Only a phone that gives the right code replaces the connected one (in serve): a network
+            // scanner or a wrong code used to disconnect the paired phone and tell it not to come back.
+            if (handshakes.incrementAndGet() > MAX_HANDSHAKES) {
+                handshakes.decrementAndGet()
+                try { sock.close() } catch (_: Exception) {}
+                continue
+            }
             Thread({ serve(sock) }, "remote-input-client").start()
         }
     }
 
     private fun serve(sock: Socket) {
+        var shaking = true
         try {
             sock.tcpNoDelay = true
             sock.soTimeout = 8000
             val input = BufferedReader(InputStreamReader(sock.getInputStream(), Charsets.UTF_8), 8192)
             val out = OutputStreamWriter(sock.getOutputStream(), Charsets.UTF_8)
             val first = input.readLine() ?: return
-            val given = RemoteInput.parseHello(first)
-            if (given == null || given != code) {
+            if (!gate.check(RemoteInput.parseHello(first))) {
                 out.write("NO\n"); out.flush()
-                if (++wrong >= 5) {
-                    wrong = 0
-                    newCode()
-                    post()
-                }
                 return
             }
-            wrong = 0
+            handshakes.decrementAndGet()
+            shaking = false
+            closeClient(bye = true)   // one phone at a time: the newest paired one wins
+            client = sock
             out.write("OK " + (Build.MODEL ?: "AirCursor PC").replace('\n', ' ').replace('|', ' ') + "|v" + com.aircursor.BuildConfig.VERSION_CODE + "\n"); out.flush()
             val name = sock.inetAddress?.hostAddress ?: "phone"
             wifi.hold(true)
@@ -171,6 +178,7 @@ class RemoteInputHost(
             }
         } catch (_: Exception) {
         } finally {
+            if (shaking) handshakes.decrementAndGet()
             try { sock.close() } catch (_: Exception) {}
             if (client === sock) client = null
             if (client == null) wifi.hold(false)
@@ -181,5 +189,6 @@ class RemoteInputHost(
     companion object {
         private const val TAG = "RemoteInputHost"
         const val PORT = 47820
+        private const val MAX_HANDSHAKES = 3
     }
 }

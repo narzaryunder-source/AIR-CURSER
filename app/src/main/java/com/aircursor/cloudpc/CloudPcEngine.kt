@@ -81,6 +81,12 @@ object CloudPcEngine {
     fun recheckFastMode(c: Context): Boolean {
         if (!noSeccomp(c)) return false
         val prefs = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        // Three failed tests used to mean slow mode forever (a busy phone at the wrong moment was
+        // enough): every app update gets three new tries.
+        val app = com.aircursor.BuildConfig.VERSION_CODE
+        if (prefs.getInt("fast_recheck_app", -1) != app) {
+            prefs.edit().putInt("fast_rechecks", 0).putInt("fast_recheck_app", app).apply()
+        }
         val tries = prefs.getInt("fast_rechecks", 0)
         if (tries >= 3) return false
         prefs.edit().putInt("fast_rechecks", tries + 1).apply()

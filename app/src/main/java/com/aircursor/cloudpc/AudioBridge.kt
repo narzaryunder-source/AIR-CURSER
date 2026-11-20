@@ -40,6 +40,12 @@ object AudioBridge {
     }
 
     private fun loop(path: String) {
+        // Sound before everything else: when a game keeps every core busy, a normal-priority thread
+        // gets its turn too late and the sound crackles. It mostly waits, so it takes no game time.
+        try {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
+        } catch (_: Exception) {
+        }
         while (running) {
             var track: AudioTrack? = null
             try {

@@ -7,7 +7,6 @@ ubuntu-extras (the same installer the old App Store used), one after another.
 """
 import os
 import re
-import shlex
 import subprocess
 import threading
 import time

@@ -25,6 +25,15 @@ object WhisperText {
         "subscribe", "please subscribe", "like and subscribe",
     )
 
+    /**
+     * Whisper's text bytes as a string. Whisper writes UTF-8 but can cut a character in half at the
+     * end (it works in byte pieces): such bytes become nothing instead of an error.
+     */
+    fun decode(raw: ByteArray?): String {
+        if (raw == null || raw.isEmpty()) return ""
+        return String(raw, Charsets.UTF_8).replace("\uFFFD", "")
+    }
+
     /** The words from a transcript, or "" when nothing was said. */
     fun clean(raw: String): String {
         val t = raw.replace(NOTES, " ")

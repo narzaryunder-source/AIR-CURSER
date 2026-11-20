@@ -205,7 +205,8 @@ object AirDownloads {
             val r = c.contentResolver
             val uri = r.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
             try {
-                r.openOutputStream(uri)?.use { out -> src.inputStream().use { it.copyTo(out, 256 * 1024) } } ?: return null
+                val out = r.openOutputStream(uri) ?: throw java.io.IOException("cannot write to Downloads")
+                out.use { o -> src.inputStream().use { it.copyTo(o, 256 * 1024) } }
                 values.clear()
                 values.put(MediaStore.Downloads.IS_PENDING, 0)
                 r.update(uri, values, null, null)

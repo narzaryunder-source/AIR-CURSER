@@ -57,6 +57,17 @@ class WhisperCommandsTest {
     }
 
     @Test
+    fun textBytesFromTheEngineNeverBreak() {
+        // Whisper's bytes go to Kotlin as they are (no JNI string): emoji and a character cut in half.
+        assertEquals("", WhisperText.decode(null))
+        assertEquals("youtube kholo", WhisperText.decode("youtube kholo".toByteArray()))
+        assertEquals("🎵 gaane chalao", WhisperText.decode("🎵 gaane chalao".toByteArray()))
+        val hindi = "नमस्ते".toByteArray()
+        assertEquals("नमस्त", WhisperText.decode(hindi.copyOf(hindi.size - 1)))   // last character cut
+        assertEquals("", WhisperText.clean(WhisperText.decode(byteArrayOf(0xE0.toByte(), 0xA4.toByte()))))
+    }
+
+    @Test
     fun cleanUpOfWhisperNotes() {
         assertEquals("", WhisperText.clean("[BLANK_AUDIO]"))
         assertEquals("", WhisperText.clean(" (music) ♪ "))
