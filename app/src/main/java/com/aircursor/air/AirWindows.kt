@@ -143,11 +143,8 @@ class AirWindows(
     }
 
     fun show(w: Win) {
-        val wasHidden = w.minimized
         w.minimized = false
         focus(w)
-        // Back from minimized: once the window is on screen again, attach its page to the surface again.
-        if (wasHidden) w.frame.post { if (!w.minimized) w.browser.reattach() }
     }
 
     fun focus(w: Win) {
@@ -180,16 +177,17 @@ class AirWindows(
      * drawn on separate surfaces, and only the window in front may show through.
      */
     private fun restack() {
-        var covered = false
-        for (w in wins.asReversed()) {
-            if (w.minimized) {
-                w.frame.visibility = View.GONE
-                w.browser.setActive(false)
-                continue
+        val front = wins.asReversed()
+        val plan = stackPlan(front.map { StackIn(it.minimized, it.maximized || it.videoFull, it.frame.visibility == View.VISIBLE) })
+        for ((w, p) in front.zip(plan)) {
+            w.frame.visibility = when (p.show) {
+                Show.ON -> View.VISIBLE
+                Show.UNDER -> View.INVISIBLE
+                Show.OFF -> View.GONE
             }
-            w.frame.visibility = if (covered) View.INVISIBLE else View.VISIBLE
-            w.browser.setActive(!covered)
-            if (w.maximized || w.videoFull) covered = true
+            w.browser.setActive(p.show == Show.ON)
+            // On screen again: the page goes onto a new view (a reused one could stay black).
+            if (p.freshView) w.browser.freshView()
         }
     }
 
@@ -411,5 +409,32 @@ class AirWindows(
 
     companion object {
         const val BROWSER = "air"
+    }
+}
+
+/** How a window shows: on screen, hidden under a full-size window, or minimized. */
+internal enum class Show { ON, UNDER, OFF }
+
+/** One window going into a restack (front first). */
+internal class StackIn(val minimized: Boolean, val full: Boolean, val wasOnScreen: Boolean)
+
+/** One window after a restack. */
+internal data class StackOut(val show: Show, val freshView: Boolean)
+
+/**
+ * Windows from front to back: minimized ones are off; the rest are on screen until a full-size one,
+ * and the ones under it are hidden (their pages rest). A window that comes back on screen (from
+ * minimized, or no longer under a full-size window) gets a fresh page view.
+ */
+internal fun stackPlan(frontFirst: List<StackIn>): List<StackOut> {
+    var covered = false
+    return frontFirst.map { w ->
+        val show = when {
+            w.minimized -> Show.OFF
+            covered -> Show.UNDER
+            else -> Show.ON
+        }
+        if (show == Show.ON && w.full) covered = true
+        StackOut(show, freshView = show == Show.ON && !w.wasOnScreen)
     }
 }

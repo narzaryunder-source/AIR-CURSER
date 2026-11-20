@@ -13,6 +13,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.SystemClock
@@ -123,7 +124,7 @@ class AirBrowser(
     internal val tabs = ArrayList<Tab>()
     internal var current = -1
     private val closedUrls = ArrayList<String>()
-    private val gecko = GeckoView(activity)
+    private var gecko = GeckoView(activity)
     private val column = LinearLayout(activity)
     internal val content = FrameLayout(activity)
     private val progressLine = View(activity)
@@ -192,7 +193,7 @@ class AirBrowser(
         addView(column, LayoutParams(-1, -1))
         if (app == null) buildBrowserChrome() else buildAppBar(app)
         buildFindBar()
-        content.setBackgroundColor(0xFF121318.toInt())
+        content.setBackgroundColor(PAGE_BG)
         content.addView(gecko, FrameLayout.LayoutParams(-1, -1))
         progressLine.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(AirUi.ACCENT, AirUi.ACCENT_2))
         progressLine.pivotX = 0f
@@ -407,24 +408,42 @@ class AirBrowser(
     fun setTextureBackend(on: Boolean) {
         if (on == textureBackend) return
         textureBackend = on
-        // The drawing surface is replaced. A page that is showing must be attached to the new surface
-        // again (the same release + set a tab switch does); swapping the surface under a live page
-        // left the window black while the page kept running.
-        val live = gecko.session
-        if (live != null) gecko.releaseSession()
-        gecko.setViewBackend(if (on) GeckoView.BACKEND_TEXTURE_VIEW else GeckoView.BACKEND_SURFACE_VIEW)
-        if (live != null) gecko.setSession(live)
+        // Nothing showing yet: set the kind of surface before a page comes, as when a window opens.
+        if (gecko.session == null) {
+            gecko.setViewBackend(backend())
+            return
+        }
+        freshView()
     }
 
+    private fun backend() = if (textureBackend) GeckoView.BACKEND_TEXTURE_VIEW else GeckoView.BACKEND_SURFACE_VIEW
+
     /**
-     * The window was hidden (minimized) and is back: attach the page to its drawing surface again,
-     * so it never comes back black.
+     * The window is on screen again (back from minimized, or no longer under a full-size window):
+     * its page goes onto a brand-new view.
+     *
+     * A view whose drawing surface went away (hidden window) or was swapped (maximize / restore)
+     * could stay black for good while the page kept running. A new view with the page attached is
+     * exactly how a window first opens, and that always shows.
      */
-    fun reattach() {
+    fun freshView() {
         val live = gecko.session ?: return
-        gecko.releaseSession()
-        gecko.setSession(live)
-        live.setActive(true)
+        val old = gecko
+        val hadFocus = old.hasFocus()
+        old.releaseSession()
+        val fresh = GeckoView(activity)
+        fresh.setViewBackend(backend())
+        // No cover over the new surface: GeckoView would wait for a "first paint" that a page which
+        // is already open may never send again (a cover left there is a black/white window for good).
+        fresh.coverUntilFirstPaint(Color.TRANSPARENT)
+        val at = content.indexOfChild(old).coerceAtLeast(0)
+        content.removeView(old)
+        content.addView(fresh, at, FrameLayout.LayoutParams(-1, -1))
+        gecko = fresh
+        fresh.setSession(live)
+        // Parts the page has not drawn yet look like the window, not black.
+        live.compositorController.clearColor = PAGE_BG
+        if (hadFocus) fresh.requestFocus()
     }
 
     /** The window manager changed the size: show the right maximize/restore picture. */
@@ -1937,5 +1956,8 @@ class AirBrowser(
 
     companion object {
         private val WEB_SCHEMES = setOf("http", "https", "about", "data", "blob", "resource", "javascript", "moz-extension")
+
+        /** Behind the page, before it draws (same as the window's content area). */
+        private const val PAGE_BG = 0xFF121318.toInt()
     }
 }
