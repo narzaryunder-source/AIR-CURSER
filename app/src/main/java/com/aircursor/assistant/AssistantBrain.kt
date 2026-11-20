@@ -113,6 +113,23 @@ object AssistantBrain {
         .replace(Regex("(?<![a-z0-9])\\.|\\.(?![a-z0-9])"), " ")
         .replace(Regex("\\s+"), " ")
         .trim()
+        .let { t -> HEARD.fold(" $t ") { acc, (heard, meant) -> acc.replace(heard, meant) }.trim() }
+
+    /**
+     * How the offline speech engine (Whisper) spells some spoken Hinglish words → the usual spelling.
+     * Each one was seen in real transcripts of spoken commands; whole words only.
+     */
+    private val HEARD = listOf(
+        " wai fai " to " wifi ", " vai pai " to " wifi ", " wai-fai " to " wifi ", " why fi " to " wifi ",
+        " kula " to " kholo ", " kolo " to " kholo ", " khulo " to " kholo ", " kholo lo " to " kholo ",
+        " amaz " to " awaz ", " avaz " to " awaz ", " avaaz " to " awaz ", " aawaz " to " awaz ",
+        " barhao " to " badhao ", " barhaao " to " badhao ",
+        " maya tab " to " naya tab ",
+        " screen short " to " screenshot ",
+        " caro " to " karo ", " kro " to " karo ",
+        " chaalu " to " chalu ",
+        " ki tne " to " kitne ", " ketne " to " kitne ",
+    )
 
     private fun rename(t: String): Command? {
         val m = Regex("^(?:your|tumhara|tumhaara|aapka|apka|tera) (?:name|naam) (?:is |hai |will be |hoga )?(.+?)(?: hai| hoga)?$").find(t)
@@ -157,9 +174,11 @@ object AssistantBrain {
     }
 
     private fun window(t: String): Command? = when (t) {
-        "minimize", "minimise", "minimize karo", "minimise karo", "minimize window", "chhota karo", "chota karo", "hide", "hide window" ->
+        "minimize", "minimise", "minimize karo", "minimise karo", "minimize window", "chhota karo", "chota karo", "hide", "hide window",
+        "window minimize karo", "window minimise karo", "window chhota karo", "window chota karo", "minimize kar do" ->
             Command.Window("minimize")
-        "maximize", "maximise", "maximize karo", "full screen", "fullscreen", "full screen karo", "bada karo", "badha karo", "maximize window" ->
+        "maximize", "maximise", "maximize karo", "full screen", "fullscreen", "full screen karo", "bada karo", "badha karo", "maximize window",
+        "window maximize karo", "window maximise karo", "window bada karo", "maximize kar do" ->
             Command.Window("maximize")
         "close", "close window", "close this", "close it", "band karo", "band kar do", "window band karo", "ise band karo", "isko band karo" ->
             Command.Window("close")
@@ -234,6 +253,10 @@ object AssistantBrain {
     }
 
     private fun search(t: String): Command? {
+        // "google pe mausam search karo" → mausam
+        Regex("^google (?:pe|par|per|mein|me|main) (.+?)(?: search karo| search kar do| search| dhundo| dhoondo| khojo| karo)?$").find(t)?.let {
+            return Command.Search(it.groupValues[1].trim())
+        }
         Regex("^(?:search|search for|google|find|look up|lookup|search karo|dhundo|dhoondo|khojo|search the web for) (.+)$").find(t)?.let {
             return Command.Search(it.groupValues[1].trim())
         }

@@ -24,6 +24,8 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
 import java.util.Date
@@ -60,6 +62,11 @@ class AirAssistant(
     private val talks get() = prefs.getBoolean("voice_replies", true)
     private val language get() = prefs.getString("language", "en-IN") ?: "en-IN"
 
+    /** Offline voice (Whisper on the phone) instead of the phone's online speech service. */
+    private val offline get() = prefs.getBoolean("offline_voice", false)
+    private var whisperVoice: WhisperVoice? = null
+    private fun whisper() = whisperVoice ?: WhisperVoice(activity).also { whisperVoice = it }
+
     private val d = activity.resources.displayMetrics.density
     private fun dp(v: Number) = (v.toFloat() * d).roundToInt()
 
@@ -77,6 +84,16 @@ class AirAssistant(
     val isShowing get() = panel != null
 
     fun listen() {
+        val w = whisper()
+        // Offline voice when it is chosen and ready; also when the phone has no speech service at all.
+        if ((offline || !SpeechRecognizer.isRecognitionAvailable(activity)) && w.ready) {
+            listenOffline(w)
+            return
+        }
+        if (offline && WhisperNative.available) {
+            showPanel()
+            answer("Offline voice needs its model once – long-press me, then Save to download it. Using online voice now.", problem = true, speak = false)
+        }
         if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
             showPanel()
             answer("Voice typing isn't available on this phone. Install or turn on Google's speech services.", problem = true)
@@ -107,6 +124,45 @@ class AirAssistant(
         } catch (e: Exception) {
             answer("The microphone is busy – try again.", problem = true)
         }
+    }
+
+    /** Whisper on the phone: listen until the words are over, write them down, then act. */
+    private fun listenOffline(w: WhisperVoice) {
+        showPanel()
+        if (w.busy) return
+        orb.state = AssistantOrb.State.LISTENING
+        heard.text = "Listening… (offline)"
+        heard.setTextColor(0xB3FFFFFF.toInt())
+        reply.text = "Try: \"YouTube kholo\", \"wifi band karo\""
+        reply.setTextColor(0x99FFFFFF.toInt())
+        root.removeCallbacks(hide)
+        tts?.stop()
+        w.listen(object : WhisperVoice.Listener {
+            override fun level(level: Float) {
+                if (panel != null) orb.level = level
+            }
+
+            override fun thinking() {
+                if (panel == null) return
+                orb.state = AssistantOrb.State.THINKING
+                heard.text = "Writing it down…"
+            }
+
+            override fun heard(text: String) {
+                if (panel == null) return
+                if (text.isEmpty()) {
+                    answer("I didn't catch that – tap the mic and try again.", problem = true, speak = false)
+                    return
+                }
+                heard.text = "“$text”"
+                heard.setTextColor(Color.WHITE)
+                run(text)
+            }
+
+            override fun failed(message: String) {
+                if (panel != null) answer(message, problem = true, speak = false)
+            }
+        })
     }
 
     private val listener = object : RecognitionListener {
@@ -319,6 +375,7 @@ class AirAssistant(
 
     fun dismiss() {
         root.removeCallbacks(hide)
+        whisperVoice?.cancel()
         if (listening) {
             try {
                 recognizer?.cancel()
@@ -340,6 +397,8 @@ class AirAssistant(
         recognizer = null
         tts?.shutdown()
         tts = null
+        whisperVoice?.release()
+        whisperVoice = null
     }
 
     /** Long-press the assistant: its name, voice replies and language. */
@@ -366,20 +425,69 @@ class AirAssistant(
             isChecked = language.startsWith("hi")
         }
         box.addView(hindi)
+        // Offline voice: Whisper on the phone (64-bit phones), one model download.
+        val w = whisper()
+        val offlineBox = CheckBox(activity).apply {
+            text = "Offline voice (Whisper) – no internet, Hindi + English"
+            isChecked = offline
+            isEnabled = WhisperNative.available
+        }
+        box.addView(offlineBox)
+        val models = RadioGroup(activity).apply { orientation = RadioGroup.HORIZONTAL }
+        for (m in WhisperModel.entries) {
+            models.addView(RadioButton(activity).apply {
+                id = View.generateViewId()
+                tag = m
+                text = m.label + if (w.isDownloaded(m)) " ✓" else ""
+                isChecked = m == w.model
+            })
+        }
+        box.addView(models)
+        if (!WhisperNative.available) {
+            box.addView(TextView(activity).apply { text = "Offline voice needs a 64-bit phone." })
+            models.visibility = View.GONE
+        }
         AlertDialog.Builder(activity)
             .setTitle("Voice assistant")
             .setView(box)
             .setPositiveButton("Save") { _, _ ->
+                val chosen = models.findViewById<RadioButton>(models.checkedRadioButtonId)?.tag as? WhisperModel ?: w.model
                 prefs.edit()
                     .putString("name", nameField.text.toString().trim().take(24).ifEmpty { "Air" })
                     .putBoolean("voice_replies", voice.isChecked)
                     .putString("language", if (hindi.isChecked) "hi-IN" else "en-IN")
+                    .putBoolean("offline_voice", offlineBox.isChecked && WhisperNative.available)
                     .apply()
+                w.model = chosen
                 if (panel != null) label.text = name.uppercase(Locale.ROOT)
-                Toast.makeText(activity, "Saved", Toast.LENGTH_SHORT).show()
+                if (offlineBox.isChecked && WhisperNative.available && !w.isDownloaded(chosen)) downloadModel(w, chosen)
+                else Toast.makeText(activity, "Saved", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    /** One-time download of the offline voice model, with its progress. */
+    private fun downloadModel(w: WhisperVoice, m: WhisperModel) {
+        val status = TextView(activity).apply {
+            text = "Downloading ${m.label}… 0%"
+            setPadding(dp(24), dp(16), dp(24), dp(8))
+        }
+        val dlg = AlertDialog.Builder(activity)
+            .setTitle("Offline voice")
+            .setView(status)
+            .setCancelable(false)
+            .setNegativeButton("Hide", null)
+            .show()
+        w.download(m, progress = { pct -> status.text = "Downloading ${m.label}… $pct%" }) { err ->
+            if (err == null) {
+                status.text = "Ready. Tap the mic and speak – it works without internet."
+                Toast.makeText(activity, "Offline voice ready", Toast.LENGTH_SHORT).show()
+            } else {
+                status.text = "Download stopped: $err. Long-press the assistant and Save to try again."
+            }
+            dlg.getButton(AlertDialog.BUTTON_NEGATIVE)?.text = "OK"
+        }
     }
 
     companion object {

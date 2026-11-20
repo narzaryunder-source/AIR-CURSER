@@ -30,6 +30,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: true   # third_party/whisper.cpp (offline voice)
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -42,6 +44,9 @@ jobs:
 
       - name: Make gradlew executable
         run: chmod +x ./gradlew
+
+      - name: Install NDK and CMake (offline voice)
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;29.0.14206865" "cmake;3.31.6" > /dev/null
 
       - name: Run unit tests
         run: ./gradlew --no-daemon --stacktrace testDebugUnitTest
