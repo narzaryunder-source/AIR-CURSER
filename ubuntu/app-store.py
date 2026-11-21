@@ -70,7 +70,7 @@ CATALOG = [
         ["gemini.google.com"], ["cmd:gemini"], ["desk:cloudpc-ai-gemini-cli.desktop", "term:cloudpc-gemini"], "utilities-terminal"),
     App("copilot-cli", "GitHub Copilot CLI", "GitHub Copilot's coding agent in the terminal (GitHub account with Copilot)", AI, 210,
         ["github.com"], ["cmd:copilot"], ["desk:cloudpc-ai-copilot.desktop", "term:cloudpc-copilot"], "utilities-terminal"),
-    App("opencode", "OpenCode", "Open-source AI coding agent in the terminal – free AI models, no account needed", AI, 250,
+    App("opencode", "OpenCode", "Open-source AI coding agent in its own app window – free AI models, no account needed", AI, 250,
         ["opencode.ai"], ["cmd:opencode"], ["desk:cloudpc-ai-opencode.desktop", "term:cloudpc-opencode"], "utilities-terminal"),
     App("antigravity", "Antigravity CLI", "Google's AI coding agent in the terminal – sign in with Google on your phone", AI, 270,
         ["antigravity.google"], ["cmd:agy"], ["desk:cloudpc-ai-antigravity.desktop", "term:cloudpc-antigravity"], "utilities-terminal"),

@@ -91,4 +91,34 @@ class AgentLaunchersTest {
         val (out2, _) = run("ANTIGRAVITY")
         assertTrue(out2, out2.contains("Antigravity CLI is not installed yet: Air Store → AI & Coding → Antigravity CLI → Install."))
     }
+
+    @Test
+    fun openCodeOpensAsAnAppWindowWithAOneTimeLink() {
+        val root = tmp.newFolder()
+        val bin = tmp.newFolder()
+        val log = File(root, "app.txt")
+        fun stub(name: String, body: String) = File(bin, name).apply { writeText("#!/bin/bash\n$body\n"); setExecutable(true) }
+        stub("opencode", """
+            case "${'$'}1" in
+                service) exit 0 ;;
+                pair) printf '\n  Open a link to connect.\n\n  http://127.0.0.1:49374/auth/connect/AbC-12_x\n\n  ssh -L 49374:127.0.0.1:49374 <host>\n' ;;
+            esac
+        """.trimIndent())
+        stub("cloudpc-app", "echo \"${'$'}*\" > '${log.path}'")
+        stub("notify-send", "exit 0")
+        stub("zenity", "exit 0")
+        val file = File(root, "launcher").apply {
+            writeText(script("OPENCODE_APP").replace("/root", root.path))
+            setExecutable(true)
+        }
+        val syntax = ProcessBuilder("bash", "-n", file.path).redirectErrorStream(true).start()
+        assertEquals(syntax.inputStream.bufferedReader().readText(), 0, syntax.waitFor())
+        val pb = ProcessBuilder("bash", file.path).redirectErrorStream(true)
+        pb.environment()["PATH"] = "${bin.path}:/usr/bin:/bin"
+        val p = pb.start()
+        val out = p.inputStream.bufferedReader().readText()
+        assertEquals(out, 0, p.waitFor())
+        assertEquals("opencode max OpenCode http://127.0.0.1:49374/auth/connect/AbC-12_x", log.readText().trim())
+        assertTrue(File(root, "Projects").isDirectory)
+    }
 }

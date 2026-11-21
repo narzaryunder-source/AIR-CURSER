@@ -9,8 +9,8 @@ import org.junit.Test
  * surface went away could stay black for good.
  */
 class StackPlanTest {
-    private fun win(minimized: Boolean = false, full: Boolean = false, wasOnScreen: Boolean = true) =
-        StackIn(minimized, full, wasOnScreen)
+    private fun win(minimized: Boolean = false, full: Boolean = false, wasOnScreen: Boolean = true, surfaceLost: Boolean = false) =
+        StackIn(minimized, full, wasOnScreen, surfaceLost)
 
     @Test
     fun backFromMinimizedGetsAFreshView() {
@@ -61,5 +61,20 @@ class StackPlanTest {
     fun aHiddenWindowThatStaysHiddenIsNotRebuilt() {
         val plan = stackPlan(listOf(win(full = true), win(wasOnScreen = false), win(minimized = true, wasOnScreen = false)))
         assertEquals(listOf(false, false, false), plan.map { it.freshView })
+    }
+
+    @Test
+    fun backFromTheHomeScreenEveryWindowOnScreenGetsANewView() {
+        // The app was in the background: windows that were on screen kept their place but lost
+        // their drawing surface – these used to stay black.
+        val plan = stackPlan(listOf(win(surfaceLost = true), win(full = false, surfaceLost = true)))
+        assertEquals(listOf(true, true), plan.map { it.freshView })
+    }
+
+    @Test
+    fun backFromTheHomeScreenHiddenWindowsWaitUntilShown() {
+        val plan = stackPlan(listOf(win(full = true, surfaceLost = true), win(surfaceLost = true), win(minimized = true, surfaceLost = true)))
+        assertEquals(listOf(true, false, false), plan.map { it.freshView })
+        assertEquals(listOf(Show.ON, Show.UNDER, Show.OFF), plan.map { it.show })
     }
 }

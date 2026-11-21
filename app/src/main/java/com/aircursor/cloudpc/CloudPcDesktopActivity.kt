@@ -1834,6 +1834,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     override fun onStop() {
         hiddenAt = SystemClock.uptimeMillis()
         view?.disconnect()
+        air?.stopped()   // its windows get new views when the app is back (no black windows)
         // With a password, the monitor does not keep showing the PC while the phone is away.
         if (monitor?.isOn == true && PcLock.hasPassword(this)) monitor?.stop()
         super.onStop()

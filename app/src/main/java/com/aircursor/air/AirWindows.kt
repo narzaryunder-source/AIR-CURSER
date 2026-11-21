@@ -39,6 +39,8 @@ class AirWindows(
         var maximized = true
         var minimized = false
         var videoFull = false
+        /** The app was in the background since this window was last drawn (see [stopped]). */
+        var surfaceLost = false
         var x = 0f
         var y = 0f
         var w = 0
@@ -178,7 +180,7 @@ class AirWindows(
      */
     private fun restack() {
         val front = wins.asReversed()
-        val plan = stackPlan(front.map { StackIn(it.minimized, it.maximized || it.videoFull, it.frame.visibility == View.VISIBLE) })
+        val plan = stackPlan(front.map { StackIn(it.minimized, it.maximized || it.videoFull, it.frame.visibility == View.VISIBLE, it.surfaceLost) })
         for ((w, p) in front.zip(plan)) {
             w.frame.visibility = when (p.show) {
                 Show.ON -> View.VISIBLE
@@ -186,8 +188,13 @@ class AirWindows(
                 Show.OFF -> View.GONE
             }
             w.browser.setActive(p.show == Show.ON)
-            // On screen again: the page goes onto a new view (a reused one could stay black).
-            if (p.freshView) w.browser.freshView()
+            // On screen again, or the app is back from the background: the page goes onto a new view
+            // (a reused one could stay black), and the window is looked at a moment later.
+            if (p.freshView) {
+                w.surfaceLost = false
+                w.browser.freshView()
+                w.browser.shown()
+            }
         }
     }
 
@@ -218,6 +225,15 @@ class AirWindows(
 
     fun pause() {
         for (w in wins) w.browser.setActive(false)
+    }
+
+    /**
+     * The app went to the background (home screen, another app): Android took every window's
+     * drawing surface away, and may have stopped Gecko's drawing process. Each window gets a new
+     * view when it shows again – the same view could stay black for good.
+     */
+    fun stopped() {
+        for (w in wins) w.surfaceLost = true
     }
 
     fun resume() = restack()
@@ -416,7 +432,7 @@ class AirWindows(
 internal enum class Show { ON, UNDER, OFF }
 
 /** One window going into a restack (front first). */
-internal class StackIn(val minimized: Boolean, val full: Boolean, val wasOnScreen: Boolean)
+internal class StackIn(val minimized: Boolean, val full: Boolean, val wasOnScreen: Boolean, val surfaceLost: Boolean = false)
 
 /** One window after a restack. */
 internal data class StackOut(val show: Show, val freshView: Boolean)
@@ -435,6 +451,6 @@ internal fun stackPlan(frontFirst: List<StackIn>): List<StackOut> {
             else -> Show.ON
         }
         if (show == Show.ON && w.full) covered = true
-        StackOut(show, freshView = show == Show.ON && !w.wasOnScreen)
+        StackOut(show, freshView = show == Show.ON && (!w.wasOnScreen || w.surfaceLost))
     }
 }

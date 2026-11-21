@@ -444,6 +444,95 @@ class AirBrowser(
         // Parts the page has not drawn yet look like the window, not black.
         live.compositorController.clearColor = PAGE_BG
         if (hadFocus) fresh.requestFocus()
+        removeCallbacks(blankCheck)
+        postDelayed(blankCheck, BLANK_CHECK_MS)
+    }
+
+    // ---- a window that stays black ----
+    //
+    // Gecko draws every page in its own GPU process. Android may stop that process (or the page's
+    // process) while the app is in the background or a window is hidden – AirCursor PC takes a lot of
+    // memory. Gecko restarts it, but a window only shows again when its view gets a new surface;
+    // otherwise it stays black for good while the page keeps running. So: a new view whenever the
+    // paint state is reset or the window comes back, and a look at the window a moment later –
+    // still nothing drawn means another new view (twice), then the page is reloaded once.
+
+    private var blankTries = 0
+    private val blankCheck = Runnable { checkBlank() }
+
+    /** The window is on screen again (shown, restored, or the app came back): check it soon. */
+    fun shown() {
+        blankTries = 0
+        removeCallbacks(blankCheck)
+        postDelayed(blankCheck, BLANK_CHECK_MS)
+    }
+
+    private fun note(what: String) {
+        val name = app?.title ?: "Air"
+        com.aircursor.cloudpc.CloudPcBus.line("Air window \"$name\": $what", force = true)
+    }
+
+    /** The drawing view of [g]: GeckoView keeps it as a child (SurfaceView or TextureView). */
+    private fun surfaceOf(g: GeckoView): View? {
+        for (i in 0 until g.childCount) {
+            val c = g.getChildAt(i)
+            if (c is android.view.SurfaceView || c is android.view.TextureView) return c
+        }
+        return null
+    }
+
+    private fun checkBlank() {
+        if (closed || !isShown || gecko.session == null || fullScreen) return
+        val v = surfaceOf(gecko) ?: return
+        if (v.width <= 0 || v.height <= 0) return
+        val probe = Bitmap.createBitmap(BLANK_PROBE, BLANK_PROBE, Bitmap.Config.ARGB_8888)
+        when (v) {
+            is android.view.TextureView -> judgeBlank(if (v.isAvailable) BlankCheck.judge(pixels(v.getBitmap(probe))) else BlankCheck.Result.NOTHING)
+            is android.view.SurfaceView -> {
+                val surface = v.holder.surface
+                if (surface == null || !surface.isValid) return
+                val h = handler ?: return
+                try {
+                    android.view.PixelCopy.request(v, probe, { r ->
+                        judgeBlank(
+                            when (r) {
+                                android.view.PixelCopy.SUCCESS -> BlankCheck.judge(pixels(probe))
+                                android.view.PixelCopy.ERROR_SOURCE_NO_DATA -> BlankCheck.Result.NOTHING
+                                else -> BlankCheck.Result.FINE   // could not look: leave it
+                            },
+                        )
+                    }, h)
+                } catch (_: Exception) {
+                }
+            }
+        }
+    }
+
+    private fun pixels(b: Bitmap?): IntArray {
+        if (b == null) return IntArray(0)
+        val px = IntArray(b.width * b.height)
+        b.getPixels(px, 0, b.width, 0, 0, b.width, b.height)
+        return px
+    }
+
+    private fun judgeBlank(r: BlankCheck.Result) {
+        if (closed) return
+        if (r == BlankCheck.Result.FINE) {
+            blankTries = 0
+            return
+        }
+        blankTries++
+        when (BlankCheck.next(blankTries, r)) {
+            BlankCheck.Step.NEW_VIEW -> {
+                note("nothing drawn (${r.name.lowercase()}) – new view, try $blankTries")
+                freshView()   // looks again a moment later
+            }
+            BlankCheck.Step.RELOAD -> {
+                note("still nothing drawn – page reloaded")
+                cur()?.session?.reload()
+            }
+            BlankCheck.Step.GIVE_UP -> Unit
+        }
     }
 
     /** The window manager changed the size: show the right maximize/restore picture. */
@@ -1462,9 +1551,28 @@ class AirBrowser(
             contextMenu(t, element)
         }
 
-        override fun onCrash(session: GeckoSession) = restart(t)
+        override fun onCrash(session: GeckoSession) {
+            note("page process crashed – reloaded")
+            restart(t)
+        }
 
-        override fun onKill(session: GeckoSession) = restart(t)
+        override fun onKill(session: GeckoSession) {
+            note("page process stopped by Android – reloaded")
+            restart(t)
+        }
+
+        // Gecko's drawing started over (its GPU process was restarted): this window's view needs a
+        // new surface, or it stays black.
+        override fun onPaintStatusReset(session: GeckoSession) {
+            if (t !== cur() || closed) return
+            note("drawing restarted – new view")
+            post {
+                if (!closed && t === cur()) {
+                    blankTries = 0
+                    freshView()
+                }
+            }
+        }
     }
 
     private fun historyDelegate(t: Tab) = object : GeckoSession.HistoryDelegate {
@@ -1963,6 +2071,12 @@ class AirBrowser(
         private val WEB_SCHEMES = setOf("http", "https", "about", "data", "blob", "resource", "javascript", "moz-extension")
 
         /** Behind the page, before it draws (same as the window's content area). */
-        private const val PAGE_BG = 0xFF121318.toInt()
+        internal const val PAGE_BG = 0xFF121318.toInt()
+
+        /** A look at a window this long after it shows (Gecko needs a moment to draw). */
+        private const val BLANK_CHECK_MS = 1500L
+
+        /** Pixels looked at (a small, scaled-down copy of the page surface). */
+        private const val BLANK_PROBE = 24
     }
 }

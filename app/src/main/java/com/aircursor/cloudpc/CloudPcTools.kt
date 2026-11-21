@@ -10,7 +10,7 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 39
+    const val VERSION = 40
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
@@ -137,6 +137,7 @@ object CloudPcTools {
         }
         put("usr/local/bin/cloudpc-claude", CLAUDE, exec = true)
         put("usr/local/bin/cloudpc-opencode", OPENCODE, exec = true)
+        put("usr/local/bin/cloudpc-opencode-app", OPENCODE_APP, exec = true)
         put("usr/local/bin/cloudpc-antigravity", ANTIGRAVITY, exec = true)
         put("usr/local/bin/cloudpc-codex", CODEX, exec = true)
         put("usr/local/bin/cloudpc-gemini", GEMINI, exec = true)
@@ -391,32 +392,37 @@ object CloudPcTools {
         AiApp("cloudpc-ai-gemini", "Gemini (AI)", "cloudpc-web https://gemini.google.com", "web-browser", "Google Gemini (website)"),
         AiApp("cloudpc-ai-offline", "Offline AI (Ollama)", "cloudpc-ai-offline", "utilities-terminal", "AI chat without internet – small models, slow on phones"),
         AiApp(
-            "cloudpc-ai-claude-code", "Claude Code", "xfce4-terminal --title=\"Claude Code\" -x cloudpc-claude",
+            "cloudpc-ai-claude-code", "Claude Code", "xfce4-terminal --maximize --hide-menubar --hide-toolbar --hide-scrollbar --title=\"Claude Code\" -x cloudpc-claude",
             "utilities-terminal", "AI coding assistant in the terminal – you sign in on your phone",
         ),
         AiApp(
-            "cloudpc-ai-opencode", "OpenCode", "xfce4-terminal --title=\"OpenCode\" -x cloudpc-opencode",
-            "utilities-terminal", "Open-source AI coding agent – free AI models, no account needed",
+            "cloudpc-ai-opencode", "OpenCode", "cloudpc-opencode-app",
+            "applications-development", "Open-source AI coding agent – its own app window, free AI models, no account needed",
         ),
         AiApp(
-            "cloudpc-ai-antigravity", "Antigravity CLI", "xfce4-terminal --title=\"Antigravity\" -x cloudpc-antigravity",
+            "cloudpc-ai-opencode-terminal", "OpenCode (terminal)",
+            "xfce4-terminal --maximize --hide-menubar --hide-toolbar --hide-scrollbar --title=\"OpenCode\" -x cloudpc-opencode",
+            "utilities-terminal", "OpenCode in the terminal (the classic text screen)",
+        ),
+        AiApp(
+            "cloudpc-ai-antigravity", "Antigravity CLI", "xfce4-terminal --maximize --hide-menubar --hide-toolbar --hide-scrollbar --title=\"Antigravity\" -x cloudpc-antigravity",
             "utilities-terminal", "Google's AI coding agent in the terminal – you sign in with Google on your phone",
         ),
         AiApp(
-            "cloudpc-ai-codex", "Codex CLI", "xfce4-terminal --title=\"Codex\" -x cloudpc-codex",
+            "cloudpc-ai-codex", "Codex CLI", "xfce4-terminal --maximize --hide-menubar --hide-toolbar --hide-scrollbar --title=\"Codex\" -x cloudpc-codex",
             "utilities-terminal", "OpenAI's coding agent in the terminal – you sign in with ChatGPT on your phone",
         ),
         AiApp(
-            "cloudpc-ai-gemini-cli", "Gemini CLI", "xfce4-terminal --title=\"Gemini CLI\" -x cloudpc-gemini",
+            "cloudpc-ai-gemini-cli", "Gemini CLI", "xfce4-terminal --maximize --hide-menubar --hide-toolbar --hide-scrollbar --title=\"Gemini CLI\" -x cloudpc-gemini",
             "utilities-terminal", "Google's Gemini in the terminal – you sign in with Google on your phone",
         ),
         AiApp(
-            "cloudpc-ai-copilot", "GitHub Copilot CLI", "xfce4-terminal --title=\"Copilot\" -x cloudpc-copilot",
+            "cloudpc-ai-copilot", "GitHub Copilot CLI", "xfce4-terminal --maximize --hide-menubar --hide-toolbar --hide-scrollbar --title=\"Copilot\" -x cloudpc-copilot",
             "utilities-terminal", "GitHub Copilot in the terminal – you sign in with GitHub on your phone",
         ),
         AiApp(
             "cloudpc-ai-pc-assistant", "PC Assistant (Claude)",
-            "xfce4-terminal --title=\"PC Assistant\" -x cloudpc-claude --assistant",
+            "xfce4-terminal --maximize --hide-menubar --hide-toolbar --hide-scrollbar --title=\"PC Assistant\" -x cloudpc-claude --assistant",
             "utilities-system-monitor", "Claude checks and fixes the PC: speed, FPS, apps – and builds and opens apps for you",
         ),
     )
@@ -1186,6 +1192,37 @@ object CloudPcTools {
         "OpenCode", "opencode", "opencode --standalone",
         "Free AI models work without an account (type /models to pick one). To use your own AI account, type /connect.",
     )
+
+    /**
+     * OpenCode as a real app window: OpenCode's own web app, shown by Air (the phone's browser
+     * engine – fast and touch-friendly) instead of a terminal. Its server listens only on this phone
+     * and lets a browser in with a one-time link (works once, expires in 5 minutes).
+     */
+    private val OPENCODE_APP = """
+        #!/bin/bash
+        . /tmp/cloudpc-session.env 2>/dev/null
+        export PATH="/$LIB/phone-browser:${'$'}PATH" BROWSER=cloudpc-open-on-phone
+        mkdir -p /root/Projects
+        cd /root/Projects || cd /root || exit 1
+        if ! command -v opencode >/dev/null 2>&1; then
+            zenity --info --width=380 --text="OpenCode is not installed yet: Air Store → AI &amp; Coding → OpenCode → Install." >/dev/null 2>&1
+            exit 0
+        fi
+        notify-send -a "AirCursor PC" -i applications-development "Opening OpenCode…" >/dev/null 2>&1 &
+        opencode service start >/dev/null 2>&1
+        LINK=""
+        for i in ${'$'}(seq 1 30); do
+            LINK=${'$'}(opencode pair 2>/dev/null | grep -oE 'http://127\.0\.0\.1:[0-9]+/auth/connect/[A-Za-z0-9_-]+' | head -n 1)
+            [ -n "${'$'}LINK" ] && break
+            sleep 1
+        done
+        if [ -z "${'$'}LINK" ]; then
+            zenity --error --width=420 --text="OpenCode did not start. Try once more, or open \"OpenCode (terminal)\" from AI Apps." >/dev/null 2>&1
+            exit 1
+        fi
+        if command -v cloudpc-app >/dev/null 2>&1; then exec cloudpc-app opencode max OpenCode "${'$'}LINK"; fi
+        exec cloudpc-web "${'$'}LINK" OpenCode
+    """.trimIndent() + "\n"
 
     /** Google's Antigravity CLI ("agy") in a terminal. */
     private val ANTIGRAVITY = agentLauncher(
