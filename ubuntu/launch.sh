@@ -117,6 +117,10 @@ run() {   # $1 = 1 for the safe second try
             # drawing. Second try: Chromium's normal start (only the sandbox off).
             cmd+=(--no-sandbox)
             [ "$safe" = 0 ] && cmd+=(--no-zygote --disable-gpu --in-process-gpu)
+            # "Open file" / "Attach" dialogs drawn by the app itself, not through the desktop portal:
+            # the portal starts 3–4 more programs for each dialog, which Android's limit of 32 can
+            # stop on the spot – the button then does nothing (OpenCode's "Images and files").
+            [ -f /root/.config/cloudpc/electron-portal-dialogs ] || cmd+=(--xdg-portal-required-version=999)
         fi
     done
     [ $ASUSER = 1 ] && cmd=(cloudpc-as-user "${cmd[@]}")

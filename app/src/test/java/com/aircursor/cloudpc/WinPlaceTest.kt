@@ -57,7 +57,17 @@ class WinPlaceTest {
     fun windowsThatCannotOrShouldNotGrowOnlyMove() {
         assertEquals(listOf("('move', 0, 30)", "('move', 0, 30)", "('move', 0, 30)"), plans(
             "dict(fixed=True)",
-            "dict(kind='dialog')",
+            "dict(kind='dialog', w=900, h=500, y=0)",
+            "dict(transient=True, w=900, h=500, y=0)",
+        ))
+    }
+
+    /** OpenCode's file chooser was 822 px tall on a 720 px screen: its Open / Cancel buttons were off it. */
+    @Test
+    fun aDialogTallerThanTheScreenIsMadeToFit() {
+        // Free height 720 - 30 (menu bar) - 80 (dock) = 610; minus its frame (30 + 2) = 578.
+        assertEquals(listOf("('fit', 235, 30, 1130, 578)", "('fit', 156, 30, 1287, 578)"), plans(
+            "dict(kind='dialog', x=200, y=29, w=1130, h=822)",
             "dict(transient=True)",
         ))
     }

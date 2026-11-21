@@ -9,8 +9,9 @@ Some apps (Electron and Tauri apps such as OpenCode Desktop) place or move their
 it opens, at the very top of the screen: its title bar - with the close / minimise / full size
 buttons - then sits under the phone's menu bar, where no finger can reach it. For each window:
   - a big app window (most of the screen wide, or taller than the free space) opens full size;
-  - a smaller one whose title bar is under the menu bar moves down below it.
-Dialogs only move. Full-screen, already full-size, hidden, minimised and special windows (desktop,
+  - a smaller one whose title bar is under the menu bar moves down below it;
+  - a dialog taller than the free space (a file chooser) is made to fit, so its buttons show.
+Dialogs never go full size. Full-screen, already full-size, hidden, minimised and special windows (desktop,
 panels, menus, splash screens) are left alone. Only Xlib through ctypes: no extra packages.
 """
 import ctypes
@@ -104,6 +105,12 @@ def plan(win, screen, top, bottom):
     big = fw >= sw * BIG_WIDTH or fh > free_h
     if big and win["kind"] == "normal" and not win["transient"] and not win["fixed"]:
         return ("max",)
+    # A dialog (or a window that should not be full size) taller or wider than the free space – a
+    # file chooser on a phone's short screen: made to fit, or its Open / Cancel buttons are off-screen.
+    if not win["fixed"] and (fh > free_h or fw > sw):
+        w = min(fw, sw) - left - right
+        h = min(fh, free_h) - ftop - fbottom
+        return ("fit", (sw - min(fw, sw)) // 2, top, w, h)
     # Its title bar must be below the menu bar (and on the screen at all).
     if fy < top or fy > sh - max(ftop, 24):
         x = 0 if fw >= sw else min(max(fx, 0), sw - fw)
@@ -245,6 +252,9 @@ def main(args):
             continue
         if todo[0] == "max":
             send(w, "_NET_WM_STATE", [1, atom("_NET_WM_STATE_MAXIMIZED_VERT"), atom("_NET_WM_STATE_MAXIMIZED_HORZ"), 2])
+        elif todo[0] == "fit":
+            # x and y of the frame (north-west gravity), width and height of the window.
+            send(w, "_NET_MOVERESIZE_WINDOW", [1 | (0xF << 8) | (2 << 12), todo[1], todo[2], todo[3], todo[4]])
         else:
             # x and y of the frame (north-west gravity).
             send(w, "_NET_MOVERESIZE_WINDOW", [1 | (1 << 8) | (1 << 9) | (2 << 12), todo[1], todo[2]])
