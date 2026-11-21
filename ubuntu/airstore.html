@@ -68,7 +68,7 @@
   .top .icon { width: 84px; height: 84px; border-radius: 19px; font-size: 26px; }
   .top h3 { margin: 0; font-size: 22px; letter-spacing: -.02em; }
   .top p { margin: 3px 0 10px; color: var(--muted); font-size: 13px; }
-  .top .actions { display: flex; gap: 8px; align-items: center; }
+  .top .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .btn { height: 30px; padding: 0 18px; border-radius: 999px; background: var(--blue); color: #fff; font-weight: 700; font-size: 13px; }
   .btn.light { background: var(--get); color: var(--blue); }
   .btn.red { background: none; color: #e5484d; padding: 0 6px; font-weight: 600; }
@@ -128,7 +128,7 @@
 const KEY = new URLSearchParams(location.hash.slice(1)).get("k") || "";
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const S = { apps: [], page: "discover", job: {}, queue: [], search: [], open: null };
+const S = { apps: [], page: "discover", job: {}, queue: [], search: [], open: null, dock: false };
 
 async function api(path, body) {
   const o = { headers: { "X-Key": KEY } };
@@ -225,6 +225,10 @@ async function act(a) {
   if (a.web) { toast(`${a.name} added – it is on the desktop and opens in Air`); await load(); return; }
   toast(`Installing ${a.name}… you can keep browsing`);
   poll();
+}
+async function addToDock(a) {
+  const r = await api("/api/dock", { id: a.id });
+  toast(r.ok ? `Added – ${a.name} shows up in the dock in a moment` : (r.error || "Could not add it to the dock"));
 }
 async function remove(a) {
   if (!confirm(`Remove ${a.name}? Your own files stay.`)) return;
@@ -382,6 +386,12 @@ function renderSheet(a0) {
   const main = buttonFor(a);
   main.className = main.classList.contains("busy") ? main.className : "btn" + (a.installed ? " light" : "");
   acts.appendChild(main);
+  if (a.installed && S.dock) {
+    const k = document.createElement("button");
+    k.className = "btn light"; k.textContent = "Add to dock";
+    k.addEventListener("click", () => addToDock(a));
+    acts.appendChild(k);
+  }
   if (a.installed && a.removable !== false) {
     const r = document.createElement("button");
     r.className = "btn red"; r.textContent = "Remove";
@@ -431,7 +441,7 @@ function toast(msg) {
 }
 async function load() {
   const d = await api("/api/apps");
-  S.apps = d.apps; S.job = d.job || {}; S.queue = d.queue || [];
+  S.apps = d.apps; S.job = d.job || {}; S.queue = d.queue || []; S.dock = !!d.dock;
   $("#free").textContent = d.freeGB ? `${d.freeGB} GB free in the PC` : "";
   if (S.open) renderSheet(S.open); else render();
   if (S.job.state === "running" || S.queue.length) poll();

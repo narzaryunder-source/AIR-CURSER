@@ -10,12 +10,13 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 40
+    const val VERSION = 41
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
         "app-store.sh", "app-store.py", "ubuntu-extras.sh", "install-deb.sh", "install-appimage.sh", "as-user.py",
         "windows-layout.sh", "wallpaper-gui.sh", "launch.sh", "apps-setup.sh", "style.sh", "airstore.py", "airstore.html", "web-icons.py", "shell-index.py",
+        "win-place.py",
     )
 
     fun needsSetup(c: Context): Boolean =
@@ -784,6 +785,25 @@ object CloudPcTools {
         # Also the feed for AirCursor's phone-drawn dock and menu bar (Mac style): the open windows in
         # /tmp/cloudpc-windows, only when they change. The same loop, so no extra program runs.
         FEED_LAST=""
+        # New windows: their title bar (close, minimise, full size) must not hide under the phone's
+        # menu bar – apps such as OpenCode Desktop put their window at the very top themselves – and
+        # big app windows open full size. Looked at when they appear and on the next two rounds
+        # (apps move their window again once they are ready); never during a game.
+        # Off: create ~/.config/cloudpc/no-window-fix
+        SEEN=""
+        PLACE=""
+        place() {
+            [ -n "${'$'}PLACE" ] || return 0
+            local x n ids="" next=""
+            for x in ${'$'}PLACE; do
+                ids="${'$'}ids ${'$'}{x%%:*}"
+                n=${'$'}(( ${'$'}{x##*:} - 1 ))
+                [ ${'$'}n -gt 0 ] && next="${'$'}next ${'$'}{x%%:*}:${'$'}n"
+            done
+            PLACE=${'$'}next
+            [ -f /tmp/cloudpc-game-on ] || [ -f /root/.config/cloudpc/no-window-fix ] ||
+                python3 -I /$LIB/win-place.py ${'$'}ids >/dev/null 2>&1
+        }
         feed() {
             # Shell built-ins only (starting a program costs a lot inside the PC): one xprop per round.
             local style="" root act ids id info out
@@ -800,7 +820,10 @@ object CloudPcTools {
                 ids=${'$'}{root#*_NET_CLIENT_LIST(WINDOW): window id # }; ids=${'$'}{ids%%${'$'}'\n'*}; ids=${'$'}{ids//,/}
             fi
             out="active	${'$'}act"
+            local old="${'$'}SEEN"
+            SEEN=" ${'$'}ids "
             for id in ${'$'}ids; do
+                [[ "${'$'}old" == *" ${'$'}id "* ]] || PLACE="${'$'}PLACE ${'$'}id:3"
                 info=${'$'}(xprop -id "${'$'}id" WM_CLASS WM_NAME _NET_WM_NAME _NET_WM_WINDOW_TYPE 2>/dev/null | awk -v id="${'$'}id" '
                     /^WM_CLASS.*=/ { n = split(${'$'}0, a, "\""); inst = a[2]; cls = a[4] }
                     /^(_NET_)?WM_NAME.*= "/ { x = ${'$'}0; sub(/^[^=]*= "/, "", x); sub(/"${'$'}/, "", x); gsub(/\t/, " ", x)
@@ -845,6 +868,7 @@ object CloudPcTools {
                 [ ${'$'}N = 0 ] || continue
             fi
             feed
+            place
             [ ${'$'}BOOST = 1 ] || continue
             if [ -f /root/.config/cloudpc/no-focus-boost ]; then
                 for p in "${'$'}{!PLACED[@]}"; do [ "${'$'}{PLACED[${'$'}p]}" = L ] && taskset -a -p -c "${'$'}EVERY" "${'$'}p" >/dev/null 2>&1; done

@@ -20,6 +20,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 LIB = os.path.dirname(os.path.abspath(__file__))
 UI = os.path.join(LIB, "airstore.html")
 TOKEN = secrets.token_hex(16)
+# The phone-drawn dock (Mac style) picks up apps to add from here (AirCursor reads and empties it).
+DOCK_FILE = os.environ.get("AIRCURSOR_DOCK_FILE", "/root/.cache/cloudpc-shell/dock-add")
+STYLE_FILE = os.environ.get("AIRCURSOR_STYLE_FILE", "/root/.config/xfce4/aircursor-style")
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 # The catalog and the install helpers of the App Store (one list for both stores).
@@ -336,15 +339,21 @@ def worker():
         run_job(*item)
 
 
-def request(action, aid):
+def app_for(aid):
+    """A store app, or an Ubuntu app from "Search all apps" (pkg:NAME)."""
     a = BY_ID.get(aid)
-    if a is None and aid.startswith("pkg:"):    # an Ubuntu app from "Search all apps"
+    if a is None and aid.startswith("pkg:"):
         name = aid[4:]
         if not re.fullmatch(r"[a-z0-9][a-z0-9+.-]+", name):
-            return "unknown app"
+            return None
         a = store.App(aid, name, "", "Search", 0, [], ["pkg:" + name], ["pkg:" + name], "package-x-generic")
         a.target = name
         BY_ID[aid] = a
+    return a
+
+
+def request(action, aid):
+    a = app_for(aid)
     if a is None:
         return "unknown app"
     if a.web:
@@ -362,6 +371,43 @@ def request(action, aid):
         if any(q[1].id == a.id for q in QUEUE) or (JOB["state"] == "running" and JOB["id"] == a.id):
             return ""
         QUEUE.append((action, a))
+    return ""
+
+
+def dock_available():
+    """The dock is drawn by the phone in the Mac-style look only."""
+    try:
+        with open(STYLE_FILE) as f:
+            return f.read().strip() == "mac"
+    except OSError:
+        return False
+
+
+def desktop_id(a):
+    """The menu entry of an installed app – the one "Open" starts – for the dock."""
+    if a.web and store.desktop_exists(store.web_desktop_id(a)):
+        return store.web_desktop_id(a)
+    for o in a.opens:
+        kind, _, val = o.partition(":")
+        if kind == "desk" and store.desktop_exists(val):
+            return val
+        if kind == "pkg":
+            for did in store.package_desktop_files(val):
+                if store.desktop_exists(did):
+                    return did
+    return ""
+
+
+def add_to_dock(a):
+    """Asks the phone's dock to keep the app (it reads the request within a second or two)."""
+    if not dock_available():
+        return "The dock is part of the Mac-style PC look (AirBoost and PC style → Mac style)."
+    did = desktop_id(a)
+    if not re.fullmatch(r"[A-Za-z0-9._+-]{1,120}\.desktop", did):
+        return "%s has no app icon to put in the dock" % a.name
+    os.makedirs(os.path.dirname(DOCK_FILE), exist_ok=True)
+    with open(DOCK_FILE, "a") as f:
+        f.write(did + "\n")
     return ""
 
 
@@ -424,7 +470,7 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/apps":
             pkgs = installed_set()
             return self.send(200, {"apps": [app_json(a, pkgs) for a in CATALOG], "freeGB": storage(), "job": JOB,
-                                   "queue": [q[1].id for q in QUEUE]})
+                                   "queue": [q[1].id for q in QUEUE], "dock": dock_available()})
         if u.path == "/api/job":
             return self.send(200, dict(JOB, queue=[q[1].id for q in QUEUE]))
         if u.path == "/api/search":
@@ -446,9 +492,15 @@ class Handler(BaseHTTPRequestHandler):
             err = request("install" if u.path == "/api/install" else "remove", aid)
             return self.send(200, {"ok": not err, "error": err})
         if u.path == "/api/open":
-            a = BY_ID.get(aid)
+            a = app_for(aid)    # also an Ubuntu app found with "Search all apps"
             ok = bool(a) and store.open_app(a)
             return self.send(200, {"ok": ok})
+        if u.path == "/api/dock":
+            a = app_for(aid)
+            if a is None or not store.is_installed(a, installed_set()):
+                return self.send(200, {"ok": False, "error": "Install it first"})
+            err = add_to_dock(a)
+            return self.send(200, {"ok": not err, "error": err})
         return self.send(404, {"error": "unknown"})
 
 

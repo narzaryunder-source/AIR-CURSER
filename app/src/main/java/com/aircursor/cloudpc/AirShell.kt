@@ -106,6 +106,8 @@ class AirShell(
     // ---- views ----
     private val bar = LinearLayout(activity)
     private val appName = ui.text("", 12.5, AirUi.TEXT, bold = true)
+    /** Close / minimise / full size for the window in front (always reachable, whatever the app draws). */
+    private val winButtons = LinearLayout(activity)
     private val clock = ui.text("", 12, AirUi.TEXT)
     private val battery = ui.text("", 12, AirUi.TEXT)
     private val dock = LinearLayout(activity)
@@ -190,6 +192,16 @@ class AirShell(
             setOnClickListener { logoMenu(it) }
         }
         bar.addView(logo, LinearLayout.LayoutParams(ui.u(26), ui.u(22)))
+        winButtons.orientation = LinearLayout.HORIZONTAL
+        winButtons.gravity = Gravity.CENTER_VERTICAL
+        winButtons.background = GradientDrawable().apply { cornerRadius = ui.uf(11); setColor(0x1FFFFFFF) }
+        for ((res, label, what) in listOf(
+            Triple(R.drawable.ic_ui_close, "Close the window", FrontAction.CLOSE),
+            Triple(R.drawable.ic_ui_minimize, "Minimise the window", FrontAction.MINIMIZE),
+            Triple(R.drawable.ic_ui_maximize, "Full size on / off", FrontAction.FULL_SIZE),
+        )) winButtons.addView(ui.icon(res, label, box = 22, size = 11) { front(what) })
+        winButtons.visibility = View.GONE
+        bar.addView(winButtons, LinearLayout.LayoutParams(-2, ui.u(22)).apply { marginStart = ui.u(6) })
         appName.setPadding(ui.u(8), 0, ui.u(8), 0)
         appName.background = ui.ripple(null, 5)
         appName.gravity = Gravity.CENTER_VERTICAL
@@ -299,6 +311,7 @@ class AirShell(
             indexAsked = now
             actions.runPc("nice -n 10 python3 /usr/local/lib/cloudpc/shell-index.py >/dev/null 2>&1 &")
         }
+        takeDockRequests(now)
         val wf = guest("/tmp/cloudpc-windows")
         val wm = wf.lastModified()
         if (wm != winsStamp) {
@@ -312,6 +325,47 @@ class AirShell(
         syncAutoHide()
         applyInsets()   // cheap; tells the PC only when the space changes (e.g. after an AirBoost resize)
         if (autoHide && dockBox.visibility == View.VISIBLE && grid == null && now > dockShownUntil) hideDock()
+    }
+
+    /** Apps the Air Store asked to add to the dock ("Add to dock"), with when they were asked. */
+    private val dockRequests = LinkedHashMap<String, Long>()
+
+    /**
+     * The Air Store writes menu entry ids (one per line) to dock-add; they go into the dock as soon
+     * as the apps list has them (a just-installed app can take a moment to be listed).
+     */
+    private fun takeDockRequests(now: Long) {
+        val f = guest("/root/.cache/cloudpc-shell/dock-add")
+        if (f.exists()) {
+            // Moved first, so a request written meanwhile goes to a new file instead of being lost.
+            val taken = File(f.parentFile, "dock-add.taken")
+            val lines = if (f.renameTo(taken)) try { taken.readLines() } catch (_: Exception) { emptyList() } else emptyList()
+            taken.delete()
+            for (id in lines.map { it.trim() }) if (DOCK_ID.matches(id)) dockRequests[id] = now
+        }
+        if (dockRequests.isEmpty()) return
+        val byId = apps.associateBy { it.id }
+        val added = ArrayList<String>()
+        val todo = dockRequests.entries.iterator()
+        while (todo.hasNext()) {
+            val (id, asked) = todo.next()
+            val a = byId[id]
+            if (a != null) {
+                if (id !in pins()) setPins(pins() + id)
+                added += a.name
+                todo.remove()
+            } else if (now - asked > 180_000) {
+                todo.remove()   // never listed: not an app with an icon
+            }
+        }
+        if (added.isNotEmpty()) {
+            rebuildDock()
+            ui.toast("${added.joinToString(", ")} ${if (added.size == 1) "is" else "are"} in the dock now")
+        }
+        if (dockRequests.isNotEmpty() && now - indexAsked > 15_000) {
+            indexAsked = now
+            actions.runPc("nice -n 10 python3 /usr/local/lib/cloudpc/shell-index.py >/dev/null 2>&1 &")
+        }
     }
 
     private fun readApps(f: File): List<App> = try {
@@ -378,10 +432,36 @@ class AirShell(
         val pct = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
         battery.text = if (pct in 0..100) "$pct%" else ""
         val air = actions.airWindows()?.top()
+        val pc = pcWins.firstOrNull { it.id == activeId }
         appName.text = when {
             air != null -> air.title.ifBlank { "Air" }.take(40)
-            else -> pcWins.firstOrNull { it.id == activeId }?.let { nameOf(it) } ?: "Desktop"
+            else -> pc?.let { nameOf(it) } ?: "Desktop"
         }
+        val buttons = if (air != null || pc != null) View.VISIBLE else View.GONE
+        if (winButtons.visibility != buttons) winButtons.visibility = buttons
+    }
+
+    private enum class FrontAction { CLOSE, MINIMIZE, FULL_SIZE }
+
+    /** A menu bar button: for the Air window in front, else for the PC window in front. */
+    private fun front(what: FrontAction) {
+        val air = actions.airWindows()
+        val top = air?.top()
+        if (top != null) {
+            when (what) {
+                FrontAction.CLOSE -> air.close(top)
+                FrontAction.MINIMIZE -> air.minimize(top)
+                FrontAction.FULL_SIZE -> air.toggleSize(top)
+            }
+            return
+        }
+        val id = pcWins.firstOrNull { it.id == activeId }?.id ?: return
+        val cmd = when (what) {
+            FrontAction.CLOSE -> PcWindowCommands.close(id)
+            FrontAction.MINIMIZE -> PcWindowCommands.minimize(id)
+            FrontAction.FULL_SIZE -> PcWindowCommands.toggleFullSize(id)
+        } ?: return
+        actions.runPc(cmd)
     }
 
     private fun popup(anchor: View, items: List<AirUi.Item>, width: Int = 240) {
@@ -421,16 +501,12 @@ class AirShell(
         }
         val w = pcWins.firstOrNull { it.id == activeId } ?: return
         popup(anchor, listOf(
-            AirUi.Item("Minimise", R.drawable.ic_ui_minimize) { actions.runPc("xdotool windowminimize ${w.id}") },
-            AirUi.Item("Full size on / off", R.drawable.ic_ui_maximize, shortcut = "Alt+F10") {
-                actions.runPc("xdotool windowactivate --sync ${w.id} key --clearmodifiers alt+F10")
-            },
-            AirUi.Item("Close", R.drawable.ic_ui_close, shortcut = "Alt+F4") {
-                actions.runPc("xdotool windowactivate --sync ${w.id} key --clearmodifiers alt+F4")
-            },
+            AirUi.Item("Minimise", R.drawable.ic_ui_minimize) { front(FrontAction.MINIMIZE) },
+            AirUi.Item("Full size on / off", R.drawable.ic_ui_maximize) { front(FrontAction.FULL_SIZE) },
+            AirUi.Item("Close", R.drawable.ic_ui_close) { front(FrontAction.CLOSE) },
             AirUi.Item("Quit ${nameOf(w).take(24)}", R.drawable.ic_ui_stop, separatorBefore = true) {
                 val ids = pcWins.filter { appFor(it) != null && appFor(it) === appFor(w) }.ifEmpty { listOf(w) }
-                actions.runPc(ids.joinToString("; ") { "xdotool windowactivate --sync ${it.id} key --clearmodifiers alt+F4" })
+                PcWindowCommands.closeAll(ids.map { it.id })?.let { actions.runPc(it) }
             },
         ))
     }
@@ -461,6 +537,7 @@ class AirShell(
 
     private companion object {
         const val ADD_KEY = "add"
+        val DOCK_ID = Regex("[A-Za-z0-9._+-]{1,120}\\.desktop")
     }
 
     private class DockItem(val key: String, val label: String, val bitmap: Bitmap?, val res: Int?, val running: Boolean,
@@ -487,7 +564,9 @@ class AirShell(
             val a = byId[id] ?: continue
             shownApps += a
             val running = if (id == "cloudpc-air.desktop") airWins.any { it.browser.app == null } else windowsOf(a).isNotEmpty()
-            items += DockItem(id, a.name, icon(a), null, running, { tapApp(a) }, { v -> dockItemMenu(v, a, pinned = true) })
+            val bmp = icon(a)
+            items += DockItem(id, a.name, bmp, if (bmp == null) R.drawable.ic_ui_desktop else null, running, { tapApp(a) },
+                { v -> dockItemMenu(v, a, pinned = true) })
         }
         // Running PC apps that are not in the dock.
         for (w in pcWins) {
@@ -495,10 +574,12 @@ class AirShell(
             if (a != null && a in shownApps) continue
             if (a != null) {
                 shownApps += a
-                items += DockItem(a.id, a.name, icon(a), null, true, { tapApp(a) }, { v -> dockItemMenu(v, a, pinned = false) })
+                val bmp = icon(a)
+                items += DockItem(a.id, a.name, bmp, if (bmp == null) R.drawable.ic_ui_desktop else null, true, { tapApp(a) },
+                    { v -> dockItemMenu(v, a, pinned = false) })
             } else {
                 items += DockItem(w.id, w.title.ifBlank { w.cls }, null, R.drawable.ic_ui_desktop, true,
-                    { actions.runPc("xdotool windowactivate ${w.id}") }, null)
+                    { PcWindowCommands.activate(w.id)?.let { actions.runPc(it) } }, null)
             }
         }
         // Air app windows (YouTube, Air Store, web apps): drawn by the phone, also in the dock.
@@ -599,13 +680,13 @@ class AirShell(
         val wins = windowsOf(a)
         val items = ArrayList<AirUi.Item>()
         for (w in wins.take(6)) items += AirUi.Item(w.title.ifBlank { a.name }.take(40), R.drawable.ic_ui_desktop) {
-            actions.runPc("xdotool windowactivate ${w.id}")
+            PcWindowCommands.activate(w.id)?.let { actions.runPc(it) }
         }
         items += AirUi.Item("New window", R.drawable.ic_ui_plus, separatorBefore = wins.isNotEmpty()) { launch(a) }
         items += if (pinned) AirUi.Item("Remove from the dock", R.drawable.ic_ui_trash) { setPins(pins() - a.id); rebuildDock() }
         else AirUi.Item("Keep in the dock", R.drawable.ic_ui_star) { setPins(pins() + a.id); rebuildDock() }
         if (wins.isNotEmpty()) items += AirUi.Item("Quit", R.drawable.ic_ui_stop) {
-            actions.runPc(wins.joinToString("; ") { "xdotool windowactivate --sync ${it.id} key --clearmodifiers alt+F4" })
+            PcWindowCommands.closeAll(wins.map { it.id })?.let { actions.runPc(it) }
         }
         val loc = IntArray(2)
         v.getLocationInWindow(loc)
@@ -621,10 +702,10 @@ class AirShell(
         when {
             wins.isEmpty() -> launch(a)
             wins.any { it.id == activeId } && actions.airWindows()?.top() == null ->
-                actions.runPc("xdotool windowminimize $activeId")
+                PcWindowCommands.minimize(activeId)?.let { actions.runPc(it) }
             else -> {
                 actions.airWindows()?.minimizeAll()
-                actions.runPc("xdotool windowactivate ${wins.last().id}")
+                PcWindowCommands.activate(wins.last().id)?.let { actions.runPc(it) }
             }
         }
     }
@@ -714,7 +795,9 @@ class AirShell(
         lastMargins = key
         actions.runPc(
             "xfconf-query -c xfwm4 -p /general/margin_top --create -t int -s $mt; " +
-                "xfconf-query -c xfwm4 -p /general/margin_bottom --create -t int -s $mb",
+                "xfconf-query -c xfwm4 -p /general/margin_bottom --create -t int -s $mb; " +
+                // For win-place.py: new windows whose title bar is under the menu bar move below it.
+                "printf '%s %s\\n' $mt $mb > /tmp/cloudpc-margins",
         )
     }
 
@@ -785,6 +868,26 @@ class AirShell(
                 setTextColor(0xB3FFFFFF.toInt())
                 textSize = 12f
                 gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = ui.u(8) })
+            // Not installed yet: the Air Store installs it, and its "Add to dock" puts it here.
+            col.addView(TextView(activity).apply {
+                text = "More apps: Air Store"
+                setTextColor(Color.WHITE)
+                textSize = 13f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                gravity = Gravity.CENTER
+                val storeIcon = activity.getDrawable(R.drawable.ic_ui_store)?.mutate()?.apply { setBounds(0, 0, ui.u(15), ui.u(15)) }
+                setCompoundDrawablesRelative(storeIcon, null, null, null)
+                compoundDrawablePadding = ui.u(6)
+                compoundDrawableTintList = ColorStateList.valueOf(Color.WHITE)
+                setPadding(ui.u(14), ui.u(6), ui.u(16), ui.u(6))
+                background = ui.ripple(GradientDrawable().apply { cornerRadius = ui.uf(15); setColor(0xFF4F5BD5.toInt()) }, 15)
+                contentDescription = "Get more apps from the Air Store"
+                setOnClickListener {
+                    closeGrid()
+                    actions.runPc("airstore")
+                    ui.toast("Air Store: open an app, install it, then tap Add to dock")
+                }
             }, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = ui.u(10) })
         }
         col.addView(field, LinearLayout.LayoutParams(ui.u(320), ui.u(34)))

@@ -80,7 +80,7 @@ class DockFullWindowTest {
 
         /** The last bottom margin the PC was told about. */
         fun bottomMargin(): Int? = commands.lastOrNull { it.contains("margin_bottom") }
-            ?.substringAfter("margin_bottom --create -t int -s ")?.trim()?.toIntOrNull()
+            ?.substringAfter("margin_bottom --create -t int -s ")?.substringBefore(";")?.trim()?.toIntOrNull()
     }
 
     @Test
