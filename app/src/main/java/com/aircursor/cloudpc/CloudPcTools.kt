@@ -10,13 +10,13 @@ import java.io.File
  */
 object CloudPcTools {
     /** Bump when the files below change: they are written again on the next desktop start. */
-    const val VERSION = 41
+    const val VERSION = 42
     private const val LIB = "usr/local/lib/cloudpc"
     private const val MARK = "$LIB/.tools-version"
     private val SCRIPTS = listOf(
         "app-store.sh", "app-store.py", "ubuntu-extras.sh", "install-deb.sh", "install-appimage.sh", "as-user.py",
         "windows-layout.sh", "wallpaper-gui.sh", "launch.sh", "apps-setup.sh", "style.sh", "airstore.py", "airstore.html", "web-icons.py", "shell-index.py",
-        "win-place.py",
+        "win-place.py", "html-serve.py",
     )
 
     fun needsSetup(c: Context): Boolean =
@@ -29,7 +29,12 @@ object CloudPcTools {
     const val PACKAGES_SCRIPT =
         "apt-get install -y --no-install-recommends $TOOL_PACKAGES >/dev/null 2>&1 || " +
             "(apt-get update >/dev/null 2>&1 && apt-get install -y --no-install-recommends $TOOL_PACKAGES) " +
-            "|| echo 'Tools packages: no internet, will retry later'"
+            "|| echo 'Tools packages: no internet, will retry later'; " +
+            // The desktop portal came with an app (Claude Desktop) but without its file chooser: then
+            // "Open file" / "Attach" buttons in Firefox and other apps did nothing.
+            "if [ -x /usr/libexec/xdg-desktop-portal ] && [ ! -x /usr/libexec/xdg-desktop-portal-gtk ]; then " +
+            "apt-get install -y --no-install-recommends xdg-desktop-portal-gtk >/dev/null 2>&1 || " +
+            "echo 'File chooser for apps: no internet, will retry later'; fi"
 
     private fun asset(c: Context, name: String) = c.assets.open("cloudpc/$name").bufferedReader().use { it.readText() }
 
@@ -158,6 +163,10 @@ object CloudPcTools {
         }
         // Air, AirCursor's browser (phone engine): the PC's default browser, Start menu, desktop icon.
         put("usr/local/bin/cloudpc-air", AIR, exec = true)
+        // File choosers ("Open file", "Attach images and files") through the desktop portal: the
+        // portal has no setting for XFCE, so without this it offers no file chooser at all and the
+        // buttons do nothing (seen with Firefox: "No such interface …FileChooser").
+        put("etc/xdg/xdg-desktop-portal/portals.conf", PORTALS_CONF)
         // App windows in Air (no tabs or address bar): Air Store, TS Station, YouTube, web apps.
         put("usr/local/bin/cloudpc-app", APP, exec = true)
         put("usr/share/pixmaps/air-browser.svg", asset(c, "air-logo.svg"))
@@ -904,7 +913,20 @@ object CloudPcTools {
         case "${'$'}URL" in
             "") URL="air:home" ;;
             http://*|https://*) ;;
-            *)  # Local files and other kinds of links: the PC's own browser.
+            *)  # A web page you made (an HTML/JavaScript game or site): in Air too – drawn by the
+                # phone's GPU, far smoother than the PC's own browsers, which draw with the CPU.
+                # Off (PC browser): toolbar → lightning → Web links.
+                F="${'$'}URL"
+                case "${'$'}F" in
+                    file://*) F=${'$'}(python3 -I -c 'import sys, urllib.parse as u; print(u.unquote(u.urlsplit(sys.argv[1]).path))' "${'$'}F") ;;
+                esac
+                case "${'$'}F" in
+                    *.html|*.htm|*.HTML|*.HTM)
+                        if [ -f "${'$'}F" ] && [ -z "${'$'}CLOUDPC_PC_BROWSER" ] && [ ! -f /root/.config/cloudpc/web-in-pc-browser ]; then
+                            exec python3 -I /$LIB/html-serve.py "${'$'}F"
+                        fi ;;
+                esac
+                # Other local files and other kinds of links: the PC's own browser.
                 if [ -x /usr/bin/brave-browser-stable ]; then
                     exec cloudpc-launch brave-browser.desktop /usr/bin/brave-browser-stable "${'$'}URL"
                 fi
@@ -1145,6 +1167,13 @@ object CloudPcTools {
         fi
         command -v firefox >/dev/null && exec firefox --new-window "${'$'}URL"
         exec xdg-open "${'$'}URL"
+    """.trimIndent() + "\n"
+
+    private val PORTALS_CONF = """
+        # AirCursor PC: the desktop portal's helpers for XFCE (file chooser and the rest: GTK).
+        [preferred]
+        default=gtk
+        org.freedesktop.impl.portal.Secret=gnome-keyring
     """.trimIndent() + "\n"
 
     /** cloudpc-app KEY max|win TITLE URL – an app window in Air (no tabs, no address bar). */

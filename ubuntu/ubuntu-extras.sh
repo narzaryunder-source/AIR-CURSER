@@ -68,7 +68,7 @@ install_claude_desktop() {
     if curl -fsSLo /usr/share/keyrings/claude-desktop-archive-keyring.asc https://downloads.claude.ai/claude-desktop/key.asc; then
         echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main" \
             > /etc/apt/sources.list.d/claude-desktop.list
-        if apt-get update && apt-get install -y --no-install-recommends claude-desktop gnome-keyring; then
+        if apt-get update && apt-get install -y --no-install-recommends claude-desktop gnome-keyring xdg-desktop-portal-gtk; then
             ok "Claude Desktop installed. Open Claude from the Start menu or its desktop icon, then sign in."
             return 0
         fi

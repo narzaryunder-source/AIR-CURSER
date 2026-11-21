@@ -73,7 +73,12 @@ zenity --question --width=380 --title="Install app" --ok-label="Install" --cance
 # machine phones cannot run).
 install_file() {
     sudo apt-get update || true
-    sudo apt-get install -y --no-install-recommends "$F"
+    sudo apt-get install -y --no-install-recommends "$F" || return 1
+    # An app that brought the desktop portal (Claude Desktop does) also needs its file chooser,
+    # or "Open file" / "Attach" buttons in apps such as Firefox do nothing at all.
+    if [ -x /usr/libexec/xdg-desktop-portal ] && [ ! -x /usr/libexec/xdg-desktop-portal-gtk ]; then
+        sudo apt-get install -y --no-install-recommends xdg-desktop-portal-gtk || true
+    fi
 }
 progress "Installing ${NAME:-app}" install_file
 done_message
