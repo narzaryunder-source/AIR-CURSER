@@ -49,6 +49,7 @@ class CloudPcDesktopActivity : ComponentActivity() {
     companion object {
         private const val PREFS = "cloudpc_engine"
         private const val KEY_FPS = "show_fps"
+        private const val KEY_PINS = "side_pins"
         private const val KEY_PHONE_TOUCH = "phone_touch2"
         private const val KEY_STYLE = "pc_style"
         private const val ON = 0xEE4F46E5.toInt()
@@ -103,6 +104,9 @@ class CloudPcDesktopActivity : ComponentActivity() {
     private var pendingExport: File? = null
     private lateinit var rootLayout: FrameLayout
     private lateinit var side: LinearLayout
+
+    /** The person's own apps at the top of the side toolbar (see [SidePins]). */
+    private lateinit var pinBox: LinearLayout
     private var lockView: PcLockScreen? = null
     private lateinit var videoPlayer: PhoneVideoPlayer
     private var air: com.aircursor.air.AirWindows? = null
@@ -445,6 +449,10 @@ class CloudPcDesktopActivity : ComponentActivity() {
             setMargins(0, 0, dp(6), 0)
         })
 
+        // Your apps first: pinned with "+", one tap opens them, a long press removes one.
+        pinBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        tools.addView(pinBox)
+        refreshPins()
         tools.addView(iconButton(R.drawable.ic_ui_keyboard, "Keyboard") { toggleKeyboard() })
         tools.addView(iconButton(R.drawable.ic_ui_lock, "Lock and password") { lockMenu() })
         tools.addView(iconButton(R.drawable.ic_ui_globe, "Air browser and windows") { b ->
@@ -1321,6 +1329,117 @@ class CloudPcDesktopActivity : ComponentActivity() {
             Toast.makeText(context, description, Toast.LENGTH_SHORT).show()
             true
         }
+    }
+
+    // ---- your apps on the side toolbar ----
+
+    private fun pins() = SidePins.decode(prefs.getString(KEY_PINS, null))
+
+    private fun savePins(list: List<SidePins.Pin>) {
+        prefs.edit().putString(KEY_PINS, SidePins.encode(list)).apply()
+        refreshPins()
+    }
+
+    private fun refreshPins() {
+        if (!::pinBox.isInitialized) return
+        pinBox.removeAllViews()
+        val root = CloudPcEngine.rootfs(this)
+        for (pin in pins()) {
+            val pic = pin.icon.takeIf { it.isNotBlank() }?.let {
+                try {
+                    android.graphics.BitmapFactory.decodeFile(File(root, it.removePrefix("/")).absolutePath)
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            val b: View = if (pic != null) {
+                ImageButton(this).apply {
+                    setImageBitmap(pic)
+                    contentDescription = pin.name
+                    background = round(OFF, 12)
+                    setPadding(dp(8), dp(8), dp(8), dp(8))
+                    scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                }
+            } else {
+                Button(this).apply {
+                    text = pin.name.take(1).uppercase()
+                    contentDescription = pin.name
+                    setTextColor(Color.WHITE)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                    background = round(OFF, 12)
+                    minWidth = 0
+                    minimumWidth = 0
+                    minHeight = 0
+                    minimumHeight = 0
+                    setPadding(0, 0, 0, 0)
+                }
+            }
+            b.layoutParams = LinearLayout.LayoutParams(dp(46), dp(46)).apply { setMargins(dp(2), dp(3), dp(2), dp(3)) }
+            b.setOnClickListener {
+                air?.minimizeAll()
+                runPc(SidePins.launchCommand(pin))
+                Toast.makeText(this, "Opening ${pin.name}…", Toast.LENGTH_SHORT).show()
+            }
+            b.setOnLongClickListener {
+                AlertDialog.Builder(this)
+                    .setTitle(pin.name)
+                    .setMessage("Remove ${pin.name} from this toolbar? (The app itself stays.)")
+                    .setPositiveButton("Remove") { _, _ -> savePins(SidePins.remove(pins(), pin.path)) }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+                true
+            }
+            pinBox.addView(b)
+        }
+        pinBox.addView(iconButton(R.drawable.ic_ui_plus, "Add your app to this toolbar") { addPinDialog() })
+    }
+
+    /** All the PC's apps (desktop apps, web apps, Air Store…) with a search box: tap one to pin it. */
+    private fun addPinDialog() {
+        val apps = SidePins.readIndex(CloudPcEngine.rootfs(this))
+        if (apps.isEmpty()) {
+            runPc("nice -n 10 python3 /usr/local/lib/cloudpc/shell-index.py >/dev/null 2>&1 &")
+            Toast.makeText(this, "Getting the list of your apps… try again in a few seconds", Toast.LENGTH_LONG).show()
+            return
+        }
+        val shown = ArrayList(apps)
+        val adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_list_item_1, shown.map { it.name }.toMutableList())
+        val search = EditText(this).apply {
+            hint = "Search apps"
+            setSingleLine()
+        }
+        val list = android.widget.ListView(this).apply { this.adapter = adapter }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(6), dp(18), 0)
+            addView(search, LinearLayout.LayoutParams(-1, -2))
+            addView(list, LinearLayout.LayoutParams(-1, dp(300)))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Add an app to the toolbar")
+            .setView(box)
+            .setNegativeButton("Close", null)
+            .create()
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(e: android.text.Editable?) {
+                val q = e?.toString()?.trim()?.lowercase(java.util.Locale.ROOT).orEmpty()
+                shown.clear()
+                shown.addAll(apps.filter { q.isEmpty() || it.name.lowercase(java.util.Locale.ROOT).contains(q) })
+                adapter.clear()
+                adapter.addAll(shown.map { it.name })
+            }
+        })
+        list.setOnItemClickListener { _, _, pos, _ ->
+            val pin = shown.getOrNull(pos) ?: return@setOnItemClickListener
+            val before = pins()
+            savePins(SidePins.add(before, pin))
+            val note = if (before.size >= SidePins.MAX && before.none { it.path == pin.path }) " (the oldest one made room)" else ""
+            Toast.makeText(this, "${pin.name} is on the toolbar$note", Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+        }
+        dialog.show()
     }
 
     private fun keyButton(label: String, onClick: () -> Unit) = Button(this).apply {

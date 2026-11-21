@@ -304,10 +304,11 @@ class AirWindows(
         f.y = top + if (whole) 0f else w.y
         f.setRounded(!whole)
         f.grip?.visibility = if (whole) View.GONE else View.VISIBLE
-        w.browser.setTextureBackend(!whole)
+        w.browser.setTextureBackend(true)   // always drawn inside the window (see AirBrowser)
         f.requestLayout()
         w.browser.sizeChanged()
         restack()
+        if (!w.minimized) w.browser.shown()   // maximized / restored: make sure it shows
     }
 
     private fun saveGeometry(w: Win) {

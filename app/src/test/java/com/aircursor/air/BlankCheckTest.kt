@@ -34,14 +34,20 @@ class BlankCheckTest {
     }
 
     @Test
-    fun twoNewViewsThenOneReloadButNeverReloadsABlackPage() {
-        val clear = BlankCheck.Result.CLEAR
-        assertEquals(BlankCheck.Step.NEW_VIEW, BlankCheck.next(1, clear))
-        assertEquals(BlankCheck.Step.NEW_VIEW, BlankCheck.next(2, clear))
-        assertEquals(BlankCheck.Step.RELOAD, BlankCheck.next(3, clear))
-        assertEquals(BlankCheck.Step.GIVE_UP, BlankCheck.next(4, clear))
-        assertEquals(BlankCheck.Step.RELOAD, BlankCheck.next(3, BlankCheck.Result.NOTHING))
-        assertEquals("a dark video is never reloaded", BlankCheck.Step.GIVE_UP, BlankCheck.next(3, BlankCheck.Result.BLACK))
+    fun aNewViewFirstThenTheWholePageInANewSession() {
+        for (r in listOf(BlankCheck.Result.CLEAR, BlankCheck.Result.BLACK, BlankCheck.Result.NOTHING)) {
+            // Pure black (the reported window) is handled too: it was left alone before.
+            assertEquals("$r 1", BlankCheck.Step.NEW_VIEW, BlankCheck.next(1, r))
+            assertEquals("$r 2", BlankCheck.Step.NEW_SESSION, BlankCheck.next(2, r))
+            assertEquals("$r 3", BlankCheck.Step.NEW_SESSION, BlankCheck.next(3, r))
+            assertEquals("$r 4", BlankCheck.Step.GIVE_UP, BlankCheck.next(4, r))
+        }
         assertEquals(BlankCheck.Step.GIVE_UP, BlankCheck.next(1, BlankCheck.Result.FINE))
+    }
+
+    @Test
+    fun theReportedScreenshotIsBlank() {
+        // The black Air Store window from the phone: every pixel 0,0,0.
+        assertEquals(BlankCheck.Result.BLACK, BlankCheck.judge(IntArray(24 * 24) { 0xFF000000.toInt() }))
     }
 }

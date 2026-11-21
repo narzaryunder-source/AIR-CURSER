@@ -115,6 +115,8 @@ class AirBrowser(
         var iconFor = ""
         var showWhenOpen = false
         var popupOf: Tab? = null
+        /** The page's last saved state (history, scroll): a new session can continue from here. */
+        var state: GeckoSession.SessionState? = null
         val shieldsDown get() = trackingPerm?.value == PermissionDelegate.ContentPermission.VALUE_ALLOW
     }
 
@@ -124,7 +126,7 @@ class AirBrowser(
     internal val tabs = ArrayList<Tab>()
     internal var current = -1
     private val closedUrls = ArrayList<String>()
-    private var gecko = GeckoView(activity)
+    private var gecko = GeckoView(activity).apply { setViewBackend(GeckoView.BACKEND_TEXTURE_VIEW) }
     private val column = LinearLayout(activity)
     internal val content = FrameLayout(activity)
     private val progressLine = View(activity)
@@ -399,7 +401,10 @@ class AirBrowser(
         })
     }
 
-    private var textureBackend = false
+    // Always TextureView (since v96): the page is drawn inside the app's own window. With a
+    // SurfaceView (a separate layer behind the window) a window that came back could stay pure
+    // black even with a new view.
+    private var textureBackend = true
 
     /**
      * Windowed: the page is drawn inside the window (TextureView) so overlapping windows stack
@@ -458,11 +463,14 @@ class AirBrowser(
     // still nothing drawn means another new view (twice), then the page is reloaded once.
 
     private var blankTries = 0
+    private var lastBlankFix = 0L
     private val blankCheck = Runnable { checkBlank() }
 
-    /** The window is on screen again (shown, restored, or the app came back): check it soon. */
+    /** The window is on screen again (shown, restored, maximized, the app came back): check it soon. */
     fun shown() {
-        blankTries = 0
+        // A new round of tries only a while after the last one (a page that is black on purpose is
+        // not opened again and again).
+        if (android.os.SystemClock.uptimeMillis() - lastBlankFix > BLANK_RETRY_AFTER_MS) blankTries = 0
         removeCallbacks(blankCheck)
         postDelayed(blankCheck, BLANK_CHECK_MS)
     }
@@ -522,16 +530,21 @@ class AirBrowser(
             return
         }
         blankTries++
+        lastBlankFix = android.os.SystemClock.uptimeMillis()
         when (BlankCheck.next(blankTries, r)) {
             BlankCheck.Step.NEW_VIEW -> {
                 note("nothing drawn (${r.name.lowercase()}) – new view, try $blankTries")
                 freshView()   // looks again a moment later
             }
-            BlankCheck.Step.RELOAD -> {
-                note("still nothing drawn – page reloaded")
-                cur()?.session?.reload()
+            BlankCheck.Step.NEW_SESSION -> {
+                val t = cur() ?: return
+                note("still nothing drawn (${r.name.lowercase()}) – page opened again where it was, try $blankTries")
+                renew(t)
+                // A page takes a moment to load: look later than after a new view.
+                removeCallbacks(blankCheck)
+                postDelayed(blankCheck, BLANK_RECHECK_AFTER_LOAD_MS)
             }
-            BlankCheck.Step.GIVE_UP -> Unit
+            BlankCheck.Step.GIVE_UP -> note("still nothing drawn – giving up (tap ↻ to reload)")
         }
     }
 
@@ -1474,6 +1487,10 @@ class AirBrowser(
     }
 
     private fun progressDelegate(t: Tab) = object : ProgressDelegate {
+        override fun onSessionStateChange(session: GeckoSession, sessionState: GeckoSession.SessionState) {
+            t.state = sessionState
+        }
+
         override fun onPageStart(session: GeckoSession, url: String) {
             t.loading = true
             t.progress = 8
@@ -1568,8 +1585,8 @@ class AirBrowser(
             note("drawing restarted – new view")
             post {
                 if (!closed && t === cur()) {
-                    blankTries = 0
                     freshView()
+                    shown()
                 }
             }
         }
@@ -1641,6 +1658,38 @@ class AirBrowser(
             select(i)
             nt.session.loadUri(url)
             ui.toast("The page was reloaded")
+        } else {
+            nt.pending = url
+        }
+    }
+
+    /**
+     * The page in a brand-new session, where it was (history, scroll, typed text) – exactly how a
+     * window first opens, which always shows. For a window whose session no longer draws.
+     */
+    private fun renew(t: Tab) {
+        val i = tabs.indexOf(t)
+        if (i < 0 || closed) return
+        val url = t.url.ifEmpty { ntpUrl(t.incognito) }
+        val state = t.state
+        if (i == current) gecko.releaseSession()
+        AirEngine.adsBlocked.remove(t.session)
+        t.session.close()
+        val nt = makeTab(t.incognito)
+        nt.session.open(runtime)
+        nt.title = t.title
+        nt.url = url
+        nt.popupOf = t.popupOf
+        nt.icon = t.icon
+        nt.iconFor = t.iconFor
+        nt.state = state
+        for (o in tabs) if (o.popupOf === t) o.popupOf = nt
+        tabs[i] = nt
+        if (i == current) {
+            current = -1
+            select(i)
+            if (state != null) nt.session.restoreState(state) else nt.session.loadUri(url)
+            freshView()
         } else {
             nt.pending = url
         }
@@ -2074,7 +2123,13 @@ class AirBrowser(
         internal const val PAGE_BG = 0xFF121318.toInt()
 
         /** A look at a window this long after it shows (Gecko needs a moment to draw). */
-        private const val BLANK_CHECK_MS = 1500L
+        private const val BLANK_CHECK_MS = 1200L
+
+        /** After the page was opened again in a new session (it loads first). */
+        private const val BLANK_RECHECK_AFTER_LOAD_MS = 4500L
+
+        /** A new round of black-window tries only this long after the last one. */
+        private const val BLANK_RETRY_AFTER_MS = 60_000L
 
         /** Pixels looked at (a small, scaled-down copy of the page surface). */
         private const val BLANK_PROBE = 24

@@ -19,7 +19,7 @@ internal object BlankCheck {
         NOTHING,
     }
 
-    enum class Step { NEW_VIEW, RELOAD, GIVE_UP }
+    enum class Step { NEW_VIEW, NEW_SESSION, GIVE_UP }
 
     /** [px]: pixels of the page surface (any size); [clear]: the window's background colour. */
     fun judge(px: IntArray, clear: Int = AirBrowser.PAGE_BG): Result {
@@ -35,13 +35,14 @@ internal object BlankCheck {
     }
 
     /**
-     * What to do after the [tries]-th failed look: a new view twice (cheap, keeps the page as it
-     * is), then one reload – but never for an all-black page, which may be a dark video.
+     * What to do after the [tries]-th failed look: a new view first (cheap, the page stays as it
+     * is), then the page in a brand-new session where it was, twice at most. (Full-screen videos,
+     * which may be black on purpose, are never looked at.)
      */
     fun next(tries: Int, r: Result): Step = when {
         r == Result.FINE -> Step.GIVE_UP
-        tries <= 2 -> Step.NEW_VIEW
-        tries == 3 && r != Result.BLACK -> Step.RELOAD
+        tries <= 1 -> Step.NEW_VIEW
+        tries <= 3 -> Step.NEW_SESSION
         else -> Step.GIVE_UP
     }
 
