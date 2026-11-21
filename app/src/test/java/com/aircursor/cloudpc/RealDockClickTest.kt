@@ -64,7 +64,9 @@ class RealDockClickTest {
         }
         val clickable = ArrayList<View>().also { find(root, it) }
         // The dock's icons sit in a horizontal scroll view.
-        val icon = clickable.lastOrNull { it.isShown && it.parent?.parent is android.widget.HorizontalScrollView }
+        val icon = clickable.lastOrNull {
+            it.isShown && it.parent?.parent is android.widget.HorizontalScrollView && it.contentDescription == "YouTube"
+        }
         assertTrue("the dock has an app icon (clickables: ${clickable.size})", icon != null)
         // Same hit test as the desktop screen: something drawn there that is not the PC picture.
         val cursor = RemoteCursor(activity, root, { null }, { x, y ->
@@ -108,5 +110,62 @@ class RealDockClickTest {
         cursor.apply(Cmd.Button('l', false))
         repeat(3) { looper.idleFor(java.time.Duration.ofMillis(300)) }
         assertTrue("Left button opened the app: $commands", commands.any { it.contains("cloudpc-youtube.desktop") })
+    }
+
+    @Test
+    fun thePlusInTheDockAddsAnyAppToTheDock() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val rootfs = CloudPcEngine.rootfs(activity)
+        File(rootfs, "root/.config/xfce4").mkdirs()
+        File(rootfs, "root/.config/xfce4/aircursor-style").writeText("mac\n")
+        File(rootfs, "root/.cache/cloudpc-shell").mkdirs()
+        File(rootfs, "root/.cache/cloudpc-shell/apps.tsv").writeText(
+            "cloudpc-youtube.desktop\tYouTube\t/usr/share/applications/cloudpc-youtube.desktop\t\t\tAudioVideo\t\n" +
+                "cloudpc-ai-opencode.desktop\tOpenCode\t/usr/share/applications/cloudpc-ai-opencode.desktop\t\t\tDevelopment\t\n",
+        )
+        val root = FrameLayout(activity)
+        activity.setContentView(root)
+        val commands = ArrayList<String>()
+        AirShell(activity, root, object : AirShell.Actions {
+            override fun runPc(cmd: String) { commands += cmd }
+            override fun openAir(url: String?) = Unit
+            override fun airWindows(): com.aircursor.air.AirWindows? = null
+            override fun desktopSize() = 1280 to 640
+            override fun showToolbar() = Unit
+            override fun keyboard() = Unit
+            override fun lock() = Unit
+            override fun assistant() = Unit
+            override fun boostMenu() = Unit
+            override fun exit() = Unit
+            override fun tour() = Unit
+            override fun phoneKeyboard() = Unit
+            override fun monitor() = Unit
+            override fun changed() = Unit
+        })
+        val looper = shadowOf(Looper.getMainLooper())
+        repeat(5) { looper.idleFor(java.time.Duration.ofMillis(1200)) }
+        looper.idle()
+
+        fun views(v: View, out: MutableList<View> = ArrayList()): MutableList<View> {
+            out += v
+            if (v is ViewGroup) for (i in 0 until v.childCount) views(v.getChildAt(i), out)
+            return out
+        }
+        fun dockNames() = views(root).filter { it.parent?.parent is android.widget.HorizontalScrollView }
+            .mapNotNull { it.contentDescription?.toString() }
+        assertTrue("OpenCode is not in the dock yet: ${dockNames()}", "OpenCode" !in dockNames())
+        val plus = views(root).firstOrNull { it.contentDescription == "Add an app to the dock" }
+        assertTrue("the dock ends with +: ${dockNames()}", plus != null && dockNames().last() == "Add an app to the dock")
+        plus!!.performClick()
+        looper.idle()
+        val grid = views(root).filterIsInstance<android.widget.GridView>().firstOrNull()
+        assertTrue("the app list opened", grid != null)
+        val texts = views(root).filterIsInstance<android.widget.TextView>().map { it.text.toString() }
+        assertTrue("it says what a tap does: $texts", "Tap an app to add it to the dock" in texts)
+        val pos = (0 until grid!!.adapter.count).first { (grid.adapter.getItem(it) as? AirShell.App)?.name == "OpenCode" }
+        grid.performItemClick(grid.adapter.getView(pos, null, grid), pos, pos.toLong())
+        repeat(3) { looper.idleFor(java.time.Duration.ofMillis(800)) }
+        assertTrue("OpenCode is in the dock now: ${dockNames()}", "OpenCode" in dockNames())
+        assertTrue("adding opened nothing: $commands", commands.none { it.contains("opencode") })
     }
 }

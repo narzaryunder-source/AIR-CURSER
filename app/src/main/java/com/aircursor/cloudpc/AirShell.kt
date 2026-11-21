@@ -459,6 +459,10 @@ class AirShell(
 
     // ---- dock ----
 
+    private companion object {
+        const val ADD_KEY = "add"
+    }
+
     private class DockItem(val key: String, val label: String, val bitmap: Bitmap?, val res: Int?, val running: Boolean,
                            val onTap: () -> Unit, val onLong: ((View) -> Unit)?)
 
@@ -507,6 +511,8 @@ class AirShell(
                 if (air.top() === w) air.minimize(w) else air.show(w)
             }, null)
         }
+        // Last: "+" puts any app of the PC into the dock (a long press on a dock app takes it out).
+        items += DockItem(ADD_KEY, "Add an app to the dock", null, R.drawable.ic_ui_plus, false, { openGrid(search = false, addToDock = true) }, null)
         // Only when something changed, and never under a finger (a rebuild would swallow the tap).
         val sig = items.joinToString("|") { it.key + (if (it.running) "*" else "") + (if (it.bitmap != null) "i" else "") }
         if (sig == dockSignature && dock.childCount > 0) return
@@ -532,6 +538,16 @@ class AirShell(
             scaleType = ImageView.ScaleType.FIT_CENTER
             when {
                 item.bitmap != null -> setImageBitmap(item.bitmap)
+                item.res != null && item.key == ADD_KEY -> {
+                    setImageResource(item.res)
+                    imageTintList = ColorStateList.valueOf(0xCCFFFFFF.toInt())
+                    setPadding(ui.u(11), ui.u(11), ui.u(11), ui.u(11))
+                    background = GradientDrawable().apply {
+                        cornerRadius = ui.uf(10)
+                        setColor(0x26FFFFFF)
+                        setStroke(ui.u(1).coerceAtLeast(1), 0x55FFFFFF)
+                    }
+                }
                 item.res != null -> {
                     setImageResource(item.res)
                     imageTintList = ColorStateList.valueOf(Color.WHITE)
@@ -728,7 +744,8 @@ class AirShell(
 
     fun toggleGrid() = if (grid != null) closeGrid() else { openGrid(false); true }
 
-    fun openGrid(search: Boolean) {
+    /** [addToDock]: the grid picks an app for the dock (a tap adds it) instead of opening it. */
+    fun openGrid(search: Boolean, addToDock: Boolean = false) {
         if (grid != null) {
             closeGrid()
             return
@@ -755,6 +772,21 @@ class AirShell(
             compoundDrawablePadding = ui.u(8)
             compoundDrawableTintList = ColorStateList.valueOf(0x99FFFFFF.toInt())
         }
+        if (addToDock) {
+            col.addView(TextView(activity).apply {
+                text = "Tap an app to add it to the dock"
+                setTextColor(Color.WHITE)
+                textSize = 16f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = ui.u(4) })
+            col.addView(TextView(activity).apply {
+                text = "To take one out: long-press it in the dock → Remove from the dock"
+                setTextColor(0xB3FFFFFF.toInt())
+                textSize = 12f
+                gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = ui.u(10) })
+        }
         col.addView(field, LinearLayout.LayoutParams(ui.u(320), ui.u(34)))
         val gv = GridView(activity).apply {
             numColumns = GridView.AUTO_FIT
@@ -767,7 +799,7 @@ class AirShell(
         }
         var shown: List<App> = emptyList()
         val adapter = object : BaseAdapter() {
-            override fun getCount() = shown.size + if (field.text.isNotBlank()) 1 else 0
+            override fun getCount() = shown.size + if (!addToDock && field.text.isNotBlank()) 1 else 0
             override fun getItem(position: Int) = shown.getOrNull(position)
             override fun getItemId(position: Int) = position.toLong()
             override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
@@ -820,6 +852,17 @@ class AirShell(
         gv.adapter = adapter
         fun open(position: Int) {
             val a = shown.getOrNull(position)
+            if (a != null && addToDock) {
+                closeGrid()
+                if (a.id in pins()) {
+                    ui.toast("${a.name} is already in the dock")
+                } else {
+                    setPins(pins() + a.id)
+                    rebuildDock()
+                    ui.toast("${a.name} is in the dock now")
+                }
+                return
+            }
             if (a != null) {
                 closeGrid()
                 tapApp(a)
