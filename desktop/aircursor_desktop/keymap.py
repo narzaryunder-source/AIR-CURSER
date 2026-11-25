@@ -1,0 +1,59 @@
+"""X11 keysyms (what the phone sends) → Windows virtual-key codes."""
+
+VK = {
+    0xFF08: 0x08,  # BackSpace
+    0xFF09: 0x09,  # Tab
+    0xFF0D: 0x0D,  # Return
+    0xFF8D: 0x0D,  # KP_Enter
+    0xFF1B: 0x1B,  # Escape
+    0xFFFF: 0x2E,  # Delete
+    0xFF50: 0x24,  # Home
+    0xFF51: 0x25,  # Left
+    0xFF52: 0x26,  # Up
+    0xFF53: 0x27,  # Right
+    0xFF54: 0x28,  # Down
+    0xFF55: 0x21,  # Page_Up
+    0xFF56: 0x22,  # Page_Down
+    0xFF57: 0x23,  # End
+    0xFF63: 0x2D,  # Insert
+    0xFF67: 0x5D,  # Menu
+    0xFF61: 0x2C,  # Print
+    0xFF13: 0x13,  # Pause
+    0xFFE1: 0xA0,  # Shift_L
+    0xFFE2: 0xA1,  # Shift_R
+    0xFFE3: 0xA2,  # Control_L
+    0xFFE4: 0xA3,  # Control_R
+    0xFFE9: 0xA4,  # Alt_L
+    0xFFEA: 0xA5,  # Alt_R
+    0xFFEB: 0x5B,  # Super_L (Windows key)
+    0xFFEC: 0x5C,  # Super_R
+    0xFFE5: 0x14,  # Caps_Lock
+    0x20: 0x20,    # space
+}
+for _i in range(12):
+    VK[0xFFBE + _i] = 0x70 + _i   # F1 … F12
+
+MODIFIERS = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0x5B, 0x5C}
+EXTENDED = {0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E, 0xA3, 0xA5, 0x5B, 0x5C, 0x5D}
+
+
+def char_of(keysym):
+    """The character a keysym types (Latin-1 directly, 0x01000000 | code point for the rest)."""
+    if 0x20 <= keysym <= 0x7E or 0xA0 <= keysym <= 0xFF:
+        return chr(keysym)
+    if keysym & 0xFF000000 == 0x01000000:
+        cp = keysym & 0x00FFFFFF
+        if 0 < cp <= 0x10FFFF:
+            return chr(cp)
+    return None
+
+
+def vk_for_shortcut(ch):
+    """The key for a letter or digit used with Ctrl / Alt / Win (Ctrl+C must be the C key, not a typed "c")."""
+    if not ch or len(ch) != 1:
+        return None
+    if "a" <= ch.lower() <= "z":
+        return ord(ch.upper())
+    if "0" <= ch <= "9":
+        return ord(ch)
+    return None
