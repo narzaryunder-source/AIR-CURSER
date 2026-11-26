@@ -8,7 +8,7 @@ import hmac
 import os
 import time
 
-ITERATIONS = 200_000
+ITERATIONS = 600_000
 MIN_LENGTH = 4
 MAX_WAIT = 30
 
@@ -56,10 +56,13 @@ class PasswordLock:
             return False
         good = hmac.compare_digest(_hash(password, bytes.fromhex(p["salt"]), int(p["iterations"])), p["hash"])
         if good:
-            self.s.set(wrong=0, wait_until=0)
+            if int(p["iterations"]) < ITERATIONS:
+                self.set_password(password)
+            else:
+                self.s.set(wrong=0, wait_until=0)
             return True
         wrong = int(self.s.get("wrong", 0)) + 1
-        wait = 0 if wrong < 3 else min(MAX_WAIT, 2 ** (wrong - 3))
+        wait = 0 if wrong < 3 else min(MAX_WAIT, 2 ** min(5, wrong - 3))
         self.s.set(wrong=wrong, wait_until=self.clock() + wait)
         return False
 

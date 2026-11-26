@@ -29,7 +29,7 @@ def parse_hello(line):
     p = line.strip().split(" ")
     if len(p) != 3 or p[0] != "HELLO" or p[1] != str(PROTOCOL):
         return None
-    return p[2] if len(p[2]) == CODE_LENGTH and p[2].isdigit() else None
+    return p[2] if len(p[2]) == CODE_LENGTH and p[2].isascii() and p[2].isdigit() else None
 
 
 def _button(s):

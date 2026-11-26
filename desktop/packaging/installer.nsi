@@ -1,0 +1,35 @@
+Unicode True
+RequestExecutionLevel user
+SetCompressor /FINAL zlib
+Name "AirCursor for Windows"
+OutFile "${OUTPUT}"
+Icon "${BRANDICON}"
+InstallDir "$LOCALAPPDATA\Programs\AirCursor"
+ShowInstDetails show
+!include "MUI2.nsh"
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_INSTFILES
+!define MUI_FINISHPAGE_RUN "$INSTDIR\AirCursor.exe"
+!insertmacro MUI_PAGE_FINISH
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+!insertmacro MUI_LANGUAGE "English"
+Section "Install"
+  SetShellVarContext current
+  SetOutPath "$INSTDIR"
+  File /r "${STAGE}/*"
+  WriteUninstaller "$INSTDIR\Uninstall.exe"
+  CreateShortcut "$SMPROGRAMS\AirCursor.lnk" "$INSTDIR\AirCursor.exe"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AirCursor" "DisplayName" "AirCursor for Windows"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AirCursor" "DisplayVersion" "2.0-preview"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AirCursor" "DisplayIcon" "$INSTDIR\AirCursor.exe"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AirCursor" "UninstallString" '"$INSTDIR\Uninstall.exe"'
+SectionEnd
+Section "Uninstall"
+  SetShellVarContext current
+  Delete "$SMPROGRAMS\AirCursor.lnk"
+  !include "${UNINSTALL_FILES}"
+  Delete "$INSTDIR\Uninstall.exe"
+  RMDir "$INSTDIR"
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AirCursor"
+SectionEnd

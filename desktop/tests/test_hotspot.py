@@ -78,20 +78,22 @@ class FakeNetsh:
         if args[:3] == ("wlan", "add", "profile"):
             path = args[3].split("=", 1)[1]
             self.files.append((path, open(path, encoding="utf-8").read()))
+        if args[:2] == ("wlan", "connect"):
+            self.iface = IFACE
         return 0, "ok"
 
 
 def test_saving_the_phone_keeps_no_password_on_disk(tmp_path):
     s = Settings(str(tmp_path / "s.json"))
     n = FakeNetsh()
-    h = hotspot.Hotspot(s, runner=n)
+    h = hotspot.Hotspot(s, runner=n, online=lambda: True, sleep=lambda _: None)
     assert "8 to 63" in h.save_phone("Rahul's Phone", "short")
     assert h.save_phone("Rahul's Phone", "hotspot-pass-1", "WPA3-Personal") == ""
     path, xml = n.files[0]
     assert "hotspot-pass-1" in xml and not os.path.exists(path), "the file with the password is gone"
     assert "hotspot-pass-1" not in (tmp_path / "s.json").read_text()
     assert h.phone_ssid == "Rahul's Phone"
-    assert h.connect() == "" and n.calls[-1] == ("wlan", "connect", "name=Rahul's Phone", "ssid=Rahul's Phone")
+    assert h.connect() == "" and ("wlan", "connect", "name=Rahul's Phone", "ssid=Rahul's Phone") in n.calls
 
 
 def test_auto_switch_joins_the_phone_after_the_internet_is_gone_for_a_while(tmp_path):
@@ -99,17 +101,18 @@ def test_auto_switch_joins_the_phone_after_the_internet_is_gone_for_a_while(tmp_
     s.set(phone_ssid="Rahul's Phone")
     n = FakeNetsh()
     state = {"online": True, "t": 0.0}
-    h = hotspot.Hotspot(s, runner=n, online=lambda: state["online"])
+    h = hotspot.Hotspot(s, runner=n, online=lambda: state["online"] or n.iface == IFACE)
     said = []
     a = hotspot.AutoSwitch(h, report=said.append, after=20, clock=lambda: state["t"])
     assert a.step() == "online"
     state["online"] = False
     assert a.step() == "waiting"
     state["t"] = 25
-    assert a.step() == "switched" and "switched to your phone" in said[-1]
-    assert n.calls[-1][:2] == ("wlan", "connect")
+    assert a.step() == "switched" and "Internet verified" in said[-1]
+    assert ("wlan", "connect", "name=Rahul's Phone", "ssid=Rahul's Phone") in n.calls
     state["t"] = 40
-    assert a.step() == "waiting", "no new try within a minute"
+    assert a.step() == "online"
+    assert sum(c[:2] == ("wlan", "connect") for c in n.calls) == 1
 
 
 def test_auto_switch_says_when_the_phone_is_not_in_range(tmp_path):
@@ -121,3 +124,60 @@ def test_auto_switch_says_when_the_phone_is_not_in_range(tmp_path):
     state["t"] = 100
     assert a.step() == "not-in-range"
     assert not any(c[:2] == ("wlan", "connect") for c in n.calls)
+
+
+def test_request_accepted_but_wrong_ssid_is_failure(tmp_path):
+    s = Settings(str(tmp_path / "s.json"))
+    s.set(phone_ssid="Phone")
+    net = FakeNetsh()
+    h = hotspot.Hotspot(s, runner=net, online=lambda: True, sleep=lambda _: None)
+    assert "not confirmed" in h.connect()
+
+
+def test_association_without_internet_is_reported(tmp_path):
+    s = Settings(str(tmp_path / "s.json"))
+    s.set(phone_ssid="Rahul's Phone")
+    h = hotspot.Hotspot(s, runner=FakeNetsh(), online=lambda: False, sleep=lambda _: None)
+    assert "Internet access could not be verified" in h.connect()
+
+
+def test_backoff_and_recovery(tmp_path):
+    t = [0]
+    s = Settings(str(tmp_path / "s.json"))
+    s.set(phone_ssid="Missing")
+    n = FakeNetsh()
+    h = hotspot.Hotspot(s, runner=n, online=lambda: False)
+    a = hotspot.AutoSwitch(h, after=6, clock=lambda: t[0])
+    states = []
+    for t[0] in range(122):
+        if a.step() == "not-in-range":
+            states.append(t[0])
+    assert states == [6, 21, 51, 111]
+    h.online = lambda: True
+    assert a.step() == "online"
+    assert a.retry_at == 0 and a.delay == 15
+    assert not any(c[:2] == ("wlan", "connect") for c in n.calls)
+
+
+def test_cancel_before_switch_and_no_profile_is_idle(tmp_path):
+    s = Settings(str(tmp_path / "s.json"))
+    n = FakeNetsh()
+    h = hotspot.Hotspot(s, runner=n, online=lambda: False)
+    a = hotspot.AutoSwitch(h, after=0)
+    assert a.step() == "idle"
+    s.set(phone_ssid="Rahul's Phone")
+    assert a.step(lambda: True) == "idle"
+    assert not n.calls
+
+
+def test_native_save_keeps_password_entirely_in_windows(tmp_path):
+    s = Settings(str(tmp_path / "s.json"))
+    h = hotspot.Hotspot(s, runner=FakeNetsh())
+    class Native:
+        def save(self, xml, adapter):
+            assert "hotspot-secret" in xml and "WPA3SAE" in xml
+            return adapter.hex()
+    h.native = Native()
+    assert not h.save_phone("Phone", "hotspot-secret", "WPA3", b"ABC")
+    assert s.get("phone_adapter") == "414243"
+    assert "hotspot-secret" not in (tmp_path / "s.json").read_text()

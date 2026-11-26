@@ -80,44 +80,9 @@ jobs:
           name: release-apk
           path: out/AirCursor.apk
 
-  # AirCursor for Windows (desktop/): tested and built on real Windows, run once (--self-test).
+  # The same tested Windows artifact is used for development builds and release assembly.
   windows:
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install build tools
-        run: python -m pip install -r desktop/requirements-build.txt
-
-      - name: Run tests on Windows
-        working-directory: desktop
-        run: python -m pytest -q tests
-
-      - name: Build AirCursor-Windows.exe
-        working-directory: desktop
-        run: >
-          python -m PyInstaller --noconfirm --onefile --windowed --name AirCursor-Windows
-          --icon assets/aircursor.ico --add-data "assets;assets" --collect-submodules zeroconf run.py
-
-      - name: Self-test the .exe
-        shell: pwsh
-        run: |
-          $p = Start-Process -FilePath desktop/dist/AirCursor-Windows.exe -ArgumentList '--self-test' -Wait -PassThru
-          Get-Content "$env:TEMP/aircursor-selftest.txt"
-          if ($p.ExitCode -ne 0) { throw "self-test failed ($($p.ExitCode))" }
-
-      - name: Keep the .exe for the release
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-windows
-          path: desktop/dist/AirCursor-Windows.exe
+    uses: ./.github/workflows/windows-workspace.yml
 
   release:
     if: github.ref == 'refs/heads/main' && always() && needs.build.result == 'success'

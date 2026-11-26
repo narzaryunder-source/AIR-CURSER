@@ -61,3 +61,39 @@ def test_phone_pairs_and_drives_the_computer():
         assert ctl.released >= 1
     finally:
         h.stop()
+
+
+def test_pending_connection_cannot_pair_after_stop(monkeypatch):
+    ctl = Ctl()
+    host = RemoteHost(ctl, port=0)
+    monkeypatch.setattr(host, "_advertise", lambda _: None)
+    host.start()
+    with socket.create_connection(("127.0.0.1", host.port), timeout=3) as phone:
+        assert wait(lambda: host._handshakes == 1)
+        host.stop()
+        phone.sendall((protocol.hello(host.code) + "\n").encode())
+        assert phone.recv(16) == b"NO\n"
+    assert host.client is None
+
+
+def test_lock_releases_held_input_and_rejects_new_session(monkeypatch):
+    ctl = Ctl()
+    host = RemoteHost(ctl, port=0)
+    monkeypatch.setattr(host, "_advertise", lambda _: None)
+    host.start()
+    try:
+        s, f, ok = connect(host, host.code)
+        assert ok.startswith("OK ")
+        s.sendall(b"KD 65507\n")
+        assert wait(lambda: host.events == 1)
+        released = ctl.released
+        host.paused = True
+        assert ctl.released == released + 1
+        s2, f2, denied = connect(host, host.code)
+        assert denied == "NO"
+        f2.close()
+        s2.close()
+        f.close()
+        s.close()
+    finally:
+        host.stop()

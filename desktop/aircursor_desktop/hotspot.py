@@ -9,7 +9,9 @@ Android does not let apps switch the hotspot on: it is switched on on the phone 
 """
 import os
 import re
-import socket
+from contextlib import ExitStack
+
+from .connectivity import probe
 import subprocess
 import sys
 import tempfile
@@ -85,42 +87,61 @@ def profile_xml(ssid, password, auth=""):
     ) % (escape(ssid), hexname, escape(ssid), method, escape(password))
 
 
-def internet_ok(timeout=3.0):
-    """Can this computer reach the internet? (two well-known addresses, no name lookup needed)"""
-    for host, port in (("1.1.1.1", 443), ("8.8.8.8", 53)):
-        try:
-            with socket.create_connection((host, port), timeout=timeout):
-                return True
-        except OSError:
-            continue
-    return False
+def internet_ok(timeout=1.5):
+    return probe(timeout).usable
 
 
 class Hotspot:
-    def __init__(self, settings, runner=None, online=internet_ok):
+    def __init__(self, settings, runner=None, online=None, sleep=time.sleep):
         self.s = settings
         self.runner = runner
-        self.online = online
+        self.health = None
+        self.online = online or self.check_internet
+        self.sleep = sleep
+        self._joining = threading.Lock()
+        self.native = None
+        if sys.platform == "win32" and runner is None:
+            from .wlan import Wlan
+            self.native = Wlan()
+
+    def check_internet(self):
+        self.health = probe()
+        return self.health.usable
 
     @property
     def phone_ssid(self):
-        return self.s.get("phone_ssid", "")
+        return self.s.get("phone_ssid", "") or ""
 
     def wifi(self):
+        if self.native:
+            rows = self.native.interfaces()
+            return next((w for w in rows if self.phone_ssid and w["ssid"] == self.phone_ssid),
+                        next((w for w in rows if w["state"] == "connected"), rows[0] if rows else None))
         code, text = netsh("wlan", "show", "interfaces", runner=self.runner)
         return parse_interface(text) if code == 0 else None
 
     def networks(self):
+        if self.native:
+            return self.native.networks()
         code, text = netsh("wlan", "show", "networks", "mode=bssid", runner=self.runner)
         return parse_networks(text) if code == 0 else []
 
-    def save_phone(self, ssid, password, auth=""):
+    def save_phone(self, ssid, password, auth="", adapter_id=None):
         """Saves the phone's hotspot as a Windows Wi-Fi profile. → "" or the problem."""
         ssid = ssid.strip()
         if not ssid:
             return "Write the hotspot's name (as on the phone)."
         if not 8 <= len(password) <= 63:
             return "A hotspot password has 8 to 63 characters."
+        if len(ssid.encode("utf-8")) > 32:
+            return "The Wi-Fi name must fit in 32 UTF-8 bytes."
+        if self.native:
+            try:
+                adapter = self.native.save(profile_xml(ssid, password, auth), adapter_id)
+            except OSError as exc:
+                return f"Windows could not save the Wi-Fi profile: {exc}"
+            self.s.set(phone_ssid=ssid, phone_adapter=adapter)
+            return ""
         fd, path = tempfile.mkstemp(suffix=".xml", prefix="aircursor-")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -138,20 +159,54 @@ class Hotspot:
 
     def forget_phone(self):
         if self.phone_ssid:
-            netsh("wlan", "delete", "profile", "name=" + self.phone_ssid, runner=self.runner)
-        self.s.set(phone_ssid=None)
+            code, message = netsh("wlan", "delete", "profile", "name=" + self.phone_ssid, runner=self.runner)
+            if code:
+                raise OSError(message.strip() or "Windows could not forget the Wi-Fi profile.")
+        self.s.set(phone_ssid=None, phone_adapter=None)
 
-    def connect(self):
-        """Joins the phone's hotspot. → "" or the problem."""
-        ssid = self.phone_ssid
-        if not ssid:
-            return "Set up your phone's hotspot first."
-        if self.wifi() is None:
-            return "This computer has no Wi-Fi (or it is off). Use a USB cable: phone Settings → Hotspot → USB tethering."
-        code, text = netsh("wlan", "connect", "name=" + ssid, "ssid=" + ssid, runner=self.runner)
-        if code != 0:
-            return "Could not connect: " + text.strip()[:200]
-        return ""
+    def connect(self, cancelled=lambda: False):
+        """Association is asynchronous. Verify the target SSID, then verify host internet access."""
+        if not self._joining.acquire(blocking=False):
+            return "A connection attempt is already in progress."
+        try:
+            ssid = self.phone_ssid
+            if not ssid:
+                return "Set up your phone's hotspot first."
+            wifi = self.wifi()
+            if wifi is None:
+                return "No Wi-Fi adapter. Enable Wi-Fi or connect the phone using USB tethering."
+            adapter = None
+            if self.native:
+                saved = self.s.get("phone_adapter")
+                visible = [n for n in self.networks() if n["ssid"] == ssid]
+                adapter = next((n["id"] for n in visible if n["id"].hex() == saved),
+                               visible[0]["id"] if visible else None)
+                if adapter is None:
+                    return "The phone hotspot is not visible. Check Wi-Fi and Windows location access."
+            if cancelled():
+                return "Connection cancelled."
+            if wifi["ssid"] != ssid or wifi["state"] != "connected":
+                if self.native:
+                    self.native.connect(ssid, adapter)
+                else:
+                    code, message = netsh("wlan", "connect", "name=" + ssid, "ssid=" + ssid, runner=self.runner)
+                    if code:
+                        return "Windows could not request the connection: " + message.strip()[:200]
+            for attempt in range(13):
+                if cancelled():
+                    return "Connection cancelled."
+                if self.on_phone():
+                    if self.online():
+                        return ""
+                    if attempt >= 4:
+                        return "Joined the phone hotspot. Internet access could not be verified."
+                if attempt < 12:
+                    self.sleep(0.5)
+            return "Windows accepted the request, but association with the phone was not confirmed."
+        except OSError as exc:
+            return f"Windows Wi-Fi: {exc}"
+        finally:
+            self._joining.release()
 
     def on_phone(self):
         w = self.wifi()
@@ -159,53 +214,76 @@ class Hotspot:
 
 
 class AutoSwitch:
-    """Watches the internet; after it has been gone for [after] seconds, joins the phone's hotspot
-    (when the phone's hotspot is in range). Calls [report](message) for what it did."""
-
-    def __init__(self, hotspot, report=lambda m: None, every=10.0, after=20.0, clock=time.monotonic):
-        self.h = hotspot
-        self.report = report
-        self.every = every
-        self.after = after
-        self.clock = clock
+    """Wake on WLAN changes, confirm sustained failures and back off when the phone is absent."""
+    def __init__(self, hotspot, report=lambda m: None, every=15.0, after=6.0, clock=time.monotonic):
+        self.h, self.report, self.every, self.after, self.clock = hotspot, report, every, after, clock
         self.down_since = None
-        self.last_try = -1e9
-        self._stop = threading.Event()
+        self.retry_at = 0
+        self.delay = 15
         self.thread = None
+        self._wake = threading.Event()
+        self._generation = 0
+        self._step_lock = threading.Lock()
 
-    def step(self):
-        """One look (the thread calls this every few seconds; tests call it directly)."""
-        if self.h.online():
-            self.down_since = None
-            return "online"
-        now = self.clock()
-        if self.down_since is None:
-            self.down_since = now
-        if now - self.down_since < self.after or now - self.last_try < 60 or not self.h.phone_ssid:
-            return "waiting"
-        if self.h.on_phone():
-            return "on-phone"
-        self.last_try = now
-        if not any(n["ssid"] == self.h.phone_ssid for n in self.h.networks()):
-            self.report("No internet, and your phone's hotspot is not in range – switch it on on the phone.")
-            return "not-in-range"
-        err = self.h.connect()
-        self.report(err or "No internet – switched to your phone's hotspot (%s)." % self.h.phone_ssid)
-        return "switched" if not err else "failed"
+    def step(self, cancelled=lambda: False):
+        with self._step_lock:
+            if cancelled() or not self.h.phone_ssid:
+                return "idle"
+            if self.h.online():
+                self.down_since = None
+                self.retry_at, self.delay = 0, 15
+                return "online"
+            now = self.clock()
+            if self.down_since is None:
+                self.down_since = now
+            if now - self.down_since < self.after or now < self.retry_at or cancelled():
+                return "waiting"
+            self.retry_at = now + self.delay
+            self.delay = min(self.delay * 2, 240)
+            if self.h.on_phone():
+                return "on-phone"
+            if not any(n["ssid"] == self.h.phone_ssid for n in self.h.networks()):
+                self.report("Phone hotspot is out of range. Waiting before retrying.")
+                return "not-in-range"
+            err = self.h.connect(cancelled)
+            if cancelled():
+                return "idle"
+            self.report(err or f"Switched to your phone hotspot ({self.h.phone_ssid}). Internet verified.")
+            return "failed" if err else "switched"
 
     def start(self):
         if self.thread and self.thread.is_alive():
             return
-        self._stop.clear()
+        self._generation += 1
+        generation = self._generation
+        wake = self._wake = threading.Event()
+        def cancelled():
+            return generation != self._generation
 
         def loop():
-            while not self._stop.wait(self.every):
-                try:
-                    self.step()
-                except Exception:
-                    pass
-        self.thread = threading.Thread(target=loop, name="auto-switch", daemon=True)
+            with ExitStack() as stack:
+                if self.h.native:
+                    try:
+                        stack.enter_context(self.h.native.notifications(wake))
+                    except OSError as exc:
+                        self.report(f"Wi-Fi notifications unavailable. Using timed checks. {exc}")
+                while not cancelled():
+                    wake.clear()
+                    try:
+                        state = self.step(cancelled)
+                        interval = self.every if state != "waiting" else max(1, min(
+                            self.every, max(self.down_since + self.after, self.retry_at) - self.clock()))
+                    except OSError as exc:
+                        self.report(f"Network check failed: {exc}")
+                        interval = self.every
+                    if not cancelled():
+                        wake.wait(interval)
+                        if wake.is_set() and not cancelled():
+                            time.sleep(0.35)
+        self.thread = threading.Thread(target=loop, name="hotspot-policy", daemon=True)
         self.thread.start()
 
     def stop(self):
-        self._stop.set()
+        self._generation += 1
+        self._wake.set()
+        self.thread = None

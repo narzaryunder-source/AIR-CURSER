@@ -43,7 +43,7 @@ def char_of(keysym):
         return chr(keysym)
     if keysym & 0xFF000000 == 0x01000000:
         cp = keysym & 0x00FFFFFF
-        if 0 < cp <= 0x10FFFF:
+        if 0 < cp <= 0x10FFFF and not 0xD800 <= cp <= 0xDFFF:
             return chr(cp)
     return None
 
@@ -52,7 +52,7 @@ def vk_for_shortcut(ch):
     """The key for a letter or digit used with Ctrl / Alt / Win (Ctrl+C must be the C key, not a typed "c")."""
     if not ch or len(ch) != 1:
         return None
-    if "a" <= ch.lower() <= "z":
+    if ch.isascii() and ch.isalpha():
         return ord(ch.upper())
     if "0" <= ch <= "9":
         return ord(ch)

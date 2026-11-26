@@ -1,509 +1,662 @@
-"""AirCursor for Windows: the window (Tkinter, part of Python on Windows – nothing to install)."""
+"""AirCursor's optional desktop workspace. Windows Explorer remains the operating system shell."""
+from datetime import datetime
 import os
-import queue
+from pathlib import Path
+import shutil
+import subprocess
 import sys
-import threading
-import tkinter as tk
-import webbrowser
+import time
 
-from . import VERSION
-from .hotspot import AutoSwitch, Hotspot, internet_ok
+import psutil
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QKeySequence, QPalette, QShortcut
+from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFileIconProvider, QFrame, QHBoxLayout,
+                               QInputDialog, QLabel, QListWidget, QListWidgetItem, QMainWindow, QMenu,
+                               QMessageBox, QPushButton, QSizeGrip, QToolButton,
+                               QVBoxLayout, QWidget)
+from .control import Control, Preferences, PROFILES
+from .design import COLORS, DockButton, Landscape, icon
+from .hotspot import AutoSwitch, Hotspot
 from .inject import Controller, backend
+from .launcher import Launcher
 from .lock import PasswordLock
+from .material import apply_backdrop
 from .server import RemoteHost, local_addresses
 from .settings import Settings
-
-BG, CARD, LINE, FIELD = "#0E1016", "#171A22", "#262B38", "#0A0C11"
-TEXT, MUTED, FAINT = "#F2F4F8", "#A4A9B6", "#6E7383"
-BLUE, BLUE_HI, GREEN, RED, AMBER = "#4F5BD5", "#6672F0", "#3DD68C", "#FF5F57", "#F5B83D"
-PHONE_APP = "https://narzaryunder-source.github.io/AIR-CURSER/"
-FONT = "Segoe UI" if sys.platform == "win32" else "DejaVu Sans"
+from .widgets import Workers, asset, button, confirm, label, open_path, password, row, system_link
 
 
-def asset(name):
-    base = getattr(sys, "_MEIPASS", os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-    return os.path.join(base, "assets", name)
+class Title(QFrame):
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.window().windowHandle().startSystemMove()
+
+    def mouseDoubleClickEvent(self, event):
+        win = self.window()
+        (win.showNormal if win.isMaximized() else win.showMaximized)()
 
 
-class NullBackend:
-    """Off Windows (screenshots, tests): nothing is sent to a real mouse."""
+class Panel(QMainWindow):
+    def __init__(self, desk, name, content):
+        super().__init__(desk, Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
+        self.desk, self.name, self.content = desk, name, content
+        self.setWindowTitle(name + " · AirCursor")
+        self.setWindowIcon(icon(name))
+        wrap = QFrame()
+        wrap.setObjectName("panel")
+        layout = QVBoxLayout(wrap)
+        layout.setContentsMargins(1, 1, 1, 1)
+        title = Title()
+        bar = QHBoxLayout(title)
+        bar.setContentsMargins(13, 8, 12, 3)
+        for color, tip, fn in [("#ef867d", "Close", self.close), ("#ebc168", "Minimize", self.showMinimized),
+                                ("#7bc59b", "Maximize or restore", self.zoom)]:
+            dot = button("", fn, tip)
+            dot.setAccessibleName(tip)
+            dot.setFixedSize(14, 14)
+            dot.setStyleSheet(f"background:{color};border:1px solid rgba(0,0,0,28);border-radius:7px;padding:0")
+            bar.addWidget(dot)
+        bar.addSpacing(8)
+        bar.addWidget(label(name))
+        bar.addStretch()
+        layout.addWidget(title)
+        layout.addWidget(content, 1)
+        grip = QSizeGrip(wrap)
+        grip.setFixedSize(15, 12)
+        layout.addWidget(grip, alignment=Qt.AlignmentFlag.AlignRight)
+        self.setCentralWidget(wrap)
+        self.resize(830, 565)
+        if apply_backdrop(self, not desk.surface.light):
+            wrap.setStyleSheet("QFrame#panel {background:transparent}")
+            content.setAutoFillBackground(True)
+        QShortcut(QKeySequence("Ctrl+Space"), self, activated=lambda: desk.open("Launcher"))
+        QShortcut(QKeySequence("Ctrl+Shift+L"), self, activated=desk.lock_now)
+        QShortcut(QKeySequence("Ctrl+Alt+Left"), self, activated=lambda: self.snap(False))
+        QShortcut(QKeySequence("Ctrl+Alt+Right"), self, activated=lambda: self.snap(True))
 
-    def screen(self):
-        return 1920, 1080, 0, 0
+    def snap(self, right):
+        r = self.screen().availableGeometry()
+        w = r.width()//2
+        self.showNormal()
+        self.setGeometry(r.x() + (w if right else 0), r.y(), w, r.height())
 
-    def cursor(self):
-        return 0, 0
+    def zoom(self):
+        (self.showNormal if self.isMaximized() else self.showMaximized)()
 
-    def __getattr__(self, name):
-        return lambda *a, **k: None
-
-
-def font(size, bold=False):
-    return (FONT, size, "bold") if bold else (FONT, size)
-
-
-class Button(tk.Label):
-    """A flat, rounded-looking button that looks the same everywhere."""
-
-    def __init__(self, master, text, command, kind="primary", **kw):
-        colors = {"primary": (BLUE, BLUE_HI, "white"), "ghost": ("#232838", "#2E3447", TEXT),
-                  "danger": ("#3A1E24", "#4A252C", "#FF8A84")}[kind]
-        self.base, self.hover, fg = colors
-        self.fg, self.on_base = fg, self.base
-        super().__init__(master, text=text, bg=self.base, fg=fg, font=font(10, True), padx=16, pady=8,
-                         cursor="hand2", **kw)
-        self.command = command
-        self.enabled = True
-        self.bind("<Enter>", lambda e: self.enabled and self.config(bg=self.hover))
-        self.bind("<Leave>", lambda e: self.config(bg=self.base))
-        self.bind("<Button-1>", lambda e: self.enabled and self.command())
-
-    def set_enabled(self, on):
-        self.enabled = on
-        self.base = self.on_base if on else "#232838"
-        self.config(fg=self.fg if on else FAINT, bg=self.base, cursor="hand2" if on else "arrow")
+    def closeEvent(self, event):
+        self.desk.panel_closed(self.name)
+        super().closeEvent(event)
 
 
-def entry(master, show="•"):
-    return tk.Entry(master, show=show, bg=FIELD, fg=TEXT, insertbackground=TEXT, relief="flat", font=font(12),
-                    highlightthickness=1, highlightbackground=LINE, highlightcolor=BLUE)
+class DesktopIcons(QListWidget):
+    def __init__(self, desk):
+        super().__init__()
+        self.desk = desk
+        self.setObjectName("desktopIcons")
+        self.setViewMode(QListWidget.ViewMode.ListMode)
+        self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.setIconSize(QSize(27, 27))
+        self.setFixedWidth(234)
+        self.setMaximumHeight(145)
+        self.itemDoubleClicked.connect(self.activate)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.menu)
+        self.load()
+
+    def load(self):
+        self.clear()
+        for target in self.desk.s.get("desktop_items", ["Files", "Air Browser"]):
+            item = QListWidgetItem(icon(target), target if target in COLORS else Path(target).name)
+            item.setData(Qt.ItemDataRole.UserRole, target)
+            self.addItem(item)
+
+    def activate(self, item):
+        target = item.data(Qt.ItemDataRole.UserRole)
+        if target in COLORS:
+            self.desk.open(target)
+        else:
+            open_path(self, target)
+
+    def save(self):
+        self.desk.s.set(desktop_items=[self.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.count())])
+
+    def dropEvent(self, event):
+        super().dropEvent(event)
+        self.save()
+
+    def menu(self, pos):
+        menu = QMenu(self)
+        menu.addAction("Add shortcut…", self.desk.add_shortcut)
+        if self.itemAt(pos):
+            def remove():
+                self.takeItem(self.row(self.itemAt(pos)))
+                self.save()
+            menu.addAction("Remove shortcut", remove)
+        menu.exec(self.viewport().mapToGlobal(pos))
 
 
-def label(master, text, size=10, color=TEXT, bold=False, bg=None, **kw):
-    return tk.Label(master, text=text, fg=color, bg=bg or master.cget("bg"), font=font(size, bold), justify="left",
-                    anchor="w", **kw)
-
-
-class App:
-    def __init__(self, root, settings=None, hotspot=None, ctl=None, demo=False):
-        self.root = root
+class Desktop(QMainWindow):
+    message = Signal(str)
+    receiver_changed = Signal()
+    names = list(COLORS)
+    def __init__(self, settings=None):
+        super().__init__()
         self.s = settings or Settings()
-        self.lock = PasswordLock(self.s)
-        self.hot = hotspot or Hotspot(self.s)
-        self.ctl = ctl or Controller(backend() or NullBackend())
-        self.host = RemoteHost(self.ctl, on_change=lambda: self.post(self.refresh_remote))
-        self.host.paused = True
-        self.auto = AutoSwitch(self.hot, report=lambda m: self.post(lambda: self.toast(m)))
-        self.demo = demo
-        self.q = queue.Queue()
-        root.title("AirCursor")
-        root.configure(bg=BG)
-        root.geometry("920x640")
-        root.minsize(820, 600)
-        try:
-            root.iconbitmap(asset("aircursor.ico"))
-        except tk.TclError:
-            pass
-        try:
-            self.logo = tk.PhotoImage(file=asset("logo96.png")).subsample(2, 2)
-        except tk.TclError:
-            self.logo = None
-        self.body = None
-        root.after(50, self._pump)
-        root.protocol("WM_DELETE_WINDOW", self.quit)
+        self.auth, self.hot = PasswordLock(self.s), Hotspot(self.s)
+        self.host = RemoteHost(Controller(backend()), self.receiver_changed.emit)
+        self.auto = AutoSwitch(self.hot, self.message.emit, every=self.probe_interval())
+        self.work = Workers(self)
+        self.panels, self.opened, self.clipboard, self.messages = {}, {}, [], []
+        self.locked = True
+        self.space = 1
+        self.net_pending = False
+        self.last_net = -1000
+        self.addresses = []
+        self.network_text = "Checking connectivity…"
+        self.metrics_text = ""
+        self.usage = None
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.tick)
+        self.message.connect(self.notify)
+        self.receiver_changed.connect(self.refresh_control)
+        self.setWindowTitle("AirCursor Workspace")
+        self.setWindowIcon(QIcon(asset("aircursor.ico")))
+        self.resize(1120, 720)
+        self.setMinimumSize(680, 465)
+        for key, fn in [("F11", self.fullscreen), ("Escape", self.exit_desktop),
+                        ("Ctrl+Space", lambda: self.open("Launcher")), ("Ctrl+Shift+L", self.lock_now),
+                        ("Ctrl+1", lambda: self.switch_space(1)), ("Ctrl+2", lambda: self.switch_space(2))]:
+            QShortcut(QKeySequence(key), self, activated=fn)
         self.show_lock()
 
-    # ---- plumbing ----
-
-    def post(self, fn):
-        """Runs [fn] on the window's thread (network work happens on other threads)."""
-        self.q.put(fn)
-
-    def _pump(self):
-        try:
-            while True:
-                self.q.get_nowait()()
-        except queue.Empty:
-            pass
-        self.root.after(50, self._pump)
-
-    def work(self, job, done):
-        """[job] on a background thread, then [done](result) on the window's thread."""
-        threading.Thread(target=lambda: self.post(lambda r=job(): done(r)), daemon=True).start()
-
-    def screen(self):
-        if self.body:
-            self.body.destroy()
-        self.body = tk.Frame(self.root, bg=BG)
-        self.body.pack(fill="both", expand=True)
-        return self.body
-
-    def toast(self, msg, color=None):
-        t = tk.Label(self.root, text=msg, bg="#1F2330", fg=color or TEXT, font=font(10), padx=16, pady=10,
-                     wraplength=600)
-        t.place(relx=0.5, rely=0.96, anchor="s")
-        self.root.after(4500, t.destroy)
-
-    def quit(self):
-        self.host.stop()
-        self.auto.stop()
-        self.root.destroy()
-
-    # ---- password ----
+    def probe_interval(self):
+        return 60 if self.s.get("profile") in ("Battery Saver", "Mobile Hotspot") else 15
 
     def show_lock(self):
+        self.locked = True
         self.host.paused = True
-        b = self.screen()
-        box = tk.Frame(b, bg=BG)
-        box.place(relx=0.5, rely=0.45, anchor="center")
-        if self.logo:
-            tk.Label(box, image=self.logo, bg=BG).pack(pady=(0, 14))
-        first = not self.lock.has_password
-        label(box, "Set a password for AirCursor" if first else "AirCursor is locked", 20, bold=True).pack()
-        label(box, "It keeps your phone hotspot and phone control safe on this computer." if first
-              else "Enter your password to open it.", 10, MUTED).pack(pady=(4, 18))
-        pw = entry(box)
-        pw.pack(fill="x", ipady=7)
-        again = None
+        self.timer.stop()
+        self.auto.stop()
+        self.clipboard.clear()
+        if self.isFullScreen():
+            self.showNormal()
+        self.surface = Landscape()
+        self.setCentralWidget(self.surface)
+        outer = QVBoxLayout(self.surface)
+        outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card = QFrame()
+        card.setObjectName("lockCard")
+        card.setFixedWidth(360)
+        box = QVBoxLayout(card)
+        box.setContentsMargins(30, 28, 30, 28)
+        mark = QLabel()
+        mark.setPixmap(self.windowIcon().pixmap(48, 48))
+        box.addWidget(mark)
+        first = not self.auth.has_password
+        title = label("Welcome to AirCursor" if first else "AirCursor is locked")
+        title.setObjectName("heading")
+        box.addWidget(title)
+        box.addWidget(label("Create your workspace password." if first else "Enter your workspace password."))
+        secret = password("Password")
+        again = password("Confirm password")
+        box.addWidget(secret)
         if first:
-            label(box, "Same password again", 9, MUTED).pack(fill="x", pady=(10, 2))
-            again = entry(box)
-            again.pack(fill="x", ipady=7)
-        msg = label(box, "", 9, RED)
-        msg.pack(fill="x", pady=(8, 0))
-
-        def go(*_):
-            if first:
-                err = self.lock.problem(pw.get(), again.get())
-                if err:
-                    msg.config(text=err)
+            box.addWidget(again)
+        else:
+            again.deleteLater()
+        status = label("")
+        box.addWidget(status)
+        def unlock():
+            try:
+                if first:
+                    self.auth.set_password(secret.text(), again.text())
+                elif not self.auth.check(secret.text()):
+                    wait = self.auth.wait_left()
+                    status.setText(f"Try again in {wait}s." if wait else "Incorrect password.")
+                    secret.clear()
                     return
-                self.lock.set_password(pw.get())
-                self.show_main()
-                self.toast("Password set. Keep it safe – without it AirCursor can only be reset.", GREEN)
+            except (ValueError, OSError) as exc:
+                status.setText(str(exc))
                 return
-            if self.lock.check(pw.get()):
-                self.show_main()
-                return
-            pw.delete(0, "end")
-            wait = self.lock.wait_left()
-            msg.config(text="Wrong password." + (" Try again in %d s." % wait if wait else ""))
+            self.workspace()
+        box.addWidget(button("Create workspace" if first else "Unlock", unlock))
+        secret.returnPressed.connect(again.setFocus if first else unlock)
+        if first:
+            again.returnPressed.connect(unlock)
+        else:
+            box.addWidget(button("Reset AirCursor…", self.reset))
+        outer.addWidget(card)
+        self.style_workspace()
+        secret.setFocus()
 
-        Button(box, "Set password" if first else "Unlock", go).pack(fill="x", pady=(12, 0))
-        (again or pw).bind("<Return>", go)
-        pw.bind("<Return>", go if not first else lambda e: again.focus_set())
-        pw.focus_set()
-        if not first:
-            r = label(box, "Forgot it? Reset AirCursor", 9, FAINT, cursor="hand2")
-            r.pack(pady=(16, 0))
-            r.bind("<Button-1>", lambda e: self.ask_reset())
-
-    def ask_reset(self):
-        d = self.dialog("Reset AirCursor?")
-        label(d, "This clears AirCursor's password and settings on this computer and forgets the saved phone "
-                 "hotspot. Nothing else on the computer is touched.", 10, MUTED, wraplength=380).pack(fill="x")
-        row = tk.Frame(d, bg=CARD)
-        row.pack(fill="x", pady=(16, 0))
-
-        def reset():
+    def reset(self):
+        if not confirm(self, "Reset workspace", "Forget the phone hotspot and remove AirCursor settings, saved chats and password? Browser profile files stay on disk."):
+            return
+        # Browser data must not become accessible through a password reset in this running session.
+        try:
             self.hot.forget_phone()
             self.s.clear()
-            d.destroy()
-            self.show_lock()
-        Button(row, "Reset", reset, "danger").pack(side="right")
-        Button(row, "Cancel", d.destroy, "ghost").pack(side="right", padx=8)
-
-    def dialog(self, title):
-        d = tk.Toplevel(self.root, bg=CARD, padx=22, pady=18)
-        d.title(title)
-        d.transient(self.root)
-        d.resizable(False, False)
-        label(d, title, 14, bold=True).pack(fill="x", pady=(0, 8))
-        d.grab_set()
-        d.after(30, lambda: self.center(d))
-        return d
-
-    def center(self, d):
-        """Over the middle of the AirCursor window."""
-        d.update_idletasks()
-        r = self.root
-        x = r.winfo_rootx() + (r.winfo_width() - d.winfo_width()) // 2
-        y = r.winfo_rooty() + (r.winfo_height() - d.winfo_height()) // 3
-        d.geometry("+%d+%d" % (max(0, x), max(0, y)))
-
-    # ---- the main screen ----
-
-    def show_main(self):
-        self.gen = getattr(self, "gen", 0) + 1   # one status loop per main screen, never two
-        b = self.screen()
-        top = tk.Frame(b, bg=BG, padx=26, pady=18)
-        top.pack(fill="x")
-        if self.logo:
-            tk.Label(top, image=self.logo, bg=BG).pack(side="left")
-        t = tk.Frame(top, bg=BG)
-        t.pack(side="left", padx=12)
-        label(t, "AirCursor", 18, bold=True).pack(anchor="w")
-        label(t, "for Windows · " + VERSION, 9, MUTED).pack(anchor="w")
-        Button(top, "Lock", self.lock_now, "ghost").pack(side="right")
-
-        grid = tk.Frame(b, bg=BG, padx=26)
-        grid.pack(fill="both", expand=True)
-        grid.columnconfigure(0, weight=1, uniform="c")
-        grid.columnconfigure(1, weight=1, uniform="c")
-        self.build_internet(self.card(grid, 0, 0, "Phone internet", "Your phone's mobile data on this computer"))
-        self.build_remote(self.card(grid, 0, 1, "Phone as mouse & keyboard", "Use your phone as a touchpad"))
-        foot = tk.Frame(b, bg=BG, padx=26, pady=14)
-        foot.pack(fill="x")
-        Button(foot, "Change password", self.change_password, "ghost").pack(side="left")
-        get = label(foot, "Get AirCursor for your phone  ↗", 10, BLUE_HI, cursor="hand2")
-        get.pack(side="right")
-        get.bind("<Button-1>", lambda e: webbrowser.open(PHONE_APP))
-        self.host.paused = False
-        if self.s.get("auto_switch", True):
-            self.auto.start()
-        if self.s.get("remote_on") and not self.host.running:
-            self.start_remote()
-        self.refresh_internet(self.gen)
-        self.refresh_remote()
-
-    def card(self, grid, row, col, title, sub):
-        c = tk.Frame(grid, bg=CARD, padx=20, pady=18, highlightthickness=1, highlightbackground=LINE)
-        c.grid(row=row, column=col, sticky="nsew", padx=(0 if col == 0 else 8, 8 if col == 0 else 0), pady=4)
-        grid.rowconfigure(row, weight=1)
-        label(c, title, 14, bold=True).pack(fill="x")
-        label(c, sub, 9, MUTED).pack(fill="x", pady=(2, 14))
-        return c
+        except OSError as exc:
+            QMessageBox.warning(self, "Reset", str(exc))
+            return
+        self.close()
 
     def lock_now(self):
+        if self.locked:
+            return
+        self.persist()
+        for panel in self.panels.values():
+            panel.hide()
         self.show_lock()
+        self.raise_()
+        self.activateWindow()
 
-    # ---- phone internet ----
-
-    def build_internet(self, c):
-        row = tk.Frame(c, bg=CARD)
-        row.pack(fill="x")
-        self.net_dot = tk.Label(row, text="●", fg=FAINT, bg=CARD, font=font(12))
-        self.net_dot.pack(side="left")
-        self.net_text = label(row, "Checking the internet…", 11, bold=True)
-        self.net_text.pack(side="left", padx=6)
-        self.wifi_text = label(c, "", 9, MUTED)
-        self.wifi_text.pack(fill="x", pady=(4, 12))
-        self.phone_text = label(c, "", 10)
-        self.phone_text.pack(fill="x")
-        btns = tk.Frame(c, bg=CARD)
-        btns.pack(fill="x", pady=(10, 12))
-        self.connect_btn = Button(btns, "Connect to phone", self.connect_phone)
-        self.connect_btn.pack(side="left")
-        Button(btns, "Set up hotspot", self.setup_hotspot, "ghost").pack(side="left", padx=8)
-        self.auto_var = tk.BooleanVar(value=self.s.get("auto_switch", True))
-        tk.Checkbutton(c, text="If the internet stops, switch to the phone by itself", variable=self.auto_var,
-                       command=self.toggle_auto, bg=CARD, fg=TEXT, selectcolor=FIELD, activebackground=CARD,
-                       activeforeground=TEXT, font=font(10), anchor="w", highlightthickness=0).pack(fill="x")
-        label(c, "Switch the hotspot on on the phone first (Quick Settings → Hotspot) – Android does not let "
-                 "apps switch it on. With a USB cable: phone Settings → Hotspot → USB tethering; Windows uses it "
-                 "by itself.", 9, FAINT, wraplength=360).pack(fill="x", pady=(12, 0))
-
-    def refresh_internet(self, gen=None):
-        if gen is None:   # a one-off refresh after a change
-            gen = getattr(self, "gen", 0)
-            repeat = False
-        else:
-            repeat = True
-        if gen != getattr(self, "gen", 0) or not hasattr(self, "net_text") or not self.net_text.winfo_exists():
-            return
-
-        def look():
-            return internet_ok(), self.hot.wifi()
-
-        def show(r):
-            online, wifi = r
-            if gen != self.gen or not self.net_text.winfo_exists():
-                return
-            self.net_dot.config(fg=GREEN if online else RED)
-            self.net_text.config(text="Internet is working" if online else "No internet")
-            if wifi is None:
-                self.wifi_text.config(text="Wi-Fi: off or not on this computer")
-            elif wifi["state"] == "connected":
-                via = " (your phone)" if wifi["ssid"] == self.hot.phone_ssid else ""
-                self.wifi_text.config(text="Wi-Fi: %s%s · signal %s" % (wifi["ssid"], via, wifi["signal"]))
-            else:
-                self.wifi_text.config(text="Wi-Fi: not connected")
-            ssid = self.hot.phone_ssid
-            self.phone_text.config(text="Phone hotspot: " + ssid if ssid else "Phone hotspot: not set up yet")
-            self.connect_btn.set_enabled(bool(ssid))
-            if repeat:
-                self.root.after(5000, self.refresh_internet, gen)
-        self.work(look, show)
-
-    def toggle_auto(self):
-        on = self.auto_var.get()
-        self.s.set(auto_switch=on)
-        (self.auto.start if on else self.auto.stop)()
-
-    def connect_phone(self):
-        if not self.hot.phone_ssid:
-            self.setup_hotspot()
-            return
-        self.toast("Connecting to %s…" % self.hot.phone_ssid)
-        self.work(self.hot.connect, lambda err: self.toast(err or "Connected to your phone's hotspot.",
-                                                           RED if err else GREEN))
-
-    def setup_hotspot(self):
-        d = self.dialog("Your phone's hotspot")
-        label(d, "On the phone: Settings → Hotspot – switch it on, and look at its name and password. "
-                 "Pick it below (or write its name).", 10, MUTED, wraplength=400).pack(fill="x")
-        lst = tk.Listbox(d, bg=FIELD, fg=TEXT, selectbackground=BLUE, relief="flat", height=6, font=font(10),
-                         highlightthickness=1, highlightbackground=LINE, activestyle="none")
-        lst.pack(fill="x", pady=(10, 4))
-        nets = []
-        status = label(d, "Looking for Wi-Fi networks…", 9, FAINT)
-        status.pack(fill="x")
-        label(d, "Hotspot name", 9, MUTED).pack(fill="x", pady=(10, 2))
-        name = entry(d, show="")
-        name.insert(0, self.hot.phone_ssid)
-        name.pack(fill="x", ipady=6)
-        label(d, "Hotspot password", 9, MUTED).pack(fill="x", pady=(10, 2))
-        pw = entry(d)
-        pw.pack(fill="x", ipady=6)
-        label(d, "Windows keeps the password in its own Wi-Fi settings; AirCursor does not store it.", 8, FAINT,
-              wraplength=400).pack(fill="x", pady=(4, 0))
-        msg = label(d, "", 9, RED, wraplength=400)
-        msg.pack(fill="x", pady=(6, 0))
-
-        def scan():
-            def got(found):
-                nets[:] = found
-                lst.delete(0, "end")
-                for n in found:
-                    lst.insert("end", "  %s    %d%%" % (n["ssid"], n["signal"]))
-                status.config(text="Found %d networks." % len(found) if found else
-                              "No networks found (is Wi-Fi on?). You can write the name yourself.")
-            self.work(self.hot.networks, got)
-
-        def picked(_):
-            sel = lst.curselection()
-            if sel:
-                name.delete(0, "end")
-                name.insert(0, nets[sel[0]]["ssid"])
-                pw.focus_set()
-        lst.bind("<<ListboxSelect>>", picked)
-
-        def save(*_):
-            auth = next((n["auth"] for n in nets if n["ssid"] == name.get().strip()), "")
-            msg.config(text="Saving…", fg=MUTED)
-
-            def done(err):
-                if err:
-                    msg.config(text=err, fg=RED)
-                    return
-                d.destroy()
-                self.refresh_internet()
-                self.connect_phone()
-            self.work(lambda: self.hot.save_phone(name.get(), pw.get(), auth), done)
-        pw.bind("<Return>", save)
-        row = tk.Frame(d, bg=CARD)
-        row.pack(fill="x", pady=(14, 0))
-        Button(row, "Save and connect", save).pack(side="right")
-        Button(row, "Search again", scan, "ghost").pack(side="right", padx=8)
-        if self.hot.phone_ssid:
-            def forget():
-                self.hot.forget_phone()
-                d.destroy()
-                self.refresh_internet()
-            Button(row, "Forget phone", forget, "danger").pack(side="left")
-        scan()
-
-    # ---- phone as mouse & keyboard ----
-
-    def build_remote(self, c):
-        row = tk.Frame(c, bg=CARD)
-        row.pack(fill="x")
-        self.rem_dot = tk.Label(row, text="●", fg=FAINT, bg=CARD, font=font(12))
-        self.rem_dot.pack(side="left")
-        self.rem_text = label(row, "", 11, bold=True)
-        self.rem_text.pack(side="left", padx=6)
-        self.code_box = tk.Frame(c, bg=FIELD, padx=16, pady=10, highlightthickness=1, highlightbackground=LINE)
-        self.code_box.pack(fill="x", pady=(12, 4))
-        label(self.code_box, "Pairing code", 9, MUTED, bg=FIELD).pack(anchor="w")
-        self.code_text = label(self.code_box, "", 26, TEXT, True, bg=FIELD)
-        self.code_text.pack(anchor="w")
-        self.addr_text = label(self.code_box, "", 9, MUTED, bg=FIELD)
-        self.addr_text.pack(anchor="w")
-        btns = tk.Frame(c, bg=CARD)
-        btns.pack(fill="x", pady=(10, 10))
-        self.rem_btn = Button(btns, "Turn on", self.toggle_remote)
-        self.rem_btn.pack(side="left")
-        self.code_btn = Button(btns, "New code", self.host.renew_code, "ghost")
-        self.code_btn.pack(side="left", padx=8)
-        label(c, "On the phone: AirCursor → Use as keyboard & touchpad → pick this computer (or \"Connect by "
-                 "address\" with the address above) → type the code. If Windows asks about the firewall, "
-                 "allow it – the hotspot is a Public network, so tick Public too.", 9, FAINT,
-              wraplength=360).pack(fill="x")
-
-    def refresh_remote(self):
-        if not hasattr(self, "rem_text") or not self.rem_text.winfo_exists():
-            return
-        h = self.host
-        if not h.running:
-            self.rem_dot.config(fg=FAINT)
-            self.rem_text.config(text="Off")
-            self.code_box.pack_forget()
-            self.rem_btn.config(text="Turn on")
-            self.code_btn.pack_forget()
-            return
-        self.code_box.pack(fill="x", pady=(12, 4), after=self.rem_text.master)
-        self.code_btn.pack(side="left", padx=8)
-        self.rem_btn.config(text="Turn off")
-        self.code_text.config(text="%s %s" % (h.code[:3], h.code[3:]))
-        addrs = local_addresses() or ["(no network)"]
-        self.addr_text.config(text="This computer: " + "  ·  ".join("%s:%d" % (a, h.port) for a in addrs[:3]))
-        if h.client:
-            self.rem_dot.config(fg=GREEN)
-            self.rem_text.config(text="Phone connected (%s)" % h.client_addr)
-        else:
-            self.rem_dot.config(fg=AMBER)
-            self.rem_text.config(text="Waiting for the phone…")
-
-    def start_remote(self):
-        try:
-            self.host.start()
-            self.s.set(remote_on=True)
-        except OSError as e:
-            self.toast("Could not start: %s" % e, RED)
-        self.refresh_remote()
-
-    def toggle_remote(self):
-        if self.host.running:
-            self.host.stop()
-            self.s.set(remote_on=False)
-            self.refresh_remote()
-        else:
-            self.start_remote()
-
-    # ---- security ----
-
-    def change_password(self):
-        d = self.dialog("Change password")
-        fields = []
-        for t in ("Current password", "New password", "New password again"):
-            label(d, t, 9, MUTED).pack(fill="x", pady=(8, 2))
-            e = entry(d)
-            e.pack(fill="x", ipady=6)
-            fields.append(e)
-        msg = label(d, "", 9, RED, wraplength=360)
-        msg.pack(fill="x", pady=(8, 0))
-
-        def go(*_):
+    def workspace(self):
+        self.locked = False
+        self.host.paused = False
+        self.surface = Landscape()
+        self.setCentralWidget(self.surface)
+        layout = QVBoxLayout(self.surface)
+        layout.setContentsMargins(15, 12, 15, 15)
+        bar = QFrame()
+        bar.setObjectName("menuBar")
+        top = QHBoxLayout(bar)
+        top.setContentsMargins(12, 2, 10, 2)
+        brand = QLabel("AirCursor")
+        brand.setObjectName("brand")
+        top.addWidget(brand)
+        self.spaces = button("Workspace  1", self.space_menu)
+        top.addWidget(self.spaces)
+        top.addWidget(button("Overview", self.overview))
+        top.addStretch()
+        top.addWidget(button("Control Center", lambda: self.open("Control Center")))
+        top.addWidget(button("Lock", self.lock_now))
+        self.full_button = button("Full screen", self.fullscreen)
+        top.addWidget(self.full_button)
+        layout.addWidget(bar)
+        middle = QHBoxLayout()
+        middle.setContentsMargins(30, 28, 24, 8)
+        left = QVBoxLayout()
+        self.date = label("")
+        self.date.setObjectName("date")
+        self.clock = label("")
+        self.clock.setObjectName("clock")
+        left.addWidget(self.date)
+        left.addWidget(self.clock)
+        self.icons = DesktopIcons(self)
+        left.addWidget(self.icons)
+        left.addStretch()
+        middle.addLayout(left)
+        middle.addStretch()
+        right = QVBoxLayout()
+        self.widget = QFrame()
+        self.widget.setFixedWidth(234)
+        self.widget.setObjectName("glass")
+        form = QVBoxLayout(self.widget)
+        form.setContentsMargins(17, 14, 17, 15)
+        form.addWidget(label("Connection"))
+        self.net_label = label(self.network_text)
+        form.addWidget(self.net_label)
+        form.addWidget(label("AirBoost"))
+        self.boost_label = label("")
+        form.addWidget(self.boost_label)
+        right.addWidget(self.widget)
+        right.addStretch()
+        middle.addLayout(right)
+        layout.addLayout(middle, 1)
+        self.toast = label("")
+        self.toast.setObjectName("toast")
+        self.toast.hide()
+        layout.addWidget(self.toast, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self.dock = QFrame()
+        self.dock.setObjectName("dock")
+        self.dock_layout = QHBoxLayout(self.dock)
+        self.dock_layout.setContentsMargins(8, 2, 8, 2)
+        self.dock_layout.setSpacing(0)
+        layout.addWidget(self.dock, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self.build_dock()
+        self.style_workspace()
+        self.surface.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.surface.customContextMenuRequested.connect(self.desktop_menu)
+        if sys.platform == "win32" and self.s.get("remote_on") and not self.host.running:
             try:
-                self.lock.change(*(f.get() for f in fields))
-            except ValueError as e:
-                wait = self.lock.wait_left()
-                msg.config(text=str(e) + (" Try again in %d s." % wait if wait else ""))
-                return
-            d.destroy()
-            self.toast("Password changed.", GREEN)
-        fields[-1].bind("<Return>", go)
-        Button(d, "Change", go).pack(anchor="e", pady=(12, 0))
-        fields[0].focus_set()
+                self.host.start()
+            except OSError as exc:
+                self.notify(str(exc))
+        if self.s.get("auto_switch", True):
+            self.auto.start()
+        self.profile(self.s.get("profile", "Balanced"), save=False)
+        self.tick()
+        if self.s.get("restore", True):
+            restored = dict(self.opened or self.s.get("session_panels", {}))
+            for name, space in restored.items():
+                if name in self.names and space == self.space:
+                    self.open(name)
+                elif name in self.names:
+                    self.opened[name] = space
+
+    def build_dock(self):
+        while self.dock_layout.count():
+            self.dock_layout.takeAt(0).widget().deleteLater()
+        names = ["Files", "Air Browser", "Air Store", "Air AI", "Launcher", "Settings"]
+        names.extend(n for n in self.opened if n not in names)
+        for name in names:
+            action = DockButton(name, lambda checked=False, n=name: self.open(n), self.effects)
+            if name in self.opened:
+                action.setToolTip(name + " · running")
+                action.setStyleSheet("border-bottom:2px solid #a3d9cd")
+            self.dock_layout.addWidget(action)
+        for path in self.s.get("pins", []):
+            pin = button(Path(path).stem[:15], lambda p=path: open_path(self, p))
+            pin.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            pin.customContextMenuRequested.connect(lambda pos, p=path: self.unpin(p))
+            self.dock_layout.addWidget(pin)
+        self.fit_dock()
+
+    def fit_dock(self):
+        size = max(49, min(82, (self.width()-65)//max(1, self.dock_layout.count())))
+        for i in range(self.dock_layout.count()):
+            item = self.dock_layout.itemAt(i).widget()
+            item.setFixedWidth(size)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if not self.locked and hasattr(self, "dock_layout"):
+            self.fit_dock()
+            self.widget.setVisible(self.width() > 740)
+
+    def pin(self, path):
+        self.s.set(pins=list(dict.fromkeys([path] + self.s.get("pins", [])))[:4])
+        self.build_dock()
+
+    def unpin(self, path):
+        if confirm(self, "Unpin shortcut", f"Remove {Path(path).stem} from the Dock?"):
+            self.s.set(pins=[p for p in self.s.get("pins", []) if p != path])
+            self.build_dock()
+
+    def effects(self):
+        return PROFILES.get(self.s.get("profile"), PROFILES["Balanced"])[1]
+
+    def preference(self, key, value):
+        self.s.set(**{key: value})
+        if key == "clipboard" and not value:
+            self.clipboard.clear()
+        if key == "browser_history_enabled" and not value:
+            self.s.set(browser_history=[])
+        self.style_workspace()
+
+    def style_workspace(self):
+        mode = self.s.get("appearance", "Automatic")
+        light = mode == "Light" or mode == "Automatic" and QApplication.styleHints().colorScheme() == Qt.ColorScheme.Light
+        self.surface.light = light
+        self.surface.scene = self.s.get("wallpaper", "Fjord")
+        self.surface.update()
+        bg, fg, field, border = ("#ecf3f1", "#19343c", "#fcfdfb", "#bbcecb") if light else (
+                                  "#192c34", "#eaf3f0", "#223943", "#435e65")
+        QApplication.instance().setStyleSheet(f"""
+            QWidget {{ color:{fg};font-family:'Segoe UI','DejaVu Sans';font-size:13px }}
+            QMainWindow,QDialog,QTabWidget::pane,QFrame#panel,QMenu {{background:{bg}}}
+            QLabel,QWidget#desktopIcons {{background:transparent}}
+            QLineEdit,QPlainTextEdit,QListWidget,QTreeView,QListView,QComboBox {{background:{field};border:1px solid {border};border-radius:6px;padding:5px}}
+            QPushButton,QToolButton,QTabBar::tab {{background:{field};border:1px solid {border};border-radius:7px;padding:6px 10px}}
+            QPushButton:hover,QToolButton:hover,QMenu::item:selected,QTabBar::tab:selected {{background:#486e74;color:white}}
+            QFrame#menuBar,QFrame#dock,QFrame#glass,QFrame#lockCard {{background:rgba(18,41,47,205);border:1px solid rgba(223,255,246,67);border-radius:13px}}
+            QFrame#menuBar QPushButton,QToolButton#dockButton {{background:transparent;border:0;color:#f1faf9}}
+            QFrame#menuBar QPushButton:hover,QToolButton#dockButton:hover {{background:rgba(230,255,250,28)}}
+            QFrame#menuBar QLabel,QFrame#glass QLabel,QFrame#lockCard QLabel {{color:#f2f9f4}}
+            QLabel#brand {{font-weight:700;padding-right:10px}}
+            QLabel#clock {{font-size:70px;font-weight:300;color:#f4fff8}}
+            QLabel#date {{font-size:16px;color:#e1f2e9}}
+            QLabel#heading {{font-size:23px;font-weight:600}}
+            QLabel#toast {{background:#183039;color:white;border-radius:7px;padding:8px 15px}}
+            QListWidget#desktopIcons {{background:transparent;border:0;color:white;padding:0;font-weight:600}}
+            QListWidget#desktopIcons::item {{padding:5px;border-radius:7px}}
+            QListWidget#desktopIcons::item:selected {{background:rgba(202,240,233,48)}}
+            QToolButton#dockButton {{font-size:11px;padding:1px}}
+            QMenu::item {{padding:6px 16px}}
+        """)
+
+    def profile(self, value, save=True):
+        if value not in PROFILES:
+            value = "Balanced"
+        if save:
+            self.s.set(profile=value)
+        self.auto.every = self.probe_interval()
+        self.timer.start(PROFILES[value][0]*1000)
+
+    def tick(self):
+        if self.locked:
+            return
+        now = datetime.now()
+        self.clock.setText(now.strftime("%H:%M"))
+        self.date.setText(now.strftime("%A, %d %B"))
+        self.surface.phase = now.hour if self.effects() else 12
+        self.surface.update()
+        ram = psutil.virtual_memory()
+        cpu = psutil.cpu_percent()
+        io = psutil.net_io_counters()
+        t = time.monotonic()
+        self.boost_label.setText(f"{self.s.get('profile','Balanced')}\nCPU {cpu:.0f}%   ·   RAM {ram.percent:.0f}%")
+        disk = shutil.disk_usage(Path.home())
+        try:
+            battery = psutil.sensors_battery()
+        except (OSError, NotImplementedError):
+            battery = None
+        battery_text = f"{battery.percent:.0f}%" if battery else "Unavailable"
+        rates = ""
+        if self.usage and self.usage[0] and io:
+            old, stamp = self.usage
+            dt = max(0.001, t-stamp)
+            rates = f"\n↓ {max(0,io.bytes_recv-old.bytes_recv)/dt/1024:.1f} KiB/s   ↑ {max(0,io.bytes_sent-old.bytes_sent)/dt/1024:.1f} KiB/s"
+        self.usage = io, t
+        self.metrics_text = (f"CPU {cpu:.0f}% · RAM {ram.used/2**30:.1f} / {ram.total/2**30:.1f} GiB\n"
+            f"Disk free {disk.free/2**30:.1f} GiB · Battery {battery_text}" + rates)
+        if not self.net_pending and t-self.last_net >= self.probe_interval():
+            self.net_pending = True
+            def check():
+                info = self.hot.wifi()
+                health = self.hot.health
+                if not (self.s.get("auto_switch", True) and self.hot.phone_ssid):
+                    self.hot.check_internet()
+                    health = self.hot.health
+                state = health.state if health else "Checking internet…"
+                latency = f" · {health.latency_ms} ms" if health and health.latency_ms is not None else ""
+                return (f"{info['ssid']}  {info['signal']}\n" if info and info["ssid"] else "") + state + latency, local_addresses()
+            def done(result):
+                self.net_pending = False
+                self.last_net = time.monotonic()
+                self.network_text, self.addresses = result
+                if not self.locked:
+                    self.net_label.setText(self.network_text)
+                    self.refresh_control()
+            self.work.run(check, done, lambda err: done((err, [])))
+        self.refresh_control()
+
+    def refresh_control(self):
+        panel = self.panels.get("Control Center")
+        if panel and not self.locked:
+            panel.content.refresh()
+
+    def notify(self, message):
+        if self.locked:
+            return
+        self.messages = ([message] + self.messages)[:50]
+        previous = self.toast
+        previous.setText(message)
+        previous.show()
+        QTimer.singleShot(5500, previous, previous.hide)
+
+    def persist(self):
+        self.s.set(session_panels=dict(self.opened))
+
+    def open(self, name):
+        if self.locked or name not in self.names:
+            return
+        if name == "Overview":
+            self.overview()
+            return
+        if name not in self.panels:
+            if name == "Air Browser":
+                from .browser import Browser
+                content = Browser(self.s)
+            elif name == "Files":
+                from .files import Files
+                content = Files(self.s)
+            elif name == "Air Store":
+                from .store import Store
+                content = Store(lambda: self.open("Launcher"))
+            elif name == "Air AI":
+                from .intelligence import Intelligence
+                content = Intelligence(self.s, self.browse, self.terminal)
+            elif name == "Settings":
+                content = Preferences(self)
+            elif name == "Launcher":
+                content = Launcher(self)
+            else:
+                content = Control(self)
+            panel = self.panels[name] = Panel(self, name, content)
+            area = self.screen().availableGeometry()
+            panel.resize(min(850, area.width()-22), min(590, area.height()-25))
+            panel.move(area.center()-panel.rect().center()+QPoint(9*len(self.panels), 5*len(self.panels)))
+        panel = self.panels[name]
+        self.opened[name] = self.space
+        if self.s.get("stage", False):
+            for other in self.panels.values():
+                if other != panel:
+                    other.hide()
+        if panel.isMinimized():
+            panel.showNormal()
+        panel.show()
+        panel.raise_()
+        panel.activateWindow()
+        if name == "Launcher":
+            panel.content.query.setFocus()
+        self.build_dock()
+        self.persist()
+        return panel.content
+
+    def panel_closed(self, name):
+        self.opened.pop(name, None)
+        if not self.locked:
+            self.build_dock()
+            self.persist()
+
+    def browse(self, url):
+        self.open("Air Browser").add(url)
+
+    def terminal(self):
+        if os.name == "nt":
+            try:
+                subprocess.Popen([os.environ.get("COMSPEC", "cmd.exe")], cwd=Path.home(),
+                                 creationflags=subprocess.CREATE_NEW_CONSOLE)
+            except OSError as exc:
+                self.notify(str(exc))
+        else:
+            self.notify("The Windows coding terminal is available on Windows.")
+
+    def add_shortcut(self):
+        value, _ = QFileDialog.getOpenFileName(self, "Add desktop shortcut")
+        if value:
+            self.s.set(desktop_items=list(dict.fromkeys(self.s.get("desktop_items", ["Files","Air Browser"])+[value])))
+            self.icons.load()
+
+    def fullscreen(self):
+        if not self.locked:
+            if self.isFullScreen():
+                self.exit_desktop()
+            else:
+                self.showFullScreen()
+                self.full_button.setText("Exit desktop  ·  Esc")
+
+    def exit_desktop(self):
+        if self.isFullScreen():
+            self.showNormal()
+            self.full_button.setText("Full screen")
+
+    def space_menu(self):
+        menu = QMenu(self)
+        for n in (1, 2):
+            menu.addAction(f"Workspace {n}", lambda n=n: self.switch_space(n))
+        menu.addAction("Notifications", lambda: self.list_dialog("Notifications", self.messages))
+        menu.addAction("Clipboard history", self.clip_history)
+        menu.addAction("Exit desktop mode", self.exit_desktop)
+        menu.exec(self.spaces.mapToGlobal(self.spaces.rect().bottomLeft()))
+
+    def switch_space(self, n):
+        if self.locked:
+            return
+        self.space = n
+        self.spaces.setText(f"Workspace  {n}")
+        for panel in self.panels.values():
+            panel.hide()
+        for name, space in list(self.opened.items()):
+            if space == n:
+                self.open(name)
+
+    def overview(self):
+        if self.locked:
+            return
+        values = [f"{name}   ·   Workspace {space}" for name, space in self.opened.items()]
+        val = self.list_dialog("Window overview", values)
+        if val:
+            name = val.split("   ·")[0]
+            self.switch_space(self.opened[name])
+            self.open(name)
+
+    def list_dialog(self, title, values):
+        if not values:
+            self.notify(title + " is empty.")
+            return
+        value, ok = QInputDialog.getItem(self, title, title, values, editable=False)
+        if ok:
+            return value
+
+    def remember_clip(self):
+        if not self.locked and self.s.get("clipboard", False):
+            mime = QApplication.clipboard().mimeData()
+            if mime and mime.hasText() and not any("excludeclipboard" in f.lower() or "canincludeinclipboardhistory" in f.lower() for f in mime.formats()):
+                text = mime.text()
+                if 0 < len(text) <= 2048:
+                    self.clipboard = ([text] + [s for s in self.clipboard if s != text])[:20]
+
+    def clip_history(self):
+        value = self.list_dialog("Clipboard history", self.clipboard)
+        if value:
+            QApplication.clipboard().setText(value)
+
+    def desktop_menu(self, pos):
+        menu = QMenu(self)
+        menu.addAction("Add desktop shortcut…", self.add_shortcut)
+        menu.addAction("Change wallpaper…", lambda: self.open("Settings"))
+        menu.addAction("Window overview", self.overview)
+        menu.addAction("Exit desktop mode", self.exit_desktop)
+        menu.exec(self.surface.mapToGlobal(pos))
+
+    def closeEvent(self, event):
+        if not self.locked:
+            self.persist()
+        self.locked = True
+        self.timer.stop()
+        self.auto.stop()
+        self.host.stop()
+        for panel in self.panels.values():
+            panel.hide()
+        event.accept()
+        QApplication.quit()
 
 
 def main():
-    if sys.platform == "win32":
-        try:   # sharp text on high-resolution screens
-            import ctypes
-            ctypes.windll.shcore.SetProcessDpiAwareness(1)
-        except Exception:
-            pass
-    root = tk.Tk()
-    App(root)
-    root.mainloop()
+    app = QApplication.instance() or QApplication(sys.argv)
+    app.setApplicationName("AirCursor")
+    app.setOrganizationName("AirCursor")
+    app.setWindowIcon(QIcon(asset("aircursor.ico")))
+    try:
+        window = Desktop()
+    except (OSError, ValueError) as exc:
+        QMessageBox.critical(None, "AirCursor settings", f"Could not read your saved settings.\n{exc}")
+        return 1
+    app.clipboard().dataChanged.connect(window.remember_clip)
+    app.styleHints().colorSchemeChanged.connect(lambda _: window.style_workspace())
+    window.show()
+    return app.exec()
