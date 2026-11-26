@@ -354,3 +354,29 @@ def test_external_drop_never_tells_source_to_delete_when_copying(app, tmp_path, 
     assert event.isAccepted() and event.dropAction() == Qt.DropAction.CopyAction
     assert calls == [([dropped], False)]
     files.deleteLater()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="requires Windows DPAPI and shell copy/move")
+def test_native_trust_ticket_and_file_operations(tmp_path):
+    from aircursor_desktop import trust
+    from aircursor_desktop.files import shell_transfer
+    from aircursor_desktop.lock import PasswordLock
+
+    settings = Settings(str(tmp_path / "settings.json"))
+    lock = PasswordLock(settings)
+    lock.set_password("test-password", "test-password")
+    trust.remember(settings)
+    assert trust.active(settings)
+    lock.set_password("changed-test-password", "changed-test-password")
+    assert not trust.active(settings)
+    source = tmp_path / "first.txt"
+    source.write_text("Native Shell transfer")
+    folder = tmp_path / "folder"
+    folder.mkdir()
+    shell_transfer([source], folder, False, 0)
+    assert (folder / source.name).read_bytes() == source.read_bytes()
+    second = tmp_path / "second"
+    second.mkdir()
+    shell_transfer([folder / source.name], second, True, 0)
+    assert not (folder / source.name).exists()
+    assert (second / source.name).read_bytes() == source.read_bytes()

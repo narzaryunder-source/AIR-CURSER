@@ -10,24 +10,13 @@ from pathlib import Path
 def registered_apps():
     if os.name != "nt":
         return []
-    system = Path(os.environ["SystemRoot"]) / "System32"
+    from . import powershell
     script = (
         "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false); "
         "$ErrorActionPreference='Stop'; ConvertTo-Json -Compress -InputObject @(Get-StartApps)"
     )
-    result = subprocess.run(
-        [
-            str(system / "WindowsPowerShell/v1.0/powershell.exe"),
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            script,
-        ],
-        capture_output=True,
-        timeout=15,
-        creationflags=subprocess.CREATE_NO_WINDOW,
-        check=True,
-    )
+    result = powershell.run(script, timeout=15)
+    result.check_returncode()
     rows = json.loads(result.stdout.decode("utf-8-sig"))
     return [
         (row["Name"], "startapp:" + row["AppID"]) for row in rows if row.get("AppID") and row.get("Name")

@@ -6,12 +6,12 @@ import hmac
 import json
 import os
 from pathlib import Path
-import subprocess
 
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLineEdit, QMessageBox, QVBoxLayout
 from .widgets import Workers, label
+from . import powershell
 
 SCRIPT = """
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
@@ -23,13 +23,7 @@ $s = Get-AuthenticodeSignature -LiteralPath $env:AIRCURSOR_INSPECT_FILE
 
 
 def inspect_file(path):
-    result = subprocess.run(
-        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", SCRIPT],
-        env={**os.environ, "AIRCURSOR_INSPECT_FILE": str(path)},
-        capture_output=True,
-        timeout=120,
-        creationflags=subprocess.CREATE_NO_WINDOW,
-    )
+    result = powershell.run(SCRIPT, timeout=120, variables={"AIRCURSOR_INSPECT_FILE": str(path)})
     if result.returncode:
         raise OSError(
             result.stderr.decode("utf-8", "replace").strip() or "Windows could not inspect this file."

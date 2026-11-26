@@ -1,5 +1,4 @@
 import os
-import subprocess
 import time
 
 import psutil
@@ -18,7 +17,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from .hotspot import NO_WINDOW
 from .widgets import asset, Workers, button, confirm, label, password, row, system_link
 
 PROFILES = {
@@ -59,12 +57,8 @@ def diagnostics():
       }
     }
     """
-    completed = subprocess.run(
-        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-        capture_output=True,
-        timeout=22,
-        creationflags=NO_WINDOW,
-    )
+    from . import powershell
+    completed = powershell.run(script, timeout=22)
     return (completed.stdout + completed.stderr).decode(
         "oem", errors="replace"
     ).strip() or "No adapters reported."
@@ -270,12 +264,8 @@ class Control(QTabWidget):
             $g = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction SilentlyContinue
             if ($g) { 'Busiest engine sample: ' + (($g | Measure-Object UtilizationPercentage -Maximum).Maximum) + '%' }
             else { 'GPU utilization counter unavailable.' }"""
-            result = subprocess.run(
-                ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-                capture_output=True,
-                timeout=20,
-                creationflags=NO_WINDOW,
-            )
+            from . import powershell
+            result = powershell.run(script, timeout=20)
             return (result.stdout + result.stderr).decode("oem", errors="replace")
 
         self.work.run(gather, self.process_list.setPlainText, self.process_list.setPlainText)

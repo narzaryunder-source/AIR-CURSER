@@ -57,7 +57,6 @@ def shortcuts():
 def indexed_files(query):
     """Ask the existing Windows Search catalog for a bounded set of matching filesystem items."""
     import json
-    import subprocess
 
     term = query.strip()
     if os.name != "nt" or not 2 <= len(term) <= 100:
@@ -84,9 +83,8 @@ def indexed_files(query):
       ConvertTo-Json -InputObject $output -Compress
     } finally { $cn.Close() }
     """
-    exe = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
-    result = subprocess.run([str(exe), "-NoProfile", "-NonInteractive", "-Command", script],
-                            env={**os.environ, "AIRCURSOR_FIND": term}, capture_output=True, timeout=8,
-                            check=True, creationflags=subprocess.CREATE_NO_WINDOW)
+    from . import powershell
+    result = powershell.run(script, timeout=8, variables={"AIRCURSOR_FIND": term})
+    result.check_returncode()
     return [(r["name"], r["path"]) for r in json.loads(result.stdout.decode("utf-8-sig"))
             if r.get("name") and Path(r.get("path") or "").is_absolute()]
