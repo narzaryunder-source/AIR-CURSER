@@ -60,6 +60,8 @@ def trim_args(source, start, end, output):
         raise ValueError("End time must be later than start time.")
     return [
         "-hide_banner",
+        "-abort_on",
+        "empty_output",
         "-loglevel",
         "error",
         "-nostdin",

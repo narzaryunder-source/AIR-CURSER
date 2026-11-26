@@ -121,6 +121,11 @@ def test_video_trim_through_files_action(app, tmp_path, monkeypatch):
     )
     assert float(result.strip()) == pytest.approx(0.8, abs=0.06)
     assert before == source.read_bytes()
+    monkeypatch.setattr(media, "parameters", lambda *args: [3.0, 4.0])
+    missing = tmp_path / "past-the-end.mp4"
+    monkeypatch.setattr(media, "destination", lambda *args: str(missing))
+    media.trim_video(window, source)
+    assert not missing.exists()
     window.deleteLater()
 
 

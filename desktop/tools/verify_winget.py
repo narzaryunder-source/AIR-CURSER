@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from aircursor_desktop.applications import find_tool
-from aircursor_desktop.store import arguments
+from aircursor_desktop.store import arguments, search_rows
 
 PACKAGE = "sharkdp.fd"
 
@@ -28,6 +28,7 @@ def main():
         or os.getenv("AIRCURSOR_APPROVE_LIFECYCLE") != "1"
     ):
         raise SystemExit("Requires the explicitly enabled test on a disposable Windows Actions runner.")
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     winget = find_tool("winget")
     if not winget:
         raise SystemExit("Microsoft App Installer (winget) is unavailable on this runner.")
@@ -35,6 +36,10 @@ def main():
     def command(action, *options):
         return call([winget, *arguments(action, PACKAGE), "--accept-source-agreements", *options])
 
+    discovery = command("search")
+    discovery.check_returncode()
+    if not any(package == PACKAGE for _, package in search_rows(discovery.stdout)):
+        raise RuntimeError("The real winget search result was not selectable.")
     existing = command("list")
     if (existing.returncode & 0xFFFFFFFF) != 0x8A150014:
         raise SystemExit("The package is already installed or its initial state could not be established.")
