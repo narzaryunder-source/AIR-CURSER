@@ -4,6 +4,7 @@ app finds by itself (network discovery, like AirCursor PC) or by its address, be
 One phone at a time (a newly paired phone takes over), at most 3 phones trying codes at once, and
 nothing happens while AirCursor is locked.
 """
+
 import ipaddress
 import time
 
@@ -28,7 +29,7 @@ def local_addresses():
                 found.append(ip)
     except OSError:
         pass
-    try:   # the address of the way out (no packet is sent)
+    try:  # the address of the way out (no packet is sent)
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.connect(("10.255.255.255", 1))
             ip = s.getsockname()[0]
@@ -99,7 +100,7 @@ class RemoteHost:
         try:
             s.bind(("0.0.0.0", self.want_port))
         except OSError:
-            s.bind(("0.0.0.0", 0))   # the usual port is taken: any free one
+            s.bind(("0.0.0.0", 0))  # the usual port is taken: any free one
         s.listen(8)
         self.server = s
         self.port = s.getsockname()[1]
@@ -131,8 +132,13 @@ class RemoteHost:
         zc = None
         try:
             ips = [socket.inet_aton(ip) for ip in local_addresses()]
-            info = ServiceInfo(protocol.SERVICE_TYPE, "AirCursor – %s.%s" % (self.name, protocol.SERVICE_TYPE),
-                               addresses=ips, port=self.port, properties={"v": "1"})
+            info = ServiceInfo(
+                protocol.SERVICE_TYPE,
+                "AirCursor – %s.%s" % (self.name, protocol.SERVICE_TYPE),
+                addresses=ips,
+                port=self.port,
+                properties={"v": "1"},
+            )
             zc = Zeroconf()
             zc.register_service(info)
             with self._lock:
@@ -159,7 +165,9 @@ class RemoteHost:
                     sock.close()
                     continue
                 self._handshakes += 1
-            threading.Thread(target=self._serve, args=(sock, addr, s), name="remote-client", daemon=True).start()
+            threading.Thread(
+                target=self._serve, args=(sock, addr, s), name="remote-client", daemon=True
+            ).start()
 
     def _close_client(self, bye=False):
         c, self.client = self.client, None

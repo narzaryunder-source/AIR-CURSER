@@ -1,4 +1,5 @@
 Unicode True
+Target amd64-unicode
 RequestExecutionLevel user
 SetCompressor /FINAL zlib
 Name "AirCursor for Windows"

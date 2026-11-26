@@ -1,21 +1,44 @@
 import os
 import subprocess
 import time
-from pathlib import Path
 
 import psutil
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QInputDialog, QLineEdit, QListWidget,
-                               QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget)
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap, QIcon
+from .navigation import sidebar, item, heading
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QStackedWidget,
+    QDoubleSpinBox,
+    QInputDialog,
+    QLineEdit,
+    QPlainTextEdit,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 from .hotspot import NO_WINDOW
-from .server import local_addresses
-from .widgets import Workers, button, confirm, label, password, row, system_link
+from .widgets import asset, Workers, button, confirm, label, password, row, system_link
 
-PROFILES = {"Performance": (2, False), "Balanced": (4, True), "Quality": (2, True),
-            "Battery Saver": (15, False), "Mobile Hotspot": (12, False)}
-SYSTEM = {"Network & metering": "network-wifi", "Keyboard & mouse": "mousetouchpad",
-          "Display": "display", "Sound": "sound", "Notifications": "notifications",
-          "Applications": "appsfeatures", "Storage": "storagesense",
-          "Privacy and security": "privacy", "Windows Update": "windowsupdate"}
+PROFILES = {
+    "Performance": (2, False),
+    "Balanced": (4, True),
+    "Quality": (2, True),
+    "Battery Saver": (15, False),
+    "Mobile Hotspot": (12, False),
+}
+SYSTEM = {
+    "Network & metering": "network-wifi",
+    "Keyboard & mouse": "mousetouchpad",
+    "Display": "display",
+    "Sound": "sound",
+    "Notifications": "notifications",
+    "Applications": "appsfeatures",
+    "Storage": "storagesense",
+    "Privacy and security": "privacy",
+    "Windows Update": "windowsupdate",
+}
 
 
 def diagnostics():
@@ -35,9 +58,15 @@ def diagnostics():
       }
     }
     """
-    completed = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-                               capture_output=True, timeout=22, creationflags=NO_WINDOW)
-    return (completed.stdout + completed.stderr).decode("oem", errors="replace").strip() or "No adapters reported."
+    completed = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        timeout=22,
+        creationflags=NO_WINDOW,
+    )
+    return (completed.stdout + completed.stderr).decode(
+        "oem", errors="replace"
+    ).strip() or "No adapters reported."
 
 
 class Control(QTabWidget):
@@ -62,19 +91,61 @@ class Control(QTabWidget):
         auto.setChecked(desk.s.get("auto_switch", True))
         auto.toggled.connect(self.auto)
         nl.addWidget(auto)
-        nl.addWidget(label("Enable the hotspot in the phone’s Quick Settings. For USB, connect a data cable and enable USB tethering on the phone."))
-        row(nl, button("Adapter diagnostics", self.inspect), button("Metered connection…",
-            lambda: system_link(self, "ms-settings:network-wifi")), button("Forget phone…", self.forget))
+        regular = QCheckBox("Return to previous Wi-Fi once stable and transfers are idle")
+        regular.setChecked(desk.s.get("return_wifi", False))
+        regular.toggled.connect(lambda value: desk.s.set(return_wifi=value))
+        nl.addWidget(regular)
+        nl.addWidget(
+            label(
+                "Enable the hotspot in the phone’s Quick Settings. For USB, connect a data cable and enable USB tethering on the phone."
+            )
+        )
+        row(
+            nl,
+            button("Adapter diagnostics", self.inspect),
+            button("Metered connection…", lambda: system_link(self, "ms-settings:network-wifi")),
+            button("Forget phone…", self.forget),
+        )
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
         nl.addWidget(self.details)
         nl.addWidget(self.status)
         remote, rl = self.tab("Connected phone")
         self.remote = label("")
-        self.remote.setTextInteractionFlags(self.remote.textInteractionFlags() | self.remote.textInteractionFlags().TextSelectableByMouse)
+        self.remote.setTextInteractionFlags(
+            self.remote.textInteractionFlags() | self.remote.textInteractionFlags().TextSelectableByMouse
+        )
         rl.addWidget(self.remote)
-        row(rl, button("Turn receiver on / off", self.toggle_remote), button("Renew pairing code", desk.host.renew_code))
-        rl.addWidget(label("In AirCursor on the phone, open Use as keyboard & touchpad, select this computer and enter the six-digit code. Both devices must be on the same local network."))
+        row(
+            rl,
+            button("Turn receiver on / off", self.toggle_remote),
+            button("Renew pairing code", desk.host.renew_code),
+        )
+        rl.addWidget(
+            label(
+                "In AirCursor on the phone, open Use as keyboard & touchpad, select this computer and enter the six-digit code. Both devices must be on the same local network."
+            )
+        )
+        speed = QDoubleSpinBox()
+        speed.setRange(0.25, 2.5)
+        speed.setSingleStep(0.1)
+        speed.setValue(desk.host.ctl.speed)
+
+        def set_speed(value):
+            desk.host.ctl.speed = value
+            desk.s.set(pointer_speed=value)
+
+        speed.valueChanged.connect(set_speed)
+        row(rl, label("Pointer sensitivity"), speed)
+        scrolling = QCheckBox("Natural two-finger scrolling")
+        scrolling.setChecked(desk.host.ctl.natural_scroll)
+
+        def scroll(state):
+            desk.host.ctl.natural_scroll = state
+            desk.s.set(natural_scroll=state)
+
+        scrolling.toggled.connect(scroll)
+        rl.addWidget(scrolling)
         rl.addStretch()
         boost, bl = self.tab("AirBoost")
         self.profile = QComboBox()
@@ -84,7 +155,7 @@ class Control(QTabWidget):
         bl.addWidget(self.profile)
         self.metrics = label("")
         bl.addWidget(self.metrics)
-        bl.addWidget(button("Application resource use", self.processes))
+        row(bl, button("Application resource use", self.processes), button("GPU information", self.gpu))
         self.process_list = QPlainTextEdit()
         self.process_list.setReadOnly(True)
         bl.addWidget(self.process_list)
@@ -99,6 +170,7 @@ class Control(QTabWidget):
 
     def scan(self):
         self.status.setText("Reading Windows Wi-Fi discovery…")
+
         def done(nets):
             old = self.available.currentText()
             self.available.clear()
@@ -106,7 +178,10 @@ class Control(QTabWidget):
                 self.available.addItem(n["ssid"], n)
             if old:
                 self.available.setCurrentText(old)
-            self.status.setText(f"{len(nets)} visible network entries. If none appear, check Wi-Fi and Windows location permissions.")
+            self.status.setText(
+                f"{len(nets)} visible network entries. If none appear, check Wi-Fi and Windows location permissions."
+            )
+
         self.work.run(self.desk.hot.networks, done, self.status.setText)
 
     def save(self):
@@ -116,22 +191,37 @@ class Control(QTabWidget):
             selected = {}
         auth = self.auth.currentText() if self.auth.currentIndex() else selected.get("auth", "")
         self.secret.clear()
+
         def done(err):
             if err:
                 self.status.setText(err)
             else:
                 self.join()
-        self.work.run(lambda: self.desk.hot.save_phone(name, secret, auth, selected.get("id")), done, self.status.setText)
+
+        self.work.run(
+            lambda: self.desk.hot.save_phone(name, secret, auth, selected.get("id")),
+            done,
+            self.status.setText,
+        )
 
     def join(self):
         self.status.setText("Waiting for Wi-Fi association and internet verification…")
-        self.work.run(lambda: self.desk.hot.connect(lambda: self.desk.locked),
-                      lambda err: self.status.setText(err or "Phone hotspot connected. Internet verified."), self.status.setText)
+        self.work.run(
+            lambda: self.desk.hot.connect(lambda: self.desk.locked),
+            lambda err: self.status.setText(err or "Phone hotspot connected. Internet verified."),
+            self.status.setText,
+        )
 
     def forget(self):
-        if not self.desk.hot.phone_ssid or not confirm(self, "Forget hotspot", "Remove the saved phone Wi-Fi profile from Windows?"):
+        if not self.desk.hot.phone_ssid or not confirm(
+            self, "Forget hotspot", "Remove the saved phone Wi-Fi profile from Windows?"
+        ):
             return
-        self.work.run(self.desk.hot.forget_phone, lambda _: self.status.setText("Phone hotspot forgotten."), self.status.setText)
+        self.work.run(
+            self.desk.hot.forget_phone,
+            lambda _: self.status.setText("Phone hotspot forgotten."),
+            self.status.setText,
+        )
 
     def inspect(self):
         self.details.setPlainText("Checking adapters and gateways…")
@@ -158,61 +248,153 @@ class Control(QTabWidget):
         self.net.setText(desk.network_text + "\nSaved phone · " + (desk.hot.phone_ssid or "None"))
         host = desk.host
         if host.running:
-            age = f" · last packet {int(time.monotonic()-host.last_seen)}s ago" if host.client and host.last_seen else ""
-            self.remote.setText(f"Pairing code   {host.code[:3]} {host.code[3:]}\n"
+            age = (
+                f" · last packet {int(time.monotonic() - host.last_seen)}s ago"
+                if host.client and host.last_seen
+                else ""
+            )
+            self.remote.setText(
+                f"Pairing code   {host.code[:3]} {host.code[3:]}\n"
                 + "   ".join(f"{addr}:{host.port}" for addr in desk.addresses)
-                + f"\n{host.client_addr or 'Waiting for phone'} · {host.events} input events{age}")
+                + f"\n{host.client_addr or 'Waiting for phone'} · {host.events} input events{age}"
+            )
         else:
             self.remote.setText("Phone receiver is off.")
         self.metrics.setText(desk.metrics_text)
 
+    def gpu(self):
+        def gather():
+            script = """Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name
+            $g = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction SilentlyContinue
+            if ($g) { 'Busiest engine sample: ' + (($g | Measure-Object UtilizationPercentage -Maximum).Maximum) + '%' }
+            else { 'GPU utilization counter unavailable.' }"""
+            result = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                timeout=20,
+                creationflags=NO_WINDOW,
+            )
+            return (result.stdout + result.stderr).decode("oem", errors="replace")
+
+        self.work.run(gather, self.process_list.setPlainText, self.process_list.setPlainText)
+
     def processes(self):
         def gather():
-            rows = []
-            for p in psutil.process_iter(["name", "memory_info"]):
+            samples = list(psutil.process_iter(["name", "memory_info"]))
+            for proc in samples:
                 try:
-                    if p.info["memory_info"]:
-                        rows.append((p.info["memory_info"].rss, p.info["name"] or "Unknown"))
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    proc.cpu_percent()
+                except psutil.Error:
                     continue
-            return "\n".join(f"{n:32} {rss / 2**20:8.1f} MiB" for rss, n in sorted(rows, reverse=True)[:24])
+            time.sleep(0.3)
+            rows = []
+            for proc in samples:
+                try:
+                    if proc.info["memory_info"]:
+                        rows.append(
+                            (proc.info["memory_info"].rss, proc.info["name"] or "Unknown", proc.cpu_percent())
+                        )
+                except psutil.Error:
+                    continue
+            return "\n".join(
+                f"{n:25} {rss / 2**20:7.1f} MiB   {cpu:5.1f}% CPU"
+                for rss, n, cpu in sorted(rows, reverse=True)[:24]
+            )
+
         self.work.run(gather, self.process_list.setPlainText, self.process_list.setPlainText)
 
 
-class Preferences(QTabWidget):
+class Preferences(QWidget):
     def __init__(self, desk):
         super().__init__()
         self.desk = desk
-        general = QWidget()
-        form = QFormLayout(general)
-        self.addTab(general, "Workspace")
-        for title, key, choices in [("Appearance", "appearance", ["Automatic", "Dark", "Light"]),
-                                    ("Wallpaper", "wallpaper", ["Fjord", "Violet", "Copper"])]:
-            box = QComboBox()
-            box.addItems(choices)
-            box.setCurrentText(desk.s.get(key, choices[0]))
-            box.currentTextChanged.connect(lambda value, k=key: desk.preference(k, value))
-            form.addRow(title, box)
-        for title, key, default in [("Remember visited pages for search", "browser_history_enabled", False),
-                                    ("Keep recent clipboard text until lock", "clipboard", False),
-                                    ("Restore open workspace panels", "restore", True),
-                                    ("Show one panel at a time", "stage", False)]:
+        rail, nav, layout = sidebar(self, "Settings", 169)
+        stack = QStackedWidget()
+        layout.addWidget(stack)
+        for idx, (name, art) in enumerate(
+            [
+                ("Appearance", "Settings"),
+                ("Workspace", "Overview"),
+                ("Privacy", "Control Center"),
+                ("Windows", "Launcher"),
+            ]
+        ):
+            item(nav, name, idx, art)
+        nav.currentRowChanged.connect(stack.setCurrentIndex)
+        nav.setCurrentRow(0)
+
+        def section(name):
+            pane = QWidget()
+            content = QVBoxLayout(pane)
+            content.setContentsMargins(0, 0, 0, 0)
+            content.setSpacing(13)
+            heading(content, name)
+            stack.addWidget(pane)
+            return content
+
+        appearance = section("Appearance")
+        appearance.addWidget(label("Color mode"))
+        self.mode = QComboBox()
+        self.mode.addItems(["Automatic", "Light", "Dark"])
+        self.mode.setCurrentText(desk.s.get("appearance", "Automatic"))
+        self.mode.currentTextChanged.connect(lambda v: desk.preference("appearance", v))
+        appearance.addWidget(self.mode)
+        appearance.addWidget(label("Desktop picture"))
+        pics = []
+        from PySide6.QtCore import QSize
+
+        for scene in ("Fjord", "Violet", "Copper"):
+            choose = button(scene, lambda scene=scene: desk.preference("wallpaper", scene))
+            choose.setIcon(QIcon(asset(scene.lower() + ".jpg")))
+            choose.setIconSize(QSize(78, 56))
+            pics.append(choose)
+        row(appearance, *pics)
+        preview = label("")
+        preview.setAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        def wallpaper():
+            photo = QPixmap(asset(desk.shell.scene + ".jpg"))
+            preview.setPixmap(
+                photo.scaled(
+                    440, 200, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+                )
+            )
+
+        desk.shell.appsChanged.connect(wallpaper)
+        wallpaper()
+        appearance.addWidget(preview)
+        appearance.addStretch()
+        workspace = section("Workspace")
+        privacy = section("Privacy and security")
+        for pane, title, key, default in [
+            (privacy, "Remember visited pages for search", "browser_history_enabled", False),
+            (privacy, "Keep recent clipboard text until lock", "clipboard", False),
+            (workspace, "Restore open panels at sign-in", "restore", True),
+            (workspace, "Show one panel at a time", "stage", False),
+        ]:
             check = QCheckBox(title)
             check.setChecked(desk.s.get(key, default))
             check.toggled.connect(lambda state, k=key: desk.preference(k, state))
-            form.addRow(check)
-        form.addRow(button("Change AirCursor password…", self.change_password))
-        form.addRow(label("AirCursor for Windows · 2.0 development preview"))
-        system = QWidget()
-        form = QFormLayout(system)
-        self.addTab(system, "Windows settings")
+            pane.addWidget(check)
+        privacy.addWidget(button("Change AirCursor password…", self.change_password))
+        privacy.addWidget(button("Forget trusted Windows sign-in", lambda: desk.s.set(trusted_logon=None)))
+        privacy.addStretch()
+        workspace.addWidget(
+            button("Open AirBoost profiles", lambda: desk.open("Control Center").setCurrentIndex(2))
+        )
+        workspace.addWidget(label("AirCursor for Windows · 2.0 preview"))
+        workspace.addStretch()
+        windows = section("Windows settings")
         for name, page in SYSTEM.items():
-            form.addRow(button(name, lambda page=page: system_link(self, "ms-settings:" + page)))
+            windows.addWidget(button(name, lambda page=page: system_link(self, "ms-settings:" + page)))
+        windows.addStretch()
 
     def change_password(self):
         values = []
         for name in ("Current password", "New password", "Confirm new password"):
-            value, ok = QInputDialog.getText(self, "Change AirCursor password", name, QLineEdit.EchoMode.Password)
+            value, ok = QInputDialog.getText(
+                self, "Change AirCursor password", name, QLineEdit.EchoMode.Password
+            )
             if not ok:
                 return
             values.append(value)

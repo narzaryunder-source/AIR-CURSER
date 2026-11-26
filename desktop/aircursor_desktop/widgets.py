@@ -1,12 +1,12 @@
 """Shared native Qt controls, worker delivery and shell integration."""
+
 import os
 from pathlib import Path
 import threading
 
 from PySide6.QtCore import QObject, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
-                               QPushButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton
 
 
 def button(text, action, tip=None):
@@ -25,16 +25,6 @@ def row(layout, *items):
     return bar
 
 
-def page(title):
-    pane = QWidget()
-    layout = QVBoxLayout(pane)
-    layout.setContentsMargins(22, 16, 22, 18)
-    heading = QLabel(title)
-    heading.setObjectName("heading")
-    layout.addWidget(heading)
-    return pane, layout
-
-
 def label(text=""):
     item = QLabel(text)
     item.setTextFormat(Qt.TextFormat.PlainText)
@@ -50,8 +40,13 @@ def password(placeholder):
 
 
 def confirm(parent, title, message):
-    dlg = QMessageBox(QMessageBox.Icon.Question, title, message,
-                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel, parent)
+    dlg = QMessageBox(
+        QMessageBox.Icon.Question,
+        title,
+        message,
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        parent,
+    )
     dlg.setTextFormat(Qt.TextFormat.PlainText)
     dlg.setDefaultButton(QMessageBox.StandardButton.Cancel)
     return dlg.exec() == QMessageBox.StandardButton.Yes
@@ -59,6 +54,11 @@ def confirm(parent, title, message):
 
 def open_path(parent, path):
     path = Path(path)
+    if os.name == "nt" and path.suffix.lower() in {".exe", ".msi"}:
+        from .installer import approve
+
+        approve(parent, path)
+        return
     if path.suffix.lower() in {".exe", ".msi", ".cmd", ".bat", ".ps1", ".lnk", ".com", ".scr"}:
         if not confirm(parent, "Launch with Windows?", f"Open this file using your Windows account?\n{path}"):
             return
@@ -84,6 +84,7 @@ class Workers(QObject):
                 self.finished.emit(callback, result, None)
             except RuntimeError:  # Window closed before the operation finished.
                 pass
+
         threading.Thread(target=work, daemon=True).start()
 
     def deliver(self, callback, result, unused):
@@ -96,4 +97,6 @@ def asset(name):
 
 def system_link(parent, uri):
     if os.name != "nt" or not QDesktopServices.openUrl(QUrl(uri)):
-        QMessageBox.information(parent, "Windows integration", "This action requires the corresponding Windows feature.")
+        QMessageBox.information(
+            parent, "Windows integration", "This action requires the corresponding Windows feature."
+        )

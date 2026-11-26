@@ -5,6 +5,7 @@ backend: [WinBackend] on Windows (SendInput, the same way a real mouse and keybo
 recording fake in the tests.
 """
 import sys
+import time
 
 from . import keymap
 
@@ -17,6 +18,8 @@ CTRL_ALT_WIN = {0xA2, 0xA3, 0xA4, 0xA5, 0x5B, 0x5C}
 class Controller:
     def __init__(self, backend):
         self.b = backend
+        self.speed = 1.0
+        self.natural_scroll = True
         self.held_keys = set()
         self.held_buttons = set()
         self._fx = self._fy = 0.0      # where the pointer is, with the part of a pixel
@@ -30,7 +33,8 @@ class Controller:
         # Start from where the cursor is now (a real mouse may have moved it), keep the fraction.
         if int(self._fx) != x or int(self._fy) != y:
             self._fx, self._fy = float(x), float(y)
-        k = w / PAD_ACROSS
+        span = self.b.pointer_span() if hasattr(self.b, "pointer_span") else w
+        k = span * self.speed / PAD_ACROSS
         self._fx = min(max(self._fx + dx * k, left), left + w - 1)
         self._fy = min(max(self._fy + dy * k, top), top + h - 1)
         self.b.move_to(int(self._fx), int(self._fy))
@@ -54,6 +58,8 @@ class Controller:
 
     def scroll(self, dx, dy):
         """Two fingers on the pad: the page follows them (fingers up = page up = scroll down)."""
+        if not self.natural_scroll:
+            dx, dy = -dx, -dy
         self._sy += dy * SCROLL_GAIN
         self._sx += -dx * SCROLL_GAIN
         iy, ix = int(self._sy), int(self._sx)
@@ -163,6 +169,7 @@ class WinBackend:
         self.ct = ctypes
         user32 = ctypes.WinDLL("user32", use_last_error=True)
         self.user32 = user32
+        self._geometry_until = 0.0
         ULONG_PTR = ctypes.c_size_t
 
         class MOUSEINPUT(ctypes.Structure):
@@ -195,9 +202,17 @@ class WinBackend:
         self.user32.SendInput(1, self.ct.byref(inp), self.ct.sizeof(inp))
 
     def screen(self):
-        m = self.user32.GetSystemMetrics
-        # The primary screen sets the speed; the pointer may go over every screen.
-        return m(78), m(79), m(76), m(77)   # virtual desktop: width, height, left, top
+        now = time.monotonic()
+        if now >= self._geometry_until:
+            m = self.user32.GetSystemMetrics
+            self._geometry = (m(78), m(79), m(76), m(77))
+            self._primary_width = max(1, m(0))
+            self._geometry_until = now + 0.25
+        return self._geometry
+
+    def pointer_span(self):
+        self.screen()
+        return self._primary_width
 
     def cursor(self):
         from ctypes import wintypes

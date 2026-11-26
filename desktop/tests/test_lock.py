@@ -55,3 +55,16 @@ def test_change_needs_the_old_password(lock):
     lock.t["now"] += 100
     lock.change("first1", "second2", "second2")
     assert lock.check("second2")
+
+
+def test_existing_hash_is_upgraded_only_after_successful_login(lock):
+    import hashlib
+    from aircursor_desktop.lock import ITERATIONS
+    salt=b"previous-hash-salt"
+    digest=hashlib.pbkdf2_hmac("sha256",b"migrate-me",salt,200000).hex()
+    lock.s.set(password={"salt":salt.hex(),"iterations":200000,"hash":digest},phone_ssid="Saved")
+    assert not lock.check("incorrect")
+    assert lock.s.get("password")["iterations"]==200000
+    assert lock.check("migrate-me")
+    assert lock.s.get("password")["iterations"]==ITERATIONS
+    assert lock.s.get("phone_ssid")=="Saved"

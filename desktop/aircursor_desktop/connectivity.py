@@ -1,7 +1,10 @@
 """A bounded HTTP content check, with a TCP fallback when an organization filters Windows NCSI."""
+
 import http.client
 import socket
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 
 
@@ -12,7 +15,11 @@ class Health:
 
     @property
     def usable(self):
-        return self.state in ("Internet verified", "Internet reachable · probe filtered")
+        return self.state in (
+            "Internet verified",
+            "Internet reachable · probe filtered",
+            "Internet reachable · system proxy",
+        )
 
 
 def probe(timeout=1.5):
@@ -39,4 +46,16 @@ def probe(timeout=1.5):
                 return Health(reason)
             return Health("Internet reachable · probe filtered", round(1000 * (time.monotonic() - start)))
     except OSError:
+        # A managed PC may allow web access exclusively through a configured HTTPS proxy.
+        if urllib.request.getproxies().get("https"):
+            started = time.monotonic()
+            try:
+                req = urllib.request.Request("https://www.microsoft.com/", method="HEAD")
+                with urllib.request.urlopen(req, timeout=timeout) as response:
+                    if 200 <= response.status < 400:
+                        return Health(
+                            "Internet reachable · system proxy", round(1000 * (time.monotonic() - started))
+                        )
+            except (OSError, urllib.error.URLError, http.client.HTTPException):
+                pass
         return Health(reason)

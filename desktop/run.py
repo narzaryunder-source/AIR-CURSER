@@ -1,4 +1,5 @@
 """Windows application entry point and installed-runtime smoke test."""
+
 import os
 from pathlib import Path
 import sys
@@ -10,6 +11,7 @@ def self_test():
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     import threading
     import time
+
     start = time.perf_counter()
     lines = []
     try:
@@ -21,7 +23,9 @@ def self_test():
         from aircursor_desktop.browser import Browser
         from aircursor_desktop.ui import Desktop
         from aircursor_desktop.settings import Settings
+
         app = QApplication([])
+
         class PageHandler(BaseHTTPRequestHandler):
             def do_GET(self):
                 data = b"<title>AirCursor test</title><p>Web engine ready</p>"
@@ -30,9 +34,14 @@ def self_test():
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
+
             def log_message(self, *args):
                 pass
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder, ThreadingHTTPServer(("127.0.0.1", 0), PageHandler) as http:
+
+        with (
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder,
+            ThreadingHTTPServer(("127.0.0.1", 0), PageHandler) as http,
+        ):
             threading.Thread(target=http.serve_forever, daemon=True).start()
             url = f"http://127.0.0.1:{http.server_port}/"
             os.environ["AIRCURSOR_HOME"] = folder
@@ -40,7 +49,7 @@ def self_test():
             window.show()
             app.processEvents()
             assert window.locked and not window.host.running
-            lines.append(f"AirCursor {VERSION}, lock frame {time.perf_counter()-start:.3f}s")
+            lines.append(f"AirCursor {VERSION}, lock frame {time.perf_counter() - start:.3f}s")
             if sys.platform == "win32":
                 b = inject.backend()
                 lines.append(f"Virtual desktop {b.screen()}, cursor {b.cursor()}")
@@ -71,5 +80,14 @@ def self_test():
 if __name__ == "__main__":
     if "--self-test" in sys.argv:
         sys.exit(self_test())
-    from aircursor_desktop.ui import main
+    try:
+        from aircursor_desktop.ui import main
+    except ImportError as exc:
+        if os.name == "nt":
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(
+                None, f"AirCursor could not load its Windows runtime.\n{exc}", "AirCursor startup", 0x10
+            )
+        raise
     sys.exit(main())

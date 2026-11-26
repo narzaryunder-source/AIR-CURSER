@@ -1,4 +1,5 @@
 Unicode True
+Target amd64-unicode
 RequestExecutionLevel user
 SilentInstall silent
 AutoCloseWindow true
@@ -10,7 +11,7 @@ Section
   SetOutPath "$EXEDIR\runtime"
   ${GetParameters} $0
   ClearErrors
-  ExecWait '"$EXEDIR\runtime\pythonw.exe" "$EXEDIR\runtime\run.py" $0' $1
+  ExecWait '"$EXEDIR\runtime\pythonw.exe" -B "$EXEDIR\runtime\run.py" $0' $1
   IfErrors failed
   SetErrorLevel $1
   Quit

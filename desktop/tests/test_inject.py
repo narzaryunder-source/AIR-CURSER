@@ -90,3 +90,19 @@ def test_everything_held_is_let_go_when_the_phone_leaves():
     f.log.clear()
     c.release_all()
     assert ("btn", "l", False) in f.log and ("key", 0xA4, False) in f.log
+
+
+def test_pointer_speed_uses_primary_display_on_negative_origin_desktop():
+    f = Fake()
+    f.screen = lambda: (4800, 1400, -1920, -200)
+    f.pointer_span = lambda: 1880
+    f.pos = (-600, 200)
+    ctl = Controller(f)
+    ctl.move(47, 0)
+    assert f.pos == (-412, 200)
+    ctl.speed = 0.5
+    ctl.move(47, 0)
+    assert f.pos == (-318, 200)
+    ctl.natural_scroll = False
+    ctl.scroll(0, 50)
+    assert f.log[-1][1] < 0

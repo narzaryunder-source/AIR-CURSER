@@ -1,4 +1,5 @@
 """Small, synchronous Native Wi-Fi adapter. Windows owns profile keys and scan scheduling."""
+
 import ctypes as c
 from contextlib import contextmanager
 from ctypes import wintypes as w
@@ -16,21 +17,40 @@ class SSID(c.Structure):
     _fields_ = [("length", DWORD), ("data", c.c_ubyte * 32)]
 
     def text(self):
-        return bytes(self.data[:self.length]).decode("utf-8", errors="replace")
+        return bytes(self.data[: self.length]).decode("utf-8", errors="replace")
 
 
 class Network(c.Structure):
-    _fields_ = [("profile", NAME), ("ssid", SSID), ("bss", DWORD), ("bssids", DWORD),
-                ("connectable", w.BOOL), ("reason", DWORD), ("phy_count", DWORD),
-                ("phy_types", DWORD * 8), ("more_phy", w.BOOL), ("signal", DWORD),
-                ("security", w.BOOL), ("auth", DWORD), ("cipher", DWORD),
-                ("flags", DWORD), ("reserved", DWORD)]
+    _fields_ = [
+        ("profile", NAME),
+        ("ssid", SSID),
+        ("bss", DWORD),
+        ("bssids", DWORD),
+        ("connectable", w.BOOL),
+        ("reason", DWORD),
+        ("phy_count", DWORD),
+        ("phy_types", DWORD * 8),
+        ("more_phy", w.BOOL),
+        ("signal", DWORD),
+        ("security", w.BOOL),
+        ("auth", DWORD),
+        ("cipher", DWORD),
+        ("flags", DWORD),
+        ("reserved", DWORD),
+    ]
 
 
 class Association(c.Structure):
-    _fields_ = [("ssid", SSID), ("bss", DWORD), ("bssid", c.c_ubyte * 6),
-                ("phy", DWORD), ("phy_index", DWORD), ("signal", DWORD),
-                ("rx", DWORD), ("tx", DWORD)]
+    _fields_ = [
+        ("ssid", SSID),
+        ("bss", DWORD),
+        ("bssid", c.c_ubyte * 6),
+        ("phy", DWORD),
+        ("phy_index", DWORD),
+        ("signal", DWORD),
+        ("rx", DWORD),
+        ("tx", DWORD),
+    ]
 
 
 class Connection(c.Structure):
@@ -38,8 +58,14 @@ class Connection(c.Structure):
 
 
 class Parameters(c.Structure):
-    _fields_ = [("mode", DWORD), ("profile", w.LPCWSTR), ("ssid", c.c_void_p),
-                ("bssid_list", c.c_void_p), ("bss", DWORD), ("flags", DWORD)]
+    _fields_ = [
+        ("mode", DWORD),
+        ("profile", w.LPCWSTR),
+        ("ssid", c.c_void_p),
+        ("bssid_list", c.c_void_p),
+        ("bss", DWORD),
+        ("flags", DWORD),
+    ]
 
 
 def check(code):
@@ -77,17 +103,23 @@ class Wlan:
         rows = []
         with self.handle() as handle:
             for adapter in self.adapters(handle):
-                row = dict(name=adapter.description, id=bytes(adapter.guid), state="disconnected",
-                           ssid="", signal="")
+                row = dict(
+                    name=adapter.description, id=bytes(adapter.guid), state="disconnected", ssid="", signal=""
+                )
                 if adapter.state == 1:
                     row["state"] = "connected"
                     ptr, size = c.c_void_p(), DWORD()
-                    code = self.api.WlanQueryInterface(handle, c.byref(adapter.guid), 7, None,
-                                                       c.byref(size), c.byref(ptr), None)
+                    code = self.api.WlanQueryInterface(
+                        handle, c.byref(adapter.guid), 7, None, c.byref(size), c.byref(ptr), None
+                    )
                     if not code:
                         try:
                             conn = Connection.from_address(ptr.value)
-                            row.update(ssid=conn.association.ssid.text(), signal=f"{conn.association.signal}%")
+                            row.update(
+                                profile=conn.profile,
+                                ssid=conn.association.ssid.text(),
+                                signal=f"{conn.association.signal}%",
+                            )
                         finally:
                             self.api.WlanFreeMemory(ptr)
                 rows.append(row)
@@ -98,16 +130,23 @@ class Wlan:
         with self.handle() as handle:
             for adapter in self.adapters(handle):
                 try:
-                    nets = self._list(self.api.WlanGetAvailableNetworkList, Network, handle,
-                                      c.byref(adapter.guid), 0, None)
+                    nets = self._list(
+                        self.api.WlanGetAvailableNetworkList, Network, handle, c.byref(adapter.guid), 0, None
+                    )
                 except OSError:
                     if len(self.adapters(handle)) == 1:
                         raise
                     continue
                 for net in nets:
                     if net.ssid.length and net.connectable:
-                        rows.append(dict(ssid=net.ssid.text(), signal=net.signal, id=bytes(adapter.guid),
-                                         auth={7: "WPA2-Personal", 9: "WPA3-Personal"}.get(net.auth, "")))
+                        rows.append(
+                            dict(
+                                ssid=net.ssid.text(),
+                                signal=net.signal,
+                                id=bytes(adapter.guid),
+                                auth={7: "WPA2-Personal", 9: "WPA3-Personal"}.get(net.auth, ""),
+                            )
+                        )
         return sorted(rows, key=lambda net: -net["signal"])
 
     def save(self, xml, adapter_id):
@@ -119,8 +158,11 @@ class Wlan:
             if not selected:
                 raise OSError("No wireless adapter is available.")
             reason = DWORD()
-            check(self.api.WlanSetProfile(handle, c.byref(selected.guid), 2, c.c_wchar_p(xml),
-                                          None, True, None, c.byref(reason)))
+            check(
+                self.api.WlanSetProfile(
+                    handle, c.byref(selected.guid), 2, c.c_wchar_p(xml), None, True, None, c.byref(reason)
+                )
+            )
             return bytes(selected.guid).hex()
 
     def connect(self, ssid, adapter_id):
@@ -133,10 +175,12 @@ class Wlan:
     def notifications(self, event):
         # The callback only wakes the policy worker. No WLAN calls on the RPC callback thread.
         callback = c.WINFUNCTYPE(None, c.c_void_p, c.c_void_p)
+
         def changed(data, context):
             source, code = (DWORD * 2).from_address(data)
             if source == 8 and code in (10, 13, 14, 21):
                 event.set()
+
         listener = callback(changed)
         with self.handle() as handle:
             check(self.api.WlanRegisterNotification(handle, 8, True, listener, None, None, None))

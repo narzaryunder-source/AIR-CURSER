@@ -1,16 +1,28 @@
 """Tabbed access to real folders. Bulk work runs off the UI thread."""
+
 import ctypes
 import os
 from pathlib import Path, PureWindowsPath
 import shutil
 import stat
-import tempfile
 import zipfile
 
 from PySide6.QtCore import QDir, QFile, QSize, Qt, QStandardPaths
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFileSystemModel, QInputDialog,
-                               QLineEdit, QListView, QMenu, QTabWidget, QTreeView, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QFileDialog,
+    QInputDialog,
+    QLineEdit,
+    QListView,
+    QMenu,
+    QTabWidget,
+    QTreeView,
+    QVBoxLayout,
+    QWidget,
+)
+from .navigation import sidebar, item, heading
+from .thumbnails import FileModel
 from .widgets import Workers, button, confirm, label, open_path, row
 
 
@@ -22,9 +34,18 @@ def extract_new(archive):
         with zipfile.ZipFile(archive) as z:
             for info in z.infolist():
                 path = PureWindowsPath(info.filename)
-                if (path.anchor or not path.parts or any(part in (".", "..") or ":" in part or
-                        part.endswith((".", " ")) or PureWindowsPath(part).is_reserved() for part in path.parts)
-                        or stat.S_ISLNK(info.external_attr >> 16)):
+                if (
+                    path.anchor
+                    or not path.parts
+                    or any(
+                        part in (".", "..")
+                        or ":" in part
+                        or part.endswith((".", " "))
+                        or PureWindowsPath(part).is_reserved()
+                        for part in path.parts
+                    )
+                    or stat.S_ISLNK(info.external_attr >> 16)
+                ):
                     raise ValueError("Unsafe path in ZIP archive.")
                 out = target.joinpath(*path.parts)
                 if info.is_dir():
@@ -41,12 +62,15 @@ def extract_new(archive):
 
 def zip_new(path):
     path = Path(path)
+    if path.is_symlink() or path.is_junction():
+        raise ValueError("Select the source folder or file directly.")
     target = path.with_name(path.name + ".zip")
     with target.open("xb") as dest:
         try:
             with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
                 items = path.rglob("*") if path.is_dir() else [path]
-                z.write(path, path.name) if path.is_dir() else None
+                if path.is_dir():
+                    z.write(path, path.name)
                 for item in items:
                     if item.is_symlink() or item.is_junction():
                         continue
@@ -61,11 +85,29 @@ def zip_new(path):
 def shell_transfer(paths, destination, move, hwnd):
     """Let the Windows shell handle ACLs and collision naming for the whole operation."""
     from ctypes import wintypes as w
+
     class Op(ctypes.Structure):
-        _fields_ = [("hwnd", w.HWND), ("op", w.UINT), ("source", w.LPCWSTR), ("dest", w.LPCWSTR),
-                    ("flags", w.WORD), ("aborted", w.BOOL), ("maps", w.HANDLE), ("title", w.LPCWSTR)]
-    params = Op(hwnd, 1 if move else 2, "\0".join(map(str, paths)) + "\0\0",
-                str(destination) + "\0\0", 0x0008, False, None, None)
+        _fields_ = [
+            ("hwnd", w.HWND),
+            ("op", w.UINT),
+            ("source", w.LPCWSTR),
+            ("dest", w.LPCWSTR),
+            ("flags", w.WORD),
+            ("aborted", w.BOOL),
+            ("maps", w.HANDLE),
+            ("title", w.LPCWSTR),
+        ]
+
+    params = Op(
+        hwnd,
+        1 if move else 2,
+        "\0".join(map(str, paths)) + "\0\0",
+        str(destination) + "\0\0",
+        0x0008,
+        False,
+        None,
+        None,
+    )
     result = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(params))
     if result or params.aborted:
         raise OSError(f"Windows file operation stopped (code {result}).")
@@ -82,12 +124,19 @@ class Folder(QWidget):
         self.filter = QLineEdit()
         self.filter.setPlaceholderText("Filter this folder")
         self.filter.setMaximumWidth(190)
-        row(layout, button("↑", lambda: self.navigate(self.path.parent)), self.address, self.filter,
-            button("List / grid", self.toggle))
-        self.model = QFileSystemModel(self)
+        row(
+            layout,
+            button("↑", lambda: self.navigate(self.path.parent)),
+            self.address,
+            self.filter,
+            button("List / grid", self.toggle),
+        )
+        self.model = FileModel(self)
         self.model.setFilter(QDir.Filter.AllEntries | QDir.Filter.NoDotAndDotDot | QDir.Filter.AllDirs)
         self.model.setNameFilterDisables(False)
-        self.filter.textChanged.connect(lambda text: self.model.setNameFilters(["*" + text + "*"] if text else []))
+        self.filter.textChanged.connect(
+            lambda text: self.model.setNameFilters(["*" + text + "*"] if text else [])
+        )
         self.list = QTreeView()
         self.list.setRootIsDecorated(False)
         self.list.setItemsExpandable(False)
@@ -109,6 +158,7 @@ class Folder(QWidget):
         self.icons.hide()
         self.setAcceptDrops(True)
         self.navigate(path)
+        self.toggle()
 
     def navigate(self, path):
         if not path.is_dir():
@@ -120,6 +170,8 @@ class Folder(QWidget):
         self.icons.setRootIndex(root)
         self.list.setColumnWidth(0, 280)
         self.address.setText(str(self.path))
+        self.files.title.setText(self.path.name or str(self.path))
+        self.files.status.setText(str(self.path))
         index = self.files.tabs.indexOf(self)
         if index >= 0:
             self.files.tabs.setTabText(index, self.path.name or str(self.path))
@@ -163,31 +215,66 @@ class Files(QWidget):
         self.s = settings
         self.work = Workers(self)
         self.clip = None
-        layout = QVBoxLayout(self)
+        left, self.places, layout = sidebar(self, "Favorites", 176)
+        self.title = heading(layout, "Files")
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
+        self.tabs.setTabBarAutoHide(True)
         self.status = label("")
-        self.places = QComboBox()
-        self.places.activated.connect(lambda i: self.tabs.currentWidget().navigate(Path(self.places.itemData(i))))
+        self.status.setObjectName("secondary")
         self.update_places()
-        self.action = button("Actions", self.actions)
-        row(layout, self.places, button("+ Tab", lambda: self.add(self.tabs.currentWidget().path)),
-            button("Choose folder…", self.choose), button("Favorite folder", self.favorite),
-            self.action, button("Open in Explorer", lambda: open_path(self, self.tabs.currentWidget().path)))
-        layout.addWidget(self.tabs)
+        self.places.itemClicked.connect(lambda entry: self.go(Path(entry.data(Qt.ItemDataRole.UserRole))))
+        self.action = button("Actions  ▾", self.actions)
+        left.addWidget(button("Add favorite", self.favorite))
+        row(
+            layout,
+            button("New tab", lambda: self.add(self.tabs.currentWidget().path)),
+            button("Open folder…", self.choose),
+            self.action,
+            button("Open in Explorer", lambda: open_path(self, self.tabs.currentWidget().path)),
+        )
+        layout.addWidget(self.tabs, 1)
         layout.addWidget(self.status)
         self.tabs.tabCloseRequested.connect(self.close_tab)
+        self.tabs.currentChanged.connect(self.tab_changed)
         self.add(Path.home())
+
+    def go(self, path):
+        if path.is_dir():
+            self.tabs.currentWidget().navigate(path)
+        else:
+            self.status.setText(f"Folder unavailable: {path}")
+
+    def downloads(self):
+        self.go(Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation)))
+
+    def tab_changed(self, i):
+        if i >= 0:
+            path = self.tabs.widget(i).path
+            self.status.setText(str(path))
+            self.title.setText(path.name or str(path))
 
     def update_places(self):
         self.places.clear()
-        for role in ("Home", "Desktop", "Documents", "Download"):
-            path = QStandardPaths.writableLocation(getattr(QStandardPaths.StandardLocation, role + "Location"))
-            self.places.addItem("Downloads" if role == "Download" else role, path)
+        for role in ("Home", "Desktop", "Documents", "Download", "Pictures", "Music", "Movies"):
+            path = QStandardPaths.writableLocation(
+                getattr(QStandardPaths.StandardLocation, role + "Location")
+            )
+            item(
+                self.places,
+                {"Download": "Downloads", "Movies": "Videos"}.get(role, role),
+                path,
+                "Downloads" if role == "Download" else "Files",
+            )
         if os.environ.get("APPDATA"):
-            self.places.addItem("Recent", str(Path(os.environ["APPDATA"]) / "Microsoft/Windows/Recent"))
+            item(
+                self.places,
+                "Recents",
+                str(Path(os.environ["APPDATA"]) / "Microsoft/Windows/Recent"),
+                "Overview",
+            )
         for name in self.s.get("favorite_folders", []):
-            self.places.addItem(Path(name).name or name, name)
+            item(self.places, Path(name).name or name, name, "Files")
 
     def favorite(self):
         value = str(self.tabs.currentWidget().path)
@@ -245,24 +332,29 @@ class Files(QWidget):
     def rename(self, path):
         name, ok = QInputDialog.getText(self, "Rename", "New name", text=path.name)
         if ok and name and name == Path(name).name and name not in (".", "..") and ":" not in name:
+
             def perform():
                 dest = path.with_name(name)
                 if dest.exists():
                     raise FileExistsError(dest)
                 path.rename(dest)
+
             self.task(perform)
 
     def trash(self, path):
         if confirm(self, "Move to Recycle Bin", f"Move {path.name} to the Recycle Bin?"):
+
             def move():
                 ok, _ = QFile.moveToTrash(str(path))
                 if not ok:
                     raise OSError("Windows could not recycle this item.")
+
             self.task(move)
 
     def preview(self, path):
         from PySide6.QtWidgets import QDialog, QLabel
         from PySide6.QtGui import QImageReader
+
         dialog = QDialog(self)
         dialog.setWindowTitle(path.name)
         layout = QVBoxLayout(dialog)
@@ -276,6 +368,7 @@ class Files(QWidget):
             try:
                 with path.open("r", encoding="utf-8", errors="replace") as src:
                     from PySide6.QtWidgets import QPlainTextEdit
+
                     view = QPlainTextEdit(src.read(20000))
                     view.setReadOnly(True)
                     layout.addWidget(view)

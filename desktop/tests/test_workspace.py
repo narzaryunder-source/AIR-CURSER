@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 import zipfile
 
 import pytest
@@ -12,8 +11,15 @@ from aircursor_desktop.store import arguments
 
 
 def test_store_arguments_are_exact_and_restricted_to_source():
-    assert arguments("install", "Mozilla.Firefox") == ["install", "--id", "Mozilla.Firefox", "--exact",
-                                                         "--source", "winget", "--disable-interactivity"]
+    assert arguments("install", "Mozilla.Firefox") == [
+        "install",
+        "--id",
+        "Mozilla.Firefox",
+        "--exact",
+        "--source",
+        "winget",
+        "--disable-interactivity",
+    ]
     with pytest.raises(ValueError):
         arguments("install", "--force")
 
@@ -26,7 +32,9 @@ def test_web_navigation_and_free_prices():
     assert not free_model({"pricing": {"prompt": "0", "completion": "1"}})
 
 
-@pytest.mark.parametrize("text,result", [("(2+3)*4","20"), ("9/0",None), ("2**40000",None), ("abs(-4)",None)])
+@pytest.mark.parametrize(
+    "text,result", [("(2+3)*4", "20"), ("9/0", None), ("2**40000", None), ("abs(-4)", None)]
+)
 def test_search_calculator(text, result):
     assert calculate(text) == result
 
@@ -43,7 +51,9 @@ def test_archive_roundtrip_without_overwrite(tmp_path):
     assert (extract_new(archive) / "note.txt").read_text() == "notes"
 
 
-@pytest.mark.parametrize("entry", ["../elsewhere", "C:/Windows/test", "folder/name:stream", "CON", "trailing."])
+@pytest.mark.parametrize(
+    "entry", ["../elsewhere", "C:/Windows/test", "folder/name:stream", "CON", "trailing."]
+)
 def test_archive_rejects_unsafe_names(tmp_path, entry):
     archive = tmp_path / "bad.zip"
     with zipfile.ZipFile(archive, "w") as z:
@@ -66,8 +76,10 @@ def test_failed_write_keeps_old_state(tmp_path, monkeypatch):
     path = tmp_path / "settings.json"
     saved = Settings(str(path))
     saved.set(phone_ssid="Known")
+
     def fail(*_):
         raise OSError("disk unavailable")
+
     monkeypatch.setattr(os, "replace", fail)
     with pytest.raises(OSError):
         saved.set(phone_ssid="Other")
@@ -78,24 +90,32 @@ def test_failed_write_keeps_old_state(tmp_path, monkeypatch):
 def test_real_widget_paths_lock_and_exit(tmp_path, monkeypatch):
     if os.name != "nt":
         monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLineEdit
+    from PySide6.QtWidgets import QApplication
     from PySide6.QtTest import QTest
     from PySide6.QtCore import Qt
     from aircursor_desktop.ui import Desktop
+
     app = QApplication.instance() or QApplication([])
     s = Settings(str(tmp_path / "settings.json"))
     s.set(auto_switch=False, restore=False)
     desktop = Desktop(s)
     monkeypatch.setattr(desktop.work, "run", lambda *args: None)
     desktop.show()
-    fields = desktop.findChildren(QLineEdit)
+    from PySide6.QtCore import QObject
+
+    fields = [desktop.view.rootObject().findChild(QObject, n) for n in ("password", "confirmPassword")]
     for field in fields:
-        field.setText("workspace-test")
-    QTest.keyClick(fields[-1], Qt.Key.Key_Return)
+        field.setProperty("text", "workspace-test")
+    fields[-1].forceActiveFocus()
+    QTest.keyClick(desktop.view, Qt.Key.Key_Return)
     assert not desktop.locked and desktop.auth.has_password
-    for name in ["Files", "Air Store", "Air AI", "Launcher", "Settings", "Control Center"]:
+    for name in ["Files", "Air Store", "Air AI", "Air Browser", "Settings", "Control Center"]:
         assert desktop.open(name) is not None
         assert desktop.panels[name].isVisible()
+    desktop.show_overlay("spotlight")
+    assert desktop.view.rootObject().property("overlay") == "spotlight"
+    assert desktop.shell.results
+    desktop.view.rootObject().setProperty("overlay", "")
     desktop.fullscreen()
     assert desktop.isFullScreen()
     desktop.exit_desktop()
@@ -104,3 +124,26 @@ def test_real_widget_paths_lock_and_exit(tmp_path, monkeypatch):
     assert desktop.host.paused and not any(p.isVisible() for p in desktop.panels.values())
     assert desktop.open("Air Browser") is None
     desktop.close()
+    app.processEvents()
+
+
+def test_normal_entry_point_reaches_locked_window(tmp_path):
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    probe = """
+from PySide6.QtCore import QTimer
+from aircursor_desktop.ui import Desktop, main
+show = Desktop.show
+def opened(window):
+    assert window.locked and window.view.rootObject() is not None
+    show(window)
+    QTimer.singleShot(50, window.close)
+Desktop.show = opened
+raise SystemExit(main())
+"""
+    env = {**os.environ, "AIRCURSOR_HOME": str(tmp_path), "QT_QPA_PLATFORM": "offscreen", "QT_QUICK_BACKEND": "software"}
+    result = subprocess.run([sys.executable,"-c",probe],cwd=Path(__file__).resolve().parents[1],
+                            env=env,capture_output=True,text=True,timeout=30)
+    assert result.returncode==0, result.stderr

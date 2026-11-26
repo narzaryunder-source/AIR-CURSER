@@ -181,3 +181,37 @@ def test_native_save_keeps_password_entirely_in_windows(tmp_path):
     assert not h.save_phone("Phone", "hotspot-secret", "WPA3", b"ABC")
     assert s.get("phone_adapter") == "414243"
     assert "hotspot-secret" not in (tmp_path / "s.json").read_text()
+
+
+def test_active_transfer_defers_failover(tmp_path):
+    s = Settings(str(tmp_path / "s.json"))
+    s.set(phone_ssid="Rahul's Phone")
+    n = FakeNetsh()
+    h = hotspot.Hotspot(s, runner=n, online=lambda: False)
+    h.traffic_busy = lambda: True
+    assert hotspot.AutoSwitch(h, after=0).step() == "in-use"
+    assert not n.calls
+
+
+def test_previous_wifi_requires_two_stable_sightings_and_idle_link(tmp_path):
+    t = [100]
+    s = Settings(str(tmp_path / "s.json"))
+    s.set(phone_ssid="Phone", return_wifi=True)
+    h = hotspot.Hotspot(s,runner=FakeNetsh(),online=lambda:True)
+    h.on_phone = lambda: True
+    h.networks = lambda: [dict(ssid="Home",id=b"adapter",signal=80)]
+    restored = []
+    h.restore = lambda prior, cancelled: restored.append(prior["profile"]) or True
+    policy = hotspot.AutoSwitch(h, clock=lambda:t[0])
+    policy.previous = dict(ssid="Home",id=b"adapter",profile="Known home")
+    policy.step()
+    assert not restored
+    t[0] += 60
+    h.traffic_busy=lambda:True
+    policy.step()
+    assert not restored
+    h.traffic_busy=lambda:False
+    for _ in range(2):
+        t[0] += 60
+        policy.step()
+    assert restored==["Known home"] and policy.previous is None

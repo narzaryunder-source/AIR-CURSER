@@ -1,4 +1,5 @@
 """Build a self-contained Windows x64 per-user installer on Windows or Linux with NSIS 3."""
+
 import argparse
 import hashlib
 import json
@@ -45,9 +46,26 @@ def main():
     wheels = cache / "wheels"
     lock = json.loads((HERE / "wheels.json").read_text())
     if any(not (wheels / name).is_file() for name in lock):
-        subprocess.run([sys.executable, "-m", "pip", "download", "--only-binary=:all:", "--platform", "win_amd64",
-                        "--python-version", "313", "--implementation", "cp", "-d", str(wheels),
-                        "-r", str(DESKTOP / "requirements.txt")], check=True)
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "download",
+                "--only-binary=:all:",
+                "--platform",
+                "win_amd64",
+                "--python-version",
+                "313",
+                "--implementation",
+                "cp",
+                "-d",
+                str(wheels),
+                "-r",
+                str(DESKTOP / "requirements.txt"),
+            ],
+            check=True,
+        )
     stage = DESKTOP / "build/package"
     if stage.exists():
         shutil.rmtree(stage)
@@ -63,14 +81,16 @@ def main():
             archive.extractall(rt)
     # The embeddable interpreter ignores global site packages and PYTHONPATH.
     (rt / "python313._pth").write_text("python313.zip\n.\n", encoding="ascii")
-    shutil.copytree(DESKTOP / "aircursor_desktop", rt / "aircursor_desktop",
-                    ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(
+        DESKTOP / "aircursor_desktop", rt / "aircursor_desktop", ignore=shutil.ignore_patterns("__pycache__")
+    )
     shutil.copytree(DESKTOP / "assets", rt / "assets")
     shutil.copy2(DESKTOP / "run.py", rt)
     # Keep the shared libraries, Chromium helper, locales, resources and license files together.
     for name in ("README.md", "RELEASE-NOTES.md"):
         if (DESKTOP / name).exists():
             shutil.copy2(DESKTOP / name, stage)
+    shutil.copytree(DESKTOP / "report", stage / "report")
     output = DESKTOP / "dist"
     output.mkdir(exist_ok=True)
     ico = DESKTOP / "assets/aircursor.ico"
@@ -80,10 +100,12 @@ def main():
     lines = []
     for file in files:
         relative = str(file.relative_to(stage)).replace("/", "\\").replace("$", "$$")
-        lines.append(('RMDir' if file.is_dir() else 'Delete') + ' "$INSTDIR\\' + relative + '"')
+        lines.append(("RMDir" if file.is_dir() else "Delete") + ' "$INSTDIR\\' + relative + '"')
     uninstall.write_text("\n".join(lines) + "\n", encoding="utf-8-sig")
     exe = output / "AirCursor-Windows.exe"
-    compile_nsis(args.nsis, "installer.nsi", STAGE=stage, OUTPUT=exe, BRANDICON=ico, UNINSTALL_FILES=uninstall)
+    compile_nsis(
+        args.nsis, "installer.nsi", STAGE=stage, OUTPUT=exe, BRANDICON=ico, UNINSTALL_FILES=uninstall
+    )
     (output / "SHA256SUMS.txt").write_text(f"{digest(exe)}  {exe.name}\n", encoding="ascii")
     print(exe, exe.stat().st_size, flush=True)
 
