@@ -4,6 +4,11 @@ on:
     branches: ['windows/**']
     paths: ['desktop/**', '.github/workflows/windows-workspace.yml', '.github/workflows/build.yml']
   workflow_dispatch:
+    inputs:
+      verify_package_lifecycle:
+        description: 'Approve installing, launching, upgrading and removing fd on the disposable runner'
+        type: boolean
+        default: false
   workflow_call:
 
 permissions:
@@ -26,6 +31,11 @@ jobs:
         env:
           AIRCURSOR_TEST_WEBENGINE: "1"
         run: python -m pytest -q desktop/tests
+      - name: Verify an approved real winget package lifecycle
+        if: github.event_name == 'workflow_dispatch' && inputs.verify_package_lifecycle
+        env:
+          AIRCURSOR_APPROVE_LIFECYCLE: '1'
+        run: python desktop/tools/verify_winget.py
       - name: Build the Windows x64 installer
         shell: pwsh
         run: |

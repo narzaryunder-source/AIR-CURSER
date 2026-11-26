@@ -5,7 +5,7 @@ from urllib.parse import quote_plus, urlsplit
 
 from PySide6.QtCore import QStandardPaths, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QShortcut, QKeySequence
-from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
+from PySide6.QtWebEngineCore import QWebEngineDownloadRequest, QWebEnginePage, QWebEngineProfile, QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QDialog,
@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 from .settings import data_dir
 from .browser_home import NewTab
-from .widgets import button, confirm, label, password, row
+from .widgets import button, confirm, label, open_path, password, row
 
 HOME = "https://duckduckgo.com/"
 
@@ -334,24 +334,57 @@ class Browser(QWidget):
         listing = QListWidget()
         layout.addWidget(listing)
 
+        def selected():
+            entry = listing.currentItem()
+            return entry.data(Qt.ItemDataRole.UserRole) if entry is not None else None
+
+        state = QWebEngineDownloadRequest.DownloadState
+
+        def controls():
+            request = selected()
+            completed = request is not None and request.state() == state.DownloadCompleted
+            open_file.setEnabled(completed)
+            reveal.setEnabled(completed)
+            stop.setEnabled(request is not None and request.state() == state.DownloadInProgress)
+
+        def open_selected(folder=False):
+            request = selected()
+            if request is None or request.state() != state.DownloadCompleted:
+                return
+            path = Path(request.downloadDirectory()) / request.downloadFileName()
+            if not path.is_file():
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.information(dialog, "Downloads", "The downloaded file has moved or was deleted.")
+                return
+            open_path(dialog, path.parent if folder else path)
+
+        open_file = button("Open file…", open_selected)
+        reveal = button("Open folder", lambda: open_selected(True))
+        stop = button("Cancel download", lambda: selected() and selected().cancel())
+        row(layout, open_file, reveal, stop)
+        listing.itemSelectionChanged.connect(controls)
+        listing.itemDoubleClicked.connect(lambda *_: open_selected())
+
         def update():
-            index = listing.currentRow()
+            from PySide6.QtWidgets import QListWidgetItem
+            previous = selected()
+            listing.blockSignals(True)
             listing.clear()
             for d in self.downloads:
                 total = f"{d.totalBytes():,}" if d.totalBytes() >= 0 else "unknown size"
-                listing.addItem(
-                    f"{d.downloadFileName()} · {d.receivedBytes():,} / {total} bytes · {d.state().name}"
-                )
-            listing.setCurrentRow(index)
+                entry = QListWidgetItem(f"{d.downloadFileName()} · {d.receivedBytes():,} / {total} bytes · {d.state().name}", listing)
+                entry.setData(Qt.ItemDataRole.UserRole, d)
+                if d is previous:
+                    listing.setCurrentItem(entry)
+            if listing.currentRow() < 0 and listing.count():
+                listing.setCurrentRow(0)
+            listing.blockSignals(False)
+            controls()
 
-        def cancel():
-            if 0 <= listing.currentRow() < len(self.downloads):
-                self.downloads[listing.currentRow()].cancel()
-
-        layout.addWidget(button("Cancel selected download", cancel))
         timer = QTimer(dialog, interval=500)
         timer.timeout.connect(update)
         timer.start()
         update()
         dialog.resize(600, 320)
         dialog.exec()
+        dialog.deleteLater()

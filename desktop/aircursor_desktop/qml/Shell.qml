@@ -256,6 +256,15 @@ Item {
             }
         }
 
+        Loader {
+            id: calendarLoader
+            active: shell.calendarVisible && !root.locked
+            anchors.left: parent.left
+            anchors.leftMargin: 22
+            y: 54
+            sourceComponent: CalendarWidget { desktop: root }
+        }
+
         Column {
             id: shortcuts
             anchors.right: parent.right

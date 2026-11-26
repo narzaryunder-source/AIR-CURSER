@@ -15,7 +15,7 @@ The project website’s Windows button resolves to the latest approved GitHub re
 ## Pair the phone and test hotspot recovery
 
 1. On the phone, enable the hotspot in Android Quick Settings. Open **Control Center → All controls → Hotspot → Find hotspots**, select the phone, enter its Wi-Fi password, and choose **Save and connect**. The Windows WLAN service stores the key in a current-user Wi-Fi profile. The SSID and adapter identifier are saved in AirCursor.
-2. Wait for association with the specified SSID and an internet check. The check uses the computer's active route. Ethernet or a VPN can supply that route. Adapter diagnostics shows gateways, DNS servers and possible USB tether adapters. Newer Windows builds can require location access for Wi-Fi discovery.
+2. Wait for association with the specified SSID and an internet check. On native WLAN the content check sends traffic over the selected adapter. Control Center also reports whole-computer reachability; proxy-only Wi-Fi can remain unverified. Adapter diagnostics shows gateways, DNS servers and possible USB tether adapters. Newer Windows builds can require location access for Wi-Fi discovery.
 3. Under **Connected phone**, turn the receiver on. On the existing Android app, select **Use as keyboard & touchpad**, choose the computer or enter its displayed IPv4 address and port, then enter the six-digit code displayed on Windows. Choose an appropriate local-network firewall permission if Windows prompts.
 4. Test pointer movement, left/right clicks, two-finger scrolling and typing. Hold a modifier and lock AirCursor with **Ctrl+Shift+L**. The receiver should release held inputs immediately. Unlock and pair again if the connection timed out.
 5. For failover, return to regular Wi-Fi, leave the configured phone hotspot available, and enable automatic switching. Disconnect regular internet and watch the status. Repeat with the phone out of range. Optional return to the previous Wi-Fi waits for two stable sightings and idle transfer activity. This applies to Wi-Fi that AirCursor itself displaced.
@@ -65,3 +65,14 @@ Use NSIS 3.11 or newer with the amd64 Unicode target. The builder verifies the e
 The branch workflow builds on a Windows Server runner, installs the generated file silently, and runs the installed self-test before uploading the artifact. Screenshots can be reproduced on a dedicated graphical desktop with `python tools/capture.py --output report`. This captures the entire display. Close unrelated applications first.
 
 [Release notes](RELEASE-NOTES.md) · [Design and verification report](report/VERIFICATION.md)
+
+## Everyday workflows in the audited preview
+
+- **Install and launch software.** Search Air Store, select a full package ID, review Package details, and choose Install. Accept publisher and source agreements only after reviewing them. Use Launch selected app to resolve its registered Start entry. Open a file in its default program or choose Files → Actions → Open with.
+- **Open a downloaded installer.** Choose Air Browser → ⋯ → Downloads → Open file. Review its Windows signature and SHA-256. You can paste the publisher's digest before choosing Run installer.
+- **Edit media.** Right-click a picture in Files and choose Edit photo to rotate or resize to a new PNG. For a video, install FFmpeg, then choose Trim video, specify start/end seconds, and choose a new MP4 name. Existing output files are protected.
+- **Connect an AI service.** Start your local model server or enter an HTTPS provider URL under Configure endpoint. Choose Provider key if the endpoint requires credentials, Find models, select a model and Send. Windows Credential Manager stores API keys. Separate conversations can be renamed or deleted.
+- **Get a six-digit sign-in code on your phone.** In Settings → Privacy → Set up phone authenticator, verify your password and enter the setup key into your phone's authenticator. Record the one-time recovery code and confirm a generated code. At the next password sign-in, enter a fresh six-digit code. This is separate from the remote-input pairing code shown in Control Center.
+- **Restore your work.** Enable Restore open panels at sign-in. AirCursor remembers your active workspace, managed window geometry, file tabs and views, and regular browser URLs. The calendar widget can be enabled from Settings → Workspace or the desktop context menu.
+
+See [the feature audit](report/FUNCTIONAL-AUDIT.md), [measurements and native checks](report/VERIFICATION.md) and [the local AI session](report/ai-local.jpg).

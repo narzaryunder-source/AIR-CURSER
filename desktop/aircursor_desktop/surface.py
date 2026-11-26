@@ -6,10 +6,10 @@ from pathlib import Path
 import time
 from urllib.parse import quote
 
-from PySide6.QtCore import QObject, Property, QUrl, Qt, Signal, Slot, QPoint
+from PySide6.QtCore import QObject, Property, QUrl, Qt, Signal, Slot, QPoint, QTimer
 from PySide6.QtWidgets import QApplication, QMenu
 from .design import ICONS
-from .launcher import calculate, shortcuts
+from .launcher import calculate, indexed_files, shortcuts
 from .widgets import asset, open_path, system_link
 
 
@@ -29,6 +29,11 @@ class Shell(QObject):
         self.previews = []
         self.index = None
         self.query = ""
+        self.file_query = None
+        self.file_results = []
+        self.file_pending = False
+        self.file_timer = QTimer(self, singleShot=True, interval=350)
+        self.file_timer.timeout.connect(self.find_files)
         self.covered = []
 
     @Property(str, constant=True)
@@ -89,6 +94,10 @@ class Shell(QObject):
     @Property(str, notify=changed)
     def profileName(self):
         return self.d.s.get("profile", "Balanced")
+
+    @Property(bool, notify=changed)
+    def calendarVisible(self):
+        return self.d.s.get("calendar_widget", False)
 
     @Property(str, notify=changed)
     def spaceName(self):
@@ -257,6 +266,21 @@ class Shell(QObject):
     def authenticate(self, password, again, remember):
         self.d.unlock(password, again, remember)
 
+    def find_files(self):
+        query = self.query.strip()
+        if self.locked or self.file_pending or not 2 <= len(query) <= 100:
+            return
+        self.file_pending = True
+
+        def received(results):
+            self.file_pending = False
+            if self.locked:
+                return
+            self.file_query, self.file_results = query, results
+            self.search(self.query)
+
+        self.d.work.run(lambda: indexed_files(query), received, lambda error: received([]))
+
     @Slot(str)
     def search(self, query):
         if self.locked:
@@ -294,7 +318,13 @@ class Shell(QObject):
             if len(results) >= 60:
                 break
             if q in name.casefold():
-                add(name, "Windows shortcut", path)
+                add(name, "Windows application" if path.startswith("startapp:") else "Windows shortcut", path)
+        if os.name == "nt" and 2 <= len(query.strip()) <= 100:
+            if self.file_query == query.strip():
+                for title, path in self.file_results:
+                    add(title, str(Path(path).parent), path)
+            elif not self.file_pending:
+                self.file_timer.start()
         if q and self.d.s.get("browser_history_enabled", False):
             for url in self.d.s.get("browser_history", []):
                 if q in url.casefold() and len(results) < 60:
@@ -337,6 +367,13 @@ class Shell(QObject):
             self.d.exit_desktop()
         elif cmd == "toggle-appearance":
             self.d.preference("appearance", "Light" if self.dark else "Dark")
+        elif cmd.startswith("startapp:"):
+            from .applications import launch_registered
+            if any(target == cmd for _, target in self.index or []):
+                try:
+                    launch_registered(cmd)
+                except (ValueError, OSError) as exc:
+                    self.d.notify(str(exc))
         elif cmd.startswith("external:"):
             from .windows import activate
 
@@ -366,9 +403,11 @@ class Shell(QObject):
         d = self.d
         m = QMenu(d)
         if name in ("File", "Desktop"):
-            m.addAction("New Files window", lambda: d.open("Files"))
+            m.addAction("Open Files", lambda: d.open("Files"))
             m.addAction("Add desktop shortcut…", d.add_shortcut)
             m.addAction("Search…", lambda: d.show_overlay("spotlight"))
+            m.addAction("Hide calendar widget" if self.calendarVisible else "Show calendar widget",
+                        lambda: d.preference("calendar_widget", not self.calendarVisible))
         if name in ("AirCursor", "Desktop", "View"):
             m.addAction("System settings…", lambda: d.open("Settings"))
             m.addAction("Control Center", lambda: d.show_overlay("quick"))
@@ -400,6 +439,6 @@ class Shell(QObject):
             m.addAction("Open " + Path(target).stem, lambda: self.action(target))
             if target in d.s.get("pins", []):
                 m.addAction("Unpin from Dock", lambda: d.unpin(target))
-            if target in d.opened:
+            if target in d.opened and target in d.panels:
                 m.addAction("Close", d.panels[target].close)
         m.exec(d.view.mapToGlobal(QPoint(round(x), round(y))))

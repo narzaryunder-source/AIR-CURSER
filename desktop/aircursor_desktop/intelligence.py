@@ -3,6 +3,10 @@
 import ctypes as ct
 from ctypes import wintypes as w
 import json
+import hashlib
+import ipaddress
+import os
+from urllib.parse import urlsplit
 from urllib import error, request
 
 from PySide6.QtCore import Qt
@@ -21,7 +25,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from .widgets import Workers, button, label, row
+from .widgets import Workers, confirm, button, label, row
 
 SITES = {
     "ChatGPT": "https://chatgpt.com/",
@@ -83,19 +87,50 @@ class NoRedirect(request.HTTPRedirectHandler):
         return None
 
 
-def api_call(provider, path, payload=None):
+def local_url(url):
+    host = urlsplit(url).hostname
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return host == "localhost"
+
+
+def endpoint_url(text):
+    url = text.strip().rstrip("/")
+    parts = urlsplit(url)
+    if (
+        not parts.hostname
+        or parts.username is not None
+        or parts.password is not None
+        or parts.query
+        or parts.fragment
+        or any(ord(c) < 33 or c == chr(92) for c in url)
+    ):
+        raise ValueError("Use an API base URL without credentials, whitespace, a query or a fragment.")
+    if parts.scheme != "https" and not (parts.scheme == "http" and local_url(url)):
+        raise ValueError("Use HTTPS for remote providers. HTTP is available on loopback.")
+    _ = parts.port
+    return url
+
+
+def key_target(provider, url):
+    return ("Custom-" + hashlib.sha256(url.encode()).hexdigest()) if provider == "Custom" else provider
+
+
+def api_call(provider, path, payload=None, custom=None):
+    url = endpoint_url(custom) if provider == "Custom" else ENDPOINTS[provider]
     headers = {"Content-Type": "application/json"}
-    if provider == "OpenRouter":
-        key = credential(provider)
+    if os.name == "nt" and provider in ("OpenRouter", "Custom"):
+        key = credential(key_target(provider, url))
         if key:
             headers["Authorization"] = "Bearer " + key
     req = request.Request(
-        ENDPOINTS[provider] + path,
+        url + path,
         headers=headers,
         data=json.dumps(payload).encode() if payload is not None else None,
     )
     handlers = [NoRedirect()]
-    if provider != "OpenRouter":
+    if local_url(url):
         handlers.append(request.ProxyHandler({}))
     try:
         with request.build_opener(*handlers).open(req, timeout=90 if payload else 8) as response:
@@ -125,6 +160,7 @@ class Intelligence(QWidget):
         for name, url in SITES.items():
             item(self.web, name, url)
         self.web.itemClicked.connect(lambda entry: browse(entry.data(Qt.ItemDataRole.UserRole)))
+        left.addWidget(button("Configure endpoint…", self.configure))
         left.addWidget(button("Provider key…", self.key))
         left.addWidget(button("Open terminal", terminal))
         section = label("Conversations")
@@ -138,6 +174,9 @@ class Intelligence(QWidget):
         left.insertWidget(4, button("New conversation", self.new))
         self.provider, self.model = QComboBox(), QComboBox()
         self.provider.addItems(ENDPOINTS)
+        if self.s.get("custom_ai_url"):
+            self.provider.addItem("Custom")
+        left.insertWidget(5, button("Manage conversation…", self.manage))
         self.model.setPlaceholderText("Select model")
         self.free = QCheckBox("Zero token price")
         bar = row(layout, self.provider, button("Find models", self.discover), self.model, self.free)
@@ -193,30 +232,54 @@ class Intelligence(QWidget):
     def changed(self, *_):
         self.models = []
         self.filter()
-        remote = self.provider.currentText() == "OpenRouter"
-        self.free.setVisible(remote)
+        remote = self.provider.currentText() == "OpenRouter" or (
+            self.provider.currentText() == "Custom" and not local_url(self.s.get("custom_ai_url"))
+        )
+        self.free.setVisible(self.provider.currentText() == "OpenRouter")
         self.status.setText(
-            "Provider charges may apply." if remote else "Start the local model server, then discover models."
+            "Provider charges may apply."
+            if remote
+            else "Start the local model server, then discover models."
         )
 
     def discover(self):
         provider = self.provider.currentText()
+        endpoint = self.s.get("custom_ai_url")
         self.status.setText("Requesting available models…")
 
         def done(result):
-            if self.provider.currentText() == provider:
-                self.models = result["data"]
+            if self.provider.currentText() == provider and self.s.get("custom_ai_url") == endpoint:
+                raw = result.get("data") if isinstance(result, dict) else None
+                if not isinstance(raw, list):
+                    self.status.setText("Provider returned an invalid model list.")
+                    return
+                self.models = [m for m in raw if isinstance(m, dict) and isinstance(m.get("id"), str)]
                 self.filter()
                 if not self.model.count():
                     self.status.setText("No matching models were returned.")
 
-        self.work.run(lambda: api_call(provider, "/models"), done, self.status.setText)
+        def fetch():
+            result = api_call(provider, "/models", custom=endpoint)
+            if provider == "Ollama" and isinstance(result, dict) and isinstance(result.get("data"), list):
+                try:
+                    inventory = api_call("Custom", "/api/tags", custom="http://127.0.0.1:11434")
+                    sizes = {entry["name"]: entry["size"] for entry in inventory.get("models", [])}
+                    for model in result["data"]:
+                        if isinstance(model, dict):
+                            model["disk_bytes"] = sizes.get(model.get("id"))
+                except (OSError, ValueError, TypeError, KeyError):
+                    pass
+            return result
+
+        self.work.run(fetch, done, self.status.setText)
 
     def filter(self, *_):
         self.model.clear()
         for m in self.models:
             if self.provider.currentText() != "OpenRouter" or not self.free.isChecked() or free_model(m):
                 self.model.addItem(m["id"], m)
+        if self.model.count() == 1:
+            self.model.setCurrentIndex(0)
         self.pricing()
 
     def pricing(self, *_):
@@ -224,19 +287,65 @@ class Intelligence(QWidget):
         if not m:
             return
         p = m.get("pricing", {})
+        provider = self.provider.currentText()
+        if provider in ("Ollama", "LM Studio") or (
+            provider == "Custom" and local_url(self.s.get("custom_ai_url"))
+        ):
+            import psutil
+
+            ram = psutil.virtual_memory()
+            size = m.get("disk_bytes")
+            size_text = f" · {size / 2**30:.1f} GiB model on disk" if isinstance(size, int) else ""
+            self.status.setText(f"Local model · {ram.available / 2**30:.1f} GiB RAM available{size_text}")
+            return
         self.status.setText(
             f"USD per token · input {p.get('prompt', 'unknown')} · output {p.get('completion', 'unknown')}"
             if self.provider.currentText() == "OpenRouter"
-            else "Runs on the local model server."
+            else (
+                "Pricing unavailable from this endpoint."
+                if self.provider.currentText() == "Custom"
+                else "Runs on the local model server."
+            )
         )
 
-    def key(self):
+    def configure(self):
+        old = self.s.get("custom_ai_url", "")
         value, ok = QInputDialog.getText(
-            self, "OpenRouter credential", "API key (empty removes saved key)", QLineEdit.EchoMode.Password
+            self,
+            "Compatible API endpoint",
+            "OpenAI-compatible base URL, including its API version",
+            text=old,
+        )
+        if not ok:
+            return
+        try:
+            url = endpoint_url(value)
+            if old and old != url and os.name == "nt":
+                credential(key_target("Custom", old), "")
+            self.s.set(custom_ai_url=url)
+            if self.provider.findText("Custom") < 0:
+                self.provider.addItem("Custom")
+            self.provider.setCurrentText("Custom")
+            self.changed()
+            self.status.setText(f"Endpoint saved · {url}")
+        except (ValueError, OSError) as exc:
+            self.status.setText(str(exc))
+
+    def key(self):
+        provider = self.provider.currentText()
+        if provider not in ("OpenRouter", "Custom"):
+            self.status.setText("Select OpenRouter or configure a compatible endpoint to store its key.")
+            return
+        url = self.s.get("custom_ai_url") if provider == "Custom" else ENDPOINTS[provider]
+        value, ok = QInputDialog.getText(
+            self,
+            "Provider credential",
+            f"API key for {url} (empty removes saved key)",
+            QLineEdit.EchoMode.Password,
         )
         if ok:
             try:
-                credential("OpenRouter", value)
+                credential(key_target(provider, url), value)
                 self.status.setText("Windows credential updated.")
             except (AttributeError, OSError) as exc:
                 self.status.setText(str(exc))
@@ -245,6 +354,32 @@ class Intelligence(QWidget):
         self.conversations.append({"title": "New conversation", "messages": []})
         self.sessions.addItem("New conversation")
         self.sessions.setCurrentIndex(self.sessions.count() - 1)
+
+    def manage(self):
+        if self.pending:
+            self.status.setText("Wait for the current response before editing conversations.")
+            return
+        index = self.sessions.currentIndex()
+        action, ok = QInputDialog.getItem(
+            self, "Conversation", self.sessions.currentText(), ["Rename", "Delete"], editable=False
+        )
+        if not ok or index < 0:
+            return
+        if action == "Rename":
+            title, ok = QInputDialog.getText(
+                self, "Rename conversation", "Title", text=self.sessions.currentText()
+            )
+            if not ok or not title.strip():
+                return
+            self.conversations[index].update(title=title.strip()[:100], named=True)
+            self.sessions.setItemText(index, self.conversations[index]["title"])
+        elif confirm(self, "Delete conversation", "Permanently delete this conversation from AirCursor?"):
+            self.conversations.pop(index)
+            self.sessions.removeItem(index)
+            if not self.conversations:
+                self.new()
+        self.s.set(conversations=self.conversations)
+        self.render()
 
     def render(self, *_):
         i = self.sessions.currentIndex()
@@ -267,6 +402,16 @@ class Intelligence(QWidget):
         conv = self.conversations[i]
         provider = self.provider.currentText()
         messages = conv["messages"] + [{"role": "user", "content": text}]
+        endpoint = self.s.get("custom_ai_url")
+        recipient = endpoint if provider == "Custom" else ENDPOINTS[provider]
+        if (
+            conv["messages"]
+            and conv.get("endpoint") != recipient
+            and not confirm(
+                self, "Share conversation", f"Send the existing conversation history to {recipient}?"
+            )
+        ):
+            return
         self.pending = True
         self.prompt.clear()
         self.status.setText("Waiting for " + model + "…")
@@ -281,13 +426,16 @@ class Intelligence(QWidget):
                 failed(str(exc))
                 return
             conv.update(
-                title=messages[0]["content"][:45],
+                endpoint=recipient,
+                title=conv["title"] if conv.get("named") else messages[0]["content"][:45],
                 messages=messages + [{"role": "assistant", "content": answer}],
             )
             self.sessions.setItemText(i, conv["title"])
             self.s.set(conversations=self.conversations)
             self.render()
-            self.status.setText(f"{model} · {result.get('usage', {}).get('total_tokens', 'Unknown')} tokens")
+            self.status.setText(
+                f"{model} · {result.get('usage', {}).get('total_tokens', 'Unknown')} tokens"
+            )
 
         def failed(message):
             self.pending = False
@@ -296,7 +444,9 @@ class Intelligence(QWidget):
             self.status.setText(message)
 
         self.work.run(
-            lambda: api_call(provider, "/chat/completions", {"model": model, "messages": messages}),
+            lambda: api_call(
+                provider, "/chat/completions", {"model": model, "messages": messages}, custom=endpoint
+            ),
             done,
             failed,
         )

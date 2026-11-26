@@ -99,6 +99,16 @@ class Wlan:
     def adapters(self, handle):
         return self._list(self.api.WlanEnumInterfaces, Interface, handle, None)
 
+    def interface_index(self, raw_guid):
+        guid = GUID.from_buffer_copy(raw_guid)
+        luid, index = c.c_uint64(), DWORD()
+        ip = c.WinDLL("iphlpapi")
+        check(ip.ConvertInterfaceGuidToLuid(c.byref(guid), c.byref(luid)))
+        check(ip.ConvertInterfaceLuidToIndex(c.byref(luid), c.byref(index)))
+        if not index.value:
+            raise OSError("The selected wireless adapter is unavailable.")
+        return index.value
+
     def interfaces(self):
         rows = []
         with self.handle() as handle:
@@ -153,6 +163,8 @@ class Wlan:
         with self.handle() as handle:
             adapters = self.adapters(handle)
             selected = next((a for a in adapters if bytes(a.guid) == adapter_id), None)
+            if adapter_id is not None and not selected:
+                raise OSError("The selected Wi-Fi adapter is no longer available. Refresh the network list.")
             if not selected and adapters:
                 selected = adapters[0]
             if not selected:
@@ -164,6 +176,13 @@ class Wlan:
                 )
             )
             return bytes(selected.guid).hex()
+
+    def forget(self, profile, adapter_id):
+        guid = GUID.from_buffer_copy(adapter_id)
+        with self.handle() as handle:
+            result = self.api.WlanDeleteProfile(handle, c.byref(guid), c.c_wchar_p(profile), None)
+            if result != 1168:  # ERROR_NOT_FOUND means Windows has already removed this profile.
+                check(result)
 
     def connect(self, ssid, adapter_id):
         guid = GUID.from_buffer_copy(adapter_id)

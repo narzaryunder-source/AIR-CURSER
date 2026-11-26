@@ -64,6 +64,7 @@ class RemoteHost:
         self.gate = protocol.PairingGate(lambda: self.code, self.renew_code)
         self._paused = False
         self.events = 0
+        self.rejected = 0
         self.last_seen = None
         self.client = None
         self.client_addr = ""
@@ -205,7 +206,7 @@ class RemoteHost:
                     self._close_client(bye=True)
                     self.client = sock
                     self.client_addr = addr[0]
-                    self.events = 0
+                    self.events = self.rejected = 0
                     self.last_seen = time.monotonic()
                     sock.sendall(("OK %s|w1\n" % self.name).encode("utf-8"))
                 self.on_change()
@@ -221,8 +222,10 @@ class RemoteHost:
                         if cmd:
                             self.last_seen = time.monotonic()
                             if cmd[0] != "ping" and not self.paused:
-                                self.ctl.apply(cmd)
-                                self.events += 1
+                                if self.ctl.apply(cmd) is False:
+                                    self.rejected += 1
+                                else:
+                                    self.events += 1
         except (OSError, ValueError):
             pass
         finally:

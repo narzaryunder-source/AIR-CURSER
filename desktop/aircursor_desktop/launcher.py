@@ -42,7 +42,51 @@ def shortcuts():
         if os.environ.get(base):
             root = Path(os.environ[base]) / "Microsoft/Windows/Start Menu/Programs"
             items.extend((p.stem, str(p)) for p in root.rglob("*.lnk"))
+    from .applications import registered_apps
+    import subprocess
+    try:
+        items.extend(registered_apps())
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass  # Keep classic Start menu shortcuts when the registered app query is unavailable.
     if os.environ.get("APPDATA"):
         recent = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Recent"
         items.extend((p.stem, str(p)) for p in recent.glob("*.lnk"))
     return sorted(set(items), key=lambda pair: pair[0].casefold())
+
+
+def indexed_files(query):
+    """Ask the existing Windows Search catalog for a bounded set of matching filesystem items."""
+    import json
+    import subprocess
+
+    term = query.strip()
+    if os.name != "nt" or not 2 <= len(term) <= 100:
+        return []
+    # The filter is data, transmitted in the process environment. Disallow wildcard expressions
+    # and escape apostrophes in the SQL literal independently of PowerShell quoting.
+    if any(ch in "%_[]\x00" or ord(ch) < 32 for ch in term):
+        return []
+    script = """
+    $ErrorActionPreference='Stop'
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $cn = New-Object -ComObject ADODB.Connection
+    $cn.ConnectionTimeout = 3
+    $cn.CommandTimeout = 4
+    $cn.Open("Provider=Search.CollatorDSO;Extended Properties='Application=Windows';")
+    try {
+      $q = $env:AIRCURSOR_FIND.Replace("'", "''")
+      $rows = $cn.Execute("SELECT TOP 16 System.ItemNameDisplay, System.ItemPathDisplay FROM SystemIndex WHERE System.FileName LIKE '%$q%'")
+      $output = @()
+      while (-not $rows.EOF) {
+        $output += @{ name = [string]$rows.Fields.Item(0).Value; path = [string]$rows.Fields.Item(1).Value }
+        $rows.MoveNext()
+      }
+      ConvertTo-Json -InputObject $output -Compress
+    } finally { $cn.Close() }
+    """
+    exe = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    result = subprocess.run([str(exe), "-NoProfile", "-NonInteractive", "-Command", script],
+                            env={**os.environ, "AIRCURSOR_FIND": term}, capture_output=True, timeout=8,
+                            check=True, creationflags=subprocess.CREATE_NO_WINDOW)
+    return [(r["name"], r["path"]) for r in json.loads(result.stdout.decode("utf-8-sig"))
+            if r.get("name") and Path(r.get("path") or "").is_absolute()]

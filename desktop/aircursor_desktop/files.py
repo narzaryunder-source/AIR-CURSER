@@ -11,6 +11,7 @@ from PySide6.QtCore import QDir, QFile, QSize, Qt, QStandardPaths
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QFileDialog,
     QInputDialog,
     QLineEdit,
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from .file_actions import file_mime, file_selection, open_with, valid_name
 from .navigation import sidebar, item, heading
 from .thumbnails import FileModel
 from .widgets import Workers, button, confirm, label, open_path, row
@@ -196,17 +198,25 @@ class Folder(QWidget):
         idx = view.indexAt(pos)
         if idx.isValid():
             view.setCurrentIndex(idx)
+        else:
+            view.clearSelection()
+            view.setCurrentIndex(self.model.index(-1, 0))
         self.files.actions(view.viewport().mapToGlobal(pos))
 
     def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls() and all(u.isLocalFile() for u in event.mimeData().urls()):
-            event.acceptProposedAction()
+        if event.possibleActions() & Qt.DropAction.CopyAction and file_selection(event.mimeData())[0]:
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
 
     def dropEvent(self, event):
-        paths = [Path(u.toLocalFile()) for u in event.mimeData().urls() if u.isLocalFile()]
+        if not event.possibleActions() & Qt.DropAction.CopyAction:
+            event.ignore()
+            return
+        paths, _ = file_selection(event.mimeData())
         if paths and confirm(self, "Copy into folder", f"Copy {len(paths)} item(s) to {self.path}?"):
             self.files.transfer(paths, False)
-            event.acceptProposedAction()
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
 
 
 class Files(QWidget):
@@ -214,7 +224,6 @@ class Files(QWidget):
         super().__init__()
         self.s = settings
         self.work = Workers(self)
-        self.clip = None
         left, self.places, layout = sidebar(self, "Favorites", 176)
         self.title = heading(layout, "Files")
         self.tabs = QTabWidget()
@@ -244,6 +253,32 @@ class Files(QWidget):
             self.tabs.currentWidget().navigate(path)
         else:
             self.status.setText(f"Folder unavailable: {path}")
+
+    def session(self):
+        return {"selected": self.tabs.currentIndex(), "tabs": [
+            {"path": str(self.tabs.widget(i).path), "grid": self.tabs.widget(i).grid}
+            for i in range(self.tabs.count())][:32]}
+
+    def restore_session(self, saved):
+        if not isinstance(saved, dict):
+            return
+        original = self.tabs.widget(0)
+        active = None
+        for i, entry in enumerate(saved.get("tabs", [])[:32]):
+            if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+                continue
+            path = Path(entry["path"])
+            if not path.is_absolute() or not path.is_dir():
+                continue
+            self.add(path)
+            folder = self.tabs.currentWidget()
+            if folder.grid != entry.get("grid", True):
+                folder.toggle()
+            if i == saved.get("selected"):
+                active = folder
+        if self.tabs.count() > 1:
+            self.close_tab(self.tabs.indexOf(original))
+            self.tabs.setCurrentWidget(active or self.tabs.widget(0))
 
     def downloads(self):
         self.go(Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation)))
@@ -297,14 +332,14 @@ class Files(QWidget):
             self.tabs.removeTab(i)
             view.deleteLater()
 
-    def task(self, fn):
+    def task(self, fn, done=None):
         self.status.setText("Working…")
-        self.work.run(fn, lambda _: self.status.setText("Completed."), self.status.setText)
+        self.work.run(fn, done or (lambda _: self.status.setText("Completed.")), self.status.setText)
 
-    def transfer(self, paths, move):
+    def transfer(self, paths, move, done=None):
         dest = self.tabs.currentWidget().path
         hwnd = int(self.window().winId())
-        self.task(lambda: shell_transfer(paths, dest, move, hwnd))
+        self.task(lambda: shell_transfer(paths, dest, move, hwnd), done)
 
     def actions(self, pos=None):
         tab = self.tabs.currentWidget()
@@ -313,17 +348,52 @@ class Files(QWidget):
         if path:
             menu.addAction("Open", lambda: tab.open(path))
             menu.addAction("Preview", lambda: self.preview(path))
-            menu.addAction("Copy", lambda: setattr(self, "clip", (path, False)))
-            menu.addAction("Cut", lambda: setattr(self, "clip", (path, True)))
+            if path.is_file():
+                from .media import edit_photo, trim_video
+                if path.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif"):
+                    menu.addAction("Edit photo…", lambda: edit_photo(self, path))
+                elif path.suffix.lower() in (".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"):
+                    menu.addAction("Trim video…", lambda: trim_video(self, path))
+            if path.is_file() and path.suffix.lower() not in (".exe", ".msi"):
+                menu.addAction("Open with…", lambda: self.choose_app(path))
+            menu.addAction("Copy", lambda: QApplication.clipboard().setMimeData(file_mime([path])))
+            menu.addAction("Cut", lambda: QApplication.clipboard().setMimeData(file_mime([path], True)))
             menu.addAction("Rename…", lambda: self.rename(path))
             menu.addAction("Compress to ZIP", lambda: self.task(lambda: zip_new(path)))
             if path.suffix.lower() == ".zip":
                 menu.addAction("Extract to new folder", lambda: self.task(lambda: extract_new(path)))
             menu.addAction("Move to Recycle Bin…", lambda: self.trash(path))
-        if self.clip:
-            menu.addAction("Paste here", lambda: self.transfer([self.clip[0]], self.clip[1]))
+        if file_selection(QApplication.clipboard().mimeData())[0]:
+            menu.addAction("Paste here", self.paste)
+        menu.addAction("New folder…", lambda: self.new_folder(tab.path))
         menu.addAction("Storage information", lambda: self.storage(tab.path))
         menu.exec(pos or self.action.mapToGlobal(self.action.rect().bottomLeft()))
+
+    def choose_app(self, path):
+        try:
+            open_with(self, path)
+        except OSError as exc:
+            self.status.setText(str(exc))
+
+    def new_folder(self, parent):
+        name, ok = QInputDialog.getText(self, "New folder", "Folder name")
+        if ok and valid_name(name):
+            self.task(lambda: (parent / name).mkdir())
+        elif ok:
+            self.status.setText("Choose a valid Windows folder name.")
+
+    def paste(self):
+        clip = QApplication.clipboard()
+        paths, move = file_selection(clip.mimeData())
+        if not paths:
+            return
+
+        def done(_):
+            if move and file_selection(clip.mimeData()) == (paths, move):
+                clip.clear()
+            self.status.setText("Completed.")
+
+        self.transfer(paths, move, done)
 
     def storage(self, path):
         disk = shutil.disk_usage(path)
@@ -331,7 +401,10 @@ class Files(QWidget):
 
     def rename(self, path):
         name, ok = QInputDialog.getText(self, "Rename", "New name", text=path.name)
-        if ok and name and name == Path(name).name and name not in (".", "..") and ":" not in name:
+        if ok and not valid_name(name):
+            self.status.setText("Choose a valid Windows file name.")
+            return
+        if ok:
 
             def perform():
                 dest = path.with_name(name)

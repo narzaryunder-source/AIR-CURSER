@@ -12,7 +12,7 @@ import os
 import re
 from contextlib import ExitStack
 
-from .connectivity import probe
+from .connectivity import probe, probe_interface
 import subprocess
 import sys
 import tempfile
@@ -177,14 +177,16 @@ class Hotspot:
         return ""
 
     def forget_phone(self):
-        if self.phone_ssid:
+        if self.native and self.phone_ssid and self.s.get("phone_adapter"):
+            self.native.forget(self.phone_ssid, bytes.fromhex(self.s.get("phone_adapter")))
+        elif self.phone_ssid:
             code, message = netsh("wlan", "delete", "profile", "name=" + self.phone_ssid, runner=self.runner)
             if code:
                 raise OSError(message.strip() or "Windows could not forget the Wi-Fi profile.")
         self.s.set(phone_ssid=None, phone_adapter=None)
 
     def connect(self, cancelled=lambda: False, visible=None):
-        """Association is asynchronous. Verify the target SSID, then verify host internet access."""
+        """Association is asynchronous. Verify the target SSID and test its Windows IPv4 route."""
         if not self._joining.acquire(blocking=False):
             return "A connection attempt is already in progress."
         try:
@@ -218,11 +220,15 @@ class Hotspot:
             for attempt in range(13):
                 if cancelled():
                     return "Connection cancelled."
-                if self.on_phone():
-                    if self.online():
+                joined = (next((r for r in self.native.interfaces() if r["id"] == adapter), None)
+                          if self.native and adapter is not None else self.wifi())
+                if (joined and joined["state"] == "connected" and joined["ssid"] == ssid
+                        and (adapter is None or joined.get("id") == adapter)):
+                    if self.verify_adapter(joined):
                         return ""
                     if attempt >= 4:
-                        return "Joined the phone hotspot. Internet access could not be verified."
+                        detail = f" {self.health.state}." if self.health else ""
+                        return "Joined the phone hotspot. Internet access could not be verified." + detail
                 if attempt < 12:
                     self.sleep(0.5)
             return "Windows accepted the request, but association with the phone was not confirmed."
@@ -230,6 +236,12 @@ class Hotspot:
             return f"Windows Wi-Fi: {exc}"
         finally:
             self._joining.release()
+
+    def verify_adapter(self, row):
+        if self.native:
+            self.health = probe_interface(self.native.interface_index(row["id"]))
+            return self.health.usable
+        return self.online()
 
     def restore(self, prior, cancelled):
         """Use the last auto-displaced profile on its original adapter. Windows keeps its key."""
@@ -242,7 +254,7 @@ class Hotspot:
                     return False
                 rows = self.native.interfaces()
                 if any(row["id"] == prior["id"] and row["ssid"] == prior["ssid"] for row in rows):
-                    if self.online():
+                    if self.verify_adapter(prior):
                         return True
                 self.sleep(0.5)
             return False

@@ -33,9 +33,26 @@ Policy measurements execute the actual decision code with an injected clock and 
 
 Five fresh Python processes on a 1366×768 Linux Qt software-rendered window gave a median 3.31 s from pre-import to first captured lock frame, 111.2 MiB resident at lock and 116.8 MiB after unlock. P95 intervals for a requested 16 ms GUI timer ranged from 16.17 to 16.28 ms. This is a timer responsiveness measurement. Display FPS, battery draw and Windows startup can differ. A separate browser smoke run loaded a private HTTP page with standard Chromium sandboxing and reported 285,446,144 resident bytes in the main process. Chromium child processes are excluded. Reproduce with `tools/benchmark.py startup`, `receiver` or `policy [--notification]`.
 
-## Build and test results
+## Audit follow-up measurements
 
-The final feature suite executed 56 tests successfully in 4.20 seconds on Linux, including the live browser integration test. The x64 Windows installer was cross-built with NSIS using the pinned embeddable Python runtime and Windows wheels. The installer ran under Wine and created the per-user program, uninstaller and Start menu shortcut. The Wine 10 environment lacks the Windows ICU DLL required by Qt, so an installed Windows GUI pass remains outstanding. The local source self-test rendered a private Chromium page. The public website loaded in the integrated browser was Python.org.
+The starting revision for the functional audit was 647f35e. Its 56 tests ran in 5.10 seconds on this host. The audited revision executed **79 tests successfully in 6.58 seconds**, with three platform-specific checks skipped on Linux. These cover native registered applications and credential storage, a Winsock interface-bound HTTP request and Windows Authenticode/file locking. The real Chromium integration ran with its normal sandbox. The source self-test rendered a private page, wrote OK, and reported 279,195,648 bytes of main-process RSS.
+
+| Measurement on this host | Audit run |
+| --- | ---: |
+| Policy decision after simulated outage, timer only | 20.99 s |
+| Policy decision after simulated outage with WLAN notification | 6.35 s |
+| Loopback receiver, 300 samples, median / P95 | 0.0058 / 0.0119 ms |
+| Startup to rendered lock frame, median of three fresh processes with warm filesystem caches | 0.311 s |
+| Main-process lock RSS / unlocked RSS, median | 114.9 / 117.5 MiB |
+| GUI timer interval, P95 range across those runs | 16.22–16.33 ms |
+
+These Linux startup figures use the current environment and cache state. Differences from the earlier host timings are not evidence of a Windows startup speedup. The policy times exclude adapter association, DHCP, DNS and HTTP duration. Interface-bound verification improves the meaning of a successful connection on a multi-adapter machine. Physical recovery time still requires a Windows radio.
+
+The local FFmpeg export test encoded a 0.80 s MP4 from a two-second source and verified the output with FFprobe. Live AI model discovery retrieved 474 OpenRouter entries. A separate local inference run sent a prompt from the actual Air AI window to llama.cpp, displayed the answer and persisted the conversation. See [the running local model](ai-local.jpg) and the [feature-by-feature audit](FUNCTIONAL-AUDIT.md).
+
+## First Qt Quick build and test results
+
+The first Qt Quick build executed 56 tests successfully in 4.20 seconds on Linux, including the live browser integration test. The x64 Windows installer was cross-built with NSIS using the pinned embeddable Python runtime and Windows wheels. The installer ran under Wine and created the per-user program, uninstaller and Start menu shortcut. The Wine 10 environment lacks the Windows ICU DLL required by Qt, so an installed Windows GUI pass remains outstanding. The local source self-test rendered a private Chromium page. The public website loaded in the integrated browser was Python.org.
 
 The dedicated development branch is local. GitHub returned HTTP 403 on the branch push, so no native Windows Actions result or public preview release is recorded here. The existing website already links to the expected asset name, `AirCursor-Windows.exe`.
 
@@ -47,7 +64,7 @@ Before approving a production release, use the branch Actions workflow and two p
 
 1. Clean installation, upgrade over an existing profile, normal launch, Windows ICU availability, private storage isolation, TLS, downloads/cancellation and uninstall. Check Windows SmartScreen and UAC in their normal configurations.
 2. Pair the unchanged Android app. Hold and release modifiers, test multi-monitor negative coordinates and mixed DPI, disconnect/reconnect, and run a long input session.
-3. Test WPA2/WPA3, two adapters, an absent phone, wrong key, captive portal, DNS outage, USB tethering, sleep/wake, an adapter reset and an active download. Measure detection, association, DHCP and internet verification separately. Host reachability is not adapter-bound.
+3. Test WPA2/WPA3, two adapters, an absent phone, wrong key, captive portal, DNS outage, USB tethering, sleep/wake, an adapter reset and an active download. Measure detection, association, DHCP and internet verification separately. Verify the new WLAN-bound probe while Ethernet or a VPN stays online.
 4. Inspect glass and resize/shadow behavior on Windows 10 and Windows 11 under light/dark, high DPI and reduced-resource profiles. Benchmark with a GPU and check screen-reader/keyboard access.
 5. Query winget, review the manifest, install/launch/update/remove an approved test package, and inspect a signed installer. Availability, size, dependencies and disk requirements depend on the publisher manifest.
 6. Confirm Credential Manager, Windows logon-ticket expiry, device permission prompts and actual Ollama, LM Studio and OpenRouter responses using the tester's own credentials.

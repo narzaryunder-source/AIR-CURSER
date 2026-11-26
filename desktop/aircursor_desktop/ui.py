@@ -9,10 +9,10 @@ import time
 import uuid
 
 import psutil
-from PySide6.QtCore import Qt, QPoint, QTimer, QUrl, Signal
+from PySide6.QtCore import QByteArray, Qt, QPoint, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QShortcut
 from PySide6.QtQuickWidgets import QQuickWidget
-from PySide6.QtWidgets import QApplication, QFileDialog, QInputDialog, QMainWindow, QMessageBox
+from PySide6.QtWidgets import QApplication, QFileDialog, QInputDialog, QLineEdit, QMainWindow, QMessageBox
 from .chrome import Panel, stylesheet
 from .control import Control, Preferences, PROFILES
 from .design import ICONS, MaterialProvider
@@ -43,7 +43,8 @@ class Desktop(QMainWindow):
         self.work = Workers(self)
         self.panels, self.opened, self.clipboard, self.messages = {}, {}, [], []
         self.locked = True
-        self.space = 1
+        self.space = 2 if self.s.get("restore", True) and self.s.get("active_space") == 2 else 1
+        self.saved_geometry = dict(self.s.get("panel_geometry", {})) if self.s.get("restore", True) else {}
         self.net_pending = False
         self.last_net = -1000
         self.addresses = []
@@ -106,6 +107,15 @@ class Desktop(QMainWindow):
                 wait = self.auth.wait_left()
                 self.shell.feedback.emit(f"Try again in {wait} seconds." if wait else "Incorrect password.")
                 return
+            if self.s.get("phone_factor"):
+                from .second_factor import verify
+                entered, ok = QInputDialog.getText(self, "Verify sign-in",
+                    "Enter the current six-digit code from your authenticator, or your saved recovery code.",
+                    QLineEdit.EchoMode.Password)
+                if not ok:
+                    return
+                if verify(self.s, entered) == "recovered":
+                    QMessageBox.information(self, "Account recovered", "Phone authentication was reset. Enroll again in Privacy and security.")
             if remember and os.name == "nt":
                 trust.remember(self.s)
         except (ValueError, OSError) as exc:
@@ -124,8 +134,10 @@ class Desktop(QMainWindow):
             if self.hot.phone_ssid:
                 self.hot.forget_phone()
             if os.name == "nt":
-                from .intelligence import credential
+                from .intelligence import credential, key_target
 
+                if self.s.get("custom_ai_url"):
+                    credential(key_target("Custom", self.s.get("custom_ai_url")), "")
                 credential("OpenRouter", "")
             self.s.clear()
             self.s.set(browser_profile=uuid.uuid4().hex)
@@ -146,6 +158,8 @@ class Desktop(QMainWindow):
         self.material.previews.clear()
         self.external = []
         self.shell.previews.clear()
+        self.shell.file_timer.stop()
+        self.shell.file_query, self.shell.file_results = None, []
         if "Air Browser" in self.panels:
             self.panels["Air Browser"].content.close_private()
         for panel in self.panels.values():
@@ -168,7 +182,10 @@ class Desktop(QMainWindow):
         self.profile(self.s.get("profile", "Balanced"), save=False)
         self.tick()
         if self.s.get("restore", True):
-            for name, space in dict(self.opened or self.s.get("session_panels", {})).items():
+            self.opened = {name: space for name, space in
+                           (self.opened or self.s.get("session_panels", {})).items()
+                           if name in self.names and space in (1, 2)}
+            for name, space in list(self.opened.items()):
                 if name in self.names and space == self.space:
                     self.open(name)
                 elif name in self.names:
@@ -188,7 +205,13 @@ class Desktop(QMainWindow):
         self.shell.appsChanged.emit()
 
     def persist(self):
-        self.s.set(session_panels=dict(self.opened))
+        for name, panel in self.panels.items():
+            if name in self.opened:
+                self.saved_geometry[name] = bytes(panel.saveGeometry().toHex()).decode("ascii")
+        state = dict(session_panels=dict(self.opened), active_space=self.space, panel_geometry=self.saved_geometry)
+        if "Files" in self.opened and "Files" in self.panels:
+            state["files_session"] = self.panels["Files"].content.session()
+        self.s.set(**state)
 
     def notify(self, message):
         if not self.locked:
@@ -237,6 +260,7 @@ class Desktop(QMainWindow):
         for name, space in list(self.opened.items()):
             if space == n:
                 self.open(name)
+        self.persist()
         self.shell.changed.emit()
 
     def list_dialog(self, title, values):
@@ -344,10 +368,12 @@ class Desktop(QMainWindow):
                 from .files import Files
 
                 content = Files(self.s)
+                if self.s.get("restore", True) and name in self.s.get("session_panels", {}):
+                    content.restore_session(self.s.get("files_session", {}))
             elif name == "Air Store":
                 from .store import Store
 
-                content = Store(lambda: self.show_overlay("spotlight"))
+                content = Store(lambda: setattr(self.shell, "index", None))
             elif name == "Air AI":
                 from .intelligence import Intelligence
 
@@ -363,6 +389,9 @@ class Desktop(QMainWindow):
             panel.move(
                 area.center() - panel.rect().center() + QPoint(9 * len(self.panels), 5 * len(self.panels))
             )
+            geometry = self.saved_geometry.get(name)
+            if isinstance(geometry, str) and len(geometry) < 4096 and geometry.isascii():
+                panel.restoreGeometry(QByteArray.fromHex(geometry.encode("ascii")))
         panel = self.panels[name]
         self.opened[name] = self.space
         if self.s.get("stage", False):

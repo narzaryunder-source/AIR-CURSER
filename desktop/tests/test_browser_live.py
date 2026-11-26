@@ -24,6 +24,18 @@ def test_normal_and_private_storage_download_and_recovery(tmp_path, monkeypatch)
 
     class Site(BaseHTTPRequestHandler):
         def do_GET(self):
+            if self.path == "/large.bin":
+                self.send_response(200)
+                self.send_header("Content-Disposition", 'attachment; filename="large.bin"')
+                self.send_header("Content-Length", str(4 * 1024 * 1024))
+                self.end_headers()
+                try:
+                    for _ in range(512):
+                        self.wfile.write(b"x" * 8192)
+                        time.sleep(0.008)
+                except (ConnectionError, OSError):
+                    pass
+                return
             data = (
                 b"AirCursor download test"
                 if self.path == "/sample.txt"
@@ -81,6 +93,37 @@ def test_normal_and_private_storage_download_and_recovery(tmp_path, monkeypatch)
         monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(dest), ""))
         normal.page().download(QUrl(origin + "/sample.txt"), "sample.txt")
         until(lambda: dest.is_file() and dest.read_bytes() == b"AirCursor download test")
+        opened = []
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QPushButton
+        monkeypatch.setattr("aircursor_desktop.browser.open_path", lambda owner, path: opened.append(path))
+
+        def open_download():
+            dialog = app.activeModalWidget()
+            action = next(b for b in dialog.findChildren(QPushButton) if b.text() == "Open file…")
+            action.click()
+            dialog.accept()
+
+        until(lambda: browser.downloads and browser.downloads[-1].isFinished())
+        QTimer.singleShot(0, open_download)
+        browser.show_downloads()
+        assert opened == [dest]
+        unfinished = tmp_path / "large.bin"
+        monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(unfinished), ""))
+        normal.page().download(QUrl(origin + "/large.bin"), "large.bin")
+        until(lambda: len(browser.downloads) == 2 and browser.downloads[-1].receivedBytes() > 0)
+
+        def cancel_download():
+            from PySide6.QtWidgets import QListWidget
+            dialog = app.activeModalWidget()
+            dialog.findChild(QListWidget).setCurrentRow(1)
+            next(b for b in dialog.findChildren(QPushButton) if b.text() == "Cancel download").click()
+            dialog.accept()
+
+        QTimer.singleShot(0, cancel_download)
+        browser.show_downloads()
+        until(lambda: browser.downloads[-1].state().name == "DownloadCancelled")
+        assert not unfinished.exists()
         browser.close()
         browser.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)

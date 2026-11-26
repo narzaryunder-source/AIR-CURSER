@@ -30,7 +30,8 @@ PROFILES = {
 }
 SYSTEM = {
     "Network & metering": "network-wifi",
-    "Keyboard & mouse": "mousetouchpad",
+    "Keyboard": "easeofaccess-keyboard",
+    "Mouse": "mousetouchpad",
     "Display": "display",
     "Sound": "sound",
     "Notifications": "notifications",
@@ -256,7 +257,8 @@ class Control(QTabWidget):
             self.remote.setText(
                 f"Pairing code   {host.code[:3]} {host.code[3:]}\n"
                 + "   ".join(f"{addr}:{host.port}" for addr in desk.addresses)
-                + f"\n{host.client_addr or 'Waiting for phone'} · {host.events} input events{age}"
+                + f"\n{host.client_addr or 'Waiting for phone'} · {host.events} input commands{age}"
+                + (f"\nWindows blocked input for {host.rejected} commands." if host.rejected else "")
             )
         else:
             self.remote.setText("Phone receiver is off.")
@@ -329,7 +331,12 @@ class Preferences(QWidget):
             content.setContentsMargins(0, 0, 0, 0)
             content.setSpacing(13)
             heading(content, name)
-            stack.addWidget(pane)
+            from PySide6.QtWidgets import QScrollArea
+            area = QScrollArea()
+            area.setFrameShape(area.Shape.NoFrame)
+            area.setWidgetResizable(True)
+            area.setWidget(pane)
+            stack.addWidget(area)
             return content
 
         appearance = section("Appearance")
@@ -370,6 +377,7 @@ class Preferences(QWidget):
             (privacy, "Remember visited pages for search", "browser_history_enabled", False),
             (privacy, "Keep recent clipboard text until lock", "clipboard", False),
             (workspace, "Restore open panels at sign-in", "restore", True),
+            (workspace, "Show desktop calendar widget", "calendar_widget", False),
             (workspace, "Show one panel at a time", "stage", False),
         ]:
             check = QCheckBox(title)
@@ -377,6 +385,9 @@ class Preferences(QWidget):
             check.toggled.connect(lambda state, k=key: desk.preference(k, state))
             pane.addWidget(check)
         privacy.addWidget(button("Change AirCursor password…", self.change_password))
+        self.factor = button("", self.configure_factor)
+        self.update_factor()
+        privacy.addWidget(self.factor)
         privacy.addWidget(button("Forget trusted Windows sign-in", lambda: desk.s.set(trusted_logon=None)))
         privacy.addStretch()
         workspace.addWidget(
@@ -387,7 +398,47 @@ class Preferences(QWidget):
         windows = section("Windows settings")
         for name, page in SYSTEM.items():
             windows.addWidget(button(name, lambda page=page: system_link(self, "ms-settings:" + page)))
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        windows.addWidget(button("AirCursor releases", lambda: QDesktopServices.openUrl(
+            QUrl("https://github.com/narzaryunder-source/AIR-CURSER/releases"))))
         windows.addStretch()
+
+    def update_factor(self):
+        enabled = bool(self.desk.s.get("phone_factor"))
+        self.factor.setText("Disable phone authenticator…" if enabled else "Set up phone authenticator…")
+        self.factor.setEnabled(os.name == "nt")
+
+    def configure_factor(self):
+        from . import second_factor
+        current, ok = QInputDialog.getText(self, "Phone authenticator", "Current workspace password", QLineEdit.EchoMode.Password)
+        if not ok:
+            return
+        if not self.desk.auth.check(current):
+            self.desk.notify("Incorrect password or a retry delay is active.")
+            return
+        enabled = self.desk.s.get("phone_factor")
+        try:
+            if enabled:
+                entered, ok = QInputDialog.getText(self, "Disable phone authenticator", "Current authenticator code or recovery code", QLineEdit.EchoMode.Password)
+                if not ok:
+                    return
+                second_factor.verify(self.desk.s, entered)
+                second_factor.disable(self.desk.s)
+            else:
+                secret, recovery = second_factor.enrollment()
+                message = ("In your phone’s authenticator choose manual entry. Use account AirCursor, "
+                    "time-based SHA-1, 6 digits, 30 seconds.\n\nSetup key: " + secret +
+                    "\n\nSave this single-use recovery code in a safe place: " + recovery +
+                    "\n\nEnter the code displayed by your phone to finish setup.")
+                entered, ok = QInputDialog.getText(self, "Set up phone authenticator", message, QLineEdit.EchoMode.Password)
+                if not ok:
+                    return
+                second_factor.enable(self.desk.s, secret, recovery, entered)
+            self.update_factor()
+            self.desk.notify("Phone authentication settings updated.")
+        except (ValueError, OSError) as exc:
+            self.desk.notify(str(exc))
 
     def change_password(self):
         values = []

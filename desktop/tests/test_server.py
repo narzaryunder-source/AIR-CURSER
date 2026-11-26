@@ -97,3 +97,21 @@ def test_lock_releases_held_input_and_rejects_new_session(monkeypatch):
         s.close()
     finally:
         host.stop()
+
+
+def test_blocked_windows_input_is_reported_separately(monkeypatch):
+    ctl = Ctl()
+    ctl.apply = lambda cmd: False
+    host = RemoteHost(ctl, port=0)
+    monkeypatch.setattr(host, "_advertise", lambda *_: None)
+    host.start()
+    try:
+        sock, stream, answer = connect(host, host.code)
+        assert answer.startswith("OK")
+        sock.sendall(b"C l\n")
+        assert wait(lambda: host.rejected == 1)
+        assert host.events == 0
+        stream.close()
+        sock.close()
+    finally:
+        host.stop()

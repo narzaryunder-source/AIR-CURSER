@@ -109,6 +109,13 @@ def test_real_widget_paths_lock_and_exit(tmp_path, monkeypatch):
     fields[-1].forceActiveFocus()
     QTest.keyClick(desktop.view, Qt.Key.Key_Return)
     assert not desktop.locked and desktop.auth.has_password
+    desktop.preference("calendar_widget", True)
+    calendar = desktop.view.rootObject().findChild(QObject, "desktopCalendar")
+    assert calendar and calendar.isVisible()
+    original_month = calendar.property("month")
+    calendar.shift(1)
+    assert calendar.property("month") != original_month
+    desktop.preference("calendar_widget", False)
     for name in ["Files", "Air Store", "Air AI", "Air Browser", "Settings", "Control Center"]:
         assert desktop.open(name) is not None
         assert desktop.panels[name].isVisible()

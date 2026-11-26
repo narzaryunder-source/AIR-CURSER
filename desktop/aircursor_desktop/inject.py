@@ -139,6 +139,7 @@ class Controller:
         self.scroll_end()
 
     def apply(self, cmd):
+        before = getattr(self.b, "rejected_inputs", 0)
         kind = cmd[0]
         if kind == "move":
             self.move(cmd[1], cmd[2])
@@ -158,6 +159,7 @@ class Controller:
             self.key_state(cmd[1], cmd[2])
         elif kind == "text":
             self.text(cmd[1])
+        return getattr(self.b, "rejected_inputs", 0) == before
 
 
 class WinBackend:
@@ -170,6 +172,7 @@ class WinBackend:
         user32 = ctypes.WinDLL("user32", use_last_error=True)
         self.user32 = user32
         self._geometry_until = 0.0
+        self.rejected_inputs = 0
         ULONG_PTR = ctypes.c_size_t
 
         class MOUSEINPUT(ctypes.Structure):
@@ -199,7 +202,8 @@ class WinBackend:
         user32.VkKeyScanW.restype = ctypes.c_short
 
     def _send(self, inp):
-        self.user32.SendInput(1, self.ct.byref(inp), self.ct.sizeof(inp))
+        if self.user32.SendInput(1, self.ct.byref(inp), self.ct.sizeof(inp)) != 1:
+            self.rejected_inputs += 1
 
     def screen(self):
         now = time.monotonic()
