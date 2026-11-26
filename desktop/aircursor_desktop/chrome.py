@@ -84,6 +84,11 @@ class Panel(QMainWindow):
         self.closing = False
         self.fade.finished.connect(self.finish_animation)
         if apply_backdrop(self, desk.shell.dark):
+            # DWM owns the native frame. A transparent Qt shadow source otherwise casts
+            # a second shadow from every child control onto the acrylic background.
+            body.setGraphicsEffect(None)
+            outer.setContentsMargins(0, 0, 0, 0)
+            content.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
             body.setProperty("systemGlass", True)
             self.title.setProperty("systemGlass", True)
             content.setObjectName("content")
@@ -176,6 +181,7 @@ def stylesheet(dark):
     return f"""
     QWidget {{font-family:'Segoe UI Variable Text','Segoe UI','DejaVu Sans';font-size:13px;color:{fg}}}
     QDialog,QMenu,QWidget#content,QFrame#windowBody {{background:{bg}}}
+    QWidget#content {{border-bottom-left-radius:15px;border-bottom-right-radius:15px}}
     QFrame#windowBody {{border:1px solid {line};border-radius:17px}}
     QFrame#titlebar {{background:{side};border-top-left-radius:16px;border-top-right-radius:16px;border-bottom:1px solid {line}}}
     QFrame#windowBody[systemGlass="true"] {{background:transparent}}

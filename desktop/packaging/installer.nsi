@@ -1,5 +1,8 @@
 Unicode True
-Target amd64-unicode
+; Upstream Windows NSIS may ship only the x86 bootstrap. Both stubs start the x64 runtime.
+!if /FileExists "${NSISDIR}/Stubs/zlib-amd64-unicode"
+  Target amd64-unicode
+!endif
 RequestExecutionLevel user
 SetCompressor /FINAL zlib
 Name "AirCursor for Windows"
@@ -17,6 +20,7 @@ ShowInstDetails show
 !insertmacro MUI_LANGUAGE "English"
 Section "Install"
   SetShellVarContext current
+  SetRegView 64
   SetOutPath "$INSTDIR"
   File /r "${STAGE}/*"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -28,6 +32,7 @@ Section "Install"
 SectionEnd
 Section "Uninstall"
   SetShellVarContext current
+  SetRegView 64
   Delete "$SMPROGRAMS\AirCursor.lnk"
   !include "${UNINSTALL_FILES}"
   Delete "$INSTDIR\Uninstall.exe"

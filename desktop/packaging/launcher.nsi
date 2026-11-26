@@ -1,5 +1,8 @@
 Unicode True
-Target amd64-unicode
+; Upstream Windows NSIS may ship only the x86 bootstrap. Both stubs start the x64 runtime.
+!if /FileExists "${NSISDIR}/Stubs/zlib-amd64-unicode"
+  Target amd64-unicode
+!endif
 RequestExecutionLevel user
 SilentInstall silent
 AutoCloseWindow true
