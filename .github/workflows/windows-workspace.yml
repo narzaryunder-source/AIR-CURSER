@@ -48,6 +48,14 @@ jobs:
           name: windows-rendering
           path: desktop/dist/windows-rendering/
           if-no-files-found: error
+      - name: Record Windows responsiveness and receiver measurements
+        shell: pwsh
+        run: |
+          foreach ($mode in @('startup', 'receiver', 'policy')) {
+            python desktop/tools/benchmark.py $mode | Tee-Object -FilePath desktop/dist/benchmarks.jsonl -Append
+            if ($LASTEXITCODE) { throw "Benchmark failed for $mode" }
+          }
+          python desktop/tools/benchmark.py policy --notification | Tee-Object -FilePath desktop/dist/benchmarks.jsonl -Append
       - name: Build the Windows x64 installer
         shell: pwsh
         run: |
@@ -77,3 +85,27 @@ jobs:
           path: |
             desktop/dist/SHA256SUMS.txt
             desktop/dist/aircursor-selftest.txt
+            desktop/dist/benchmarks.jsonl
+
+
+  compatibility:
+    name: Installed runtime on Windows Server 2022
+    needs: windows
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-windows
+          path: installer
+      - name: Exercise the bundled runtime on the older Windows graphics stack
+        shell: pwsh
+        run: |
+          $setup = Start-Process installer/AirCursor-Windows.exe -ArgumentList '/S' -PassThru -Wait
+          if ($setup.ExitCode) { throw "Installer returned $($setup.ExitCode)" }
+          $exe = "$env:LOCALAPPDATA\Programs\AirCursor\AirCursor.exe"
+          $app = Start-Process $exe -ArgumentList '--self-test' -PassThru
+          if (-not $app.WaitForExit(120000)) { throw 'Installed GUI timed out' }
+          $report = Get-Content "$env:TEMP\aircursor-selftest.txt"
+          $report
+          if ($app.ExitCode -ne 0 -or $report[-1] -ne 'OK') { throw 'Installed runtime check failed' }

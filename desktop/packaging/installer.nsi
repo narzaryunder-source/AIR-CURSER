@@ -22,7 +22,7 @@ Section "Install"
   SetShellVarContext current
   SetRegView 64
   SetOutPath "$INSTDIR"
-  File /r "${STAGE}/*"
+  File /r "${PAYLOAD_GLOB}"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateShortcut "$SMPROGRAMS\AirCursor.lnk" "$INSTDIR\AirCursor.exe"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AirCursor" "DisplayName" "AirCursor for Windows"

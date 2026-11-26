@@ -104,7 +104,7 @@ def main():
     uninstall.write_text("\n".join(lines) + "\n", encoding="utf-8-sig")
     exe = output / "AirCursor-Windows.exe"
     compile_nsis(
-        args.nsis, "installer.nsi", STAGE=stage, OUTPUT=exe, BRANDICON=ico, UNINSTALL_FILES=uninstall
+        args.nsis, "installer.nsi", PAYLOAD_GLOB=stage / "*", OUTPUT=exe, BRANDICON=ico, UNINSTALL_FILES=uninstall
     )
     (output / "SHA256SUMS.txt").write_text(f"{digest(exe)}  {exe.name}\n", encoding="ascii")
     print(exe, exe.stat().st_size, flush=True)

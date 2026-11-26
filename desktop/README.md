@@ -4,7 +4,7 @@ AirCursor opens a password-protected workspace alongside Windows Explorer. The D
 
 ## Install the development build
 
-1. Download `AirCursor-Windows.exe` and its accompanying `SHA256SUMS.txt` from the development build. On a successful branch Actions run, the installer is inside the **release-windows** artifact and the checksum is in **windows-verification**.
+1. Download `AirCursor-Windows.exe` and its accompanying `SHA256SUMS.txt` from the development build. Open [Windows development builds](https://github.com/narzaryunder-source/AIR-CURSER/actions/workflows/windows-workspace.yml?query=branch%3Awindows%2Faircursor-workspace) and select a successful run. On its Summary screen, the installer is inside the **release-windows** artifact and the checksum is in **windows-verification**.
 2. In PowerShell, run `Get-FileHash .\AirCursor-Windows.exe -Algorithm SHA256` and compare the digest. The preview installer is unsigned.
 3. Close any running AirCursor instance. Run the installer in your normal Windows account. It installs the x64 application under `%LOCALAPPDATA%\Programs\AirCursor` and adds **AirCursor** to Start. It includes Python, Qt Quick, Qt WebEngine, the Chromium helper, mDNS discovery and the Windows receiver. Allow approximately 800 MiB of free space for the installed application, plus space for browser data and downloads.
 4. Open AirCursor and enter your existing password, or create one on a new profile. Existing settings remain in `%APPDATA%\AirCursor\settings.json`. **Trust this Windows sign-in** allows re-entry for up to eight hours in the same Windows logon. Explicitly locking AirCursor revokes that ticket. Settings → Privacy also lets you revoke it.
