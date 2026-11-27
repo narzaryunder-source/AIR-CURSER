@@ -87,7 +87,12 @@ While-WorkspaceReserved 'Local\AirCursor.Windows.Runtime' {
 }
 
 Remove-Item $report -ErrorAction SilentlyContinue
-Assert-ExitCode $app '--self-test' 0
+try {
+    Assert-ExitCode $app '--self-test' 0
+} catch {
+    if (Test-Path $report) { Get-Content $report }
+    throw
+}
 $log = Get-Content $report
 $log
 if ($log[-1] -ne 'OK') { throw 'Installed application self-test failed.' }

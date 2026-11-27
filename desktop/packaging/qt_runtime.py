@@ -2,8 +2,9 @@
 
 from pathlib import PurePosixPath
 
-# The workspace and browser share Qt Essentials. Of Qt Addons, WebEngine needs
-# the positioning and web channel libraries. The NMEA position plugin uses Qt Serial Port.
+# The workspace and browser share Qt Essentials. WebEngine also loads the
+# QtWebChannel Python binding and uses the positioning and web channel libraries.
+# The NMEA position plugin uses Qt Serial Port.
 WEB_ADDON_MODULES = {"Positioning", "PositioningQuick", "SerialPort", "WebChannel", "WebChannelQuick"}
 DEVELOPMENT_DIRS = {"include", "typesystems", "metatypes", "scripts"}
 UNUSED_QML = {("QtQml", "StateMachine"), ("QtQuick", "Scene2D"),
@@ -35,8 +36,10 @@ def ship_qt_file(wheel, filename):
         return True
     if len(parts) == 2 and area.startswith("Qt6") and path.suffix == ".dll":
         return path.stem[3:] in WEB_ADDON_MODULES
+    if len(parts) == 2 and path.suffix == ".pyd":
+        return path.stem == "QtWebChannel"
     if len(parts) == 2:
-        return path.suffix not in {".dll", ".pyd"}
+        return path.suffix != ".dll"
     if area == "qml":
         return parts[2] in {"QtPositioning", "QtWebChannel"}
     if area == "plugins":

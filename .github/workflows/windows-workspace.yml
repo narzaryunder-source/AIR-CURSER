@@ -36,6 +36,21 @@ jobs:
         env:
           AIRCURSOR_APPROVE_LIFECYCLE: '1'
         run: python desktop/tools/verify_winget.py
+      - name: Build the Windows x64 installer
+        shell: pwsh
+        run: |
+          $nsis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          if (-not (Test-Path $nsis)) { choco install nsis --yes --no-progress }
+          python desktop/packaging/build.py --nsis $nsis
+      - name: Verify installer upgrade, uninstall and packaged GUI startup
+        shell: pwsh
+        run: |
+          $previous = Join-Path $env:RUNNER_TEMP 'AirCursor-Windows-previous.exe'
+          curl.exe --fail --location --retry 3 --output $previous https://github.com/narzaryunder-source/AIR-CURSER/releases/download/windows-v2.0.1/AirCursor-Windows.exe
+          if ($LASTEXITCODE -or (Get-FileHash $previous -Algorithm SHA256).Hash -ne 'ba4f0f4e8a6b49535419dbcc19b6cbe3c1a341f60ec7993aa26a89084fb3f712') { throw 'Previous installer verification failed' }
+          if ((Get-Item desktop/dist/AirCursor-Windows.exe).Length -ge (Get-Item $previous).Length) { throw 'The installer did not get smaller' }
+          ./desktop/tools/verify_install.ps1 -Installer desktop/dist/AirCursor-Windows.exe -PreviousInstaller $previous
+          Copy-Item "$env:TEMP/aircursor-selftest.txt" desktop/dist/aircursor-selftest.txt
       - name: Capture the Windows desktop and application windows
         shell: pwsh
         run: |
@@ -65,21 +80,6 @@ jobs:
             python desktop/tools/benchmark.py $mode --source "$env:RUNNER_TEMP/aircursor-baseline/desktop" | Tee-Object -FilePath desktop/dist/benchmarks-v2.0.0.jsonl -Append
             if ($LASTEXITCODE) { throw "Baseline benchmark failed for $mode" }
           }
-      - name: Build the Windows x64 installer
-        shell: pwsh
-        run: |
-          $nsis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
-          if (-not (Test-Path $nsis)) { choco install nsis --yes --no-progress }
-          python desktop/packaging/build.py --nsis $nsis
-      - name: Verify installer upgrade, uninstall and packaged GUI startup
-        shell: pwsh
-        run: |
-          $previous = Join-Path $env:RUNNER_TEMP 'AirCursor-Windows-previous.exe'
-          curl.exe --fail --location --retry 3 --output $previous https://github.com/narzaryunder-source/AIR-CURSER/releases/download/windows-v2.0.1/AirCursor-Windows.exe
-          if ($LASTEXITCODE -or (Get-FileHash $previous -Algorithm SHA256).Hash -ne 'ba4f0f4e8a6b49535419dbcc19b6cbe3c1a341f60ec7993aa26a89084fb3f712') { throw 'Previous installer verification failed' }
-          if ((Get-Item desktop/dist/AirCursor-Windows.exe).Length -ge (Get-Item $previous).Length) { throw 'The installer did not get smaller' }
-          ./desktop/tools/verify_install.ps1 -Installer desktop/dist/AirCursor-Windows.exe -PreviousInstaller $previous
-          Copy-Item "$env:TEMP/aircursor-selftest.txt" desktop/dist/aircursor-selftest.txt
       - uses: actions/upload-artifact@v4
         with:
           name: release-windows
