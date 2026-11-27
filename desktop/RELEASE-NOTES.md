@@ -1,3 +1,9 @@
+# Windows 2.1.0
+
+- The installer ships the Qt runtime that AirCursor uses. It removes Qt development tools, unused optional modules and Chromium debug resources. Upgrades remove those known obsolete files from the installed runtime and retain the user profile.
+- Air AI offers optional lightweight local chat through Ollama and Qwen3 0.6B. The model downloads with approval, runs offline after setup and unloads between requests. Shorter context and response budgets trade longer chat recall for lower resource use.
+- The Windows install test checks the actual size before and after the upgrade and verifies the packaged browser and PDF support. See the release verification archive for measured sizes.
+
 # Windows 2.0.0
 
 - Consolidates the five Windows previews into one release.

@@ -175,6 +175,88 @@ def test_compatible_api_requests_and_endpoint_scoped_credentials():
     assert key_target("Custom", base) != key_target("Custom", base + "/other")
 
 
+def test_lightweight_ollama_download_and_chat_from_air_ai(app, tmp_path, monkeypatch):
+    from PySide6.QtTest import QTest
+    from aircursor_desktop import intelligence as ai
+
+    calls = []
+    installed = []
+
+    class Ollama(BaseHTTPRequestHandler):
+        def do_GET(self):
+            calls.append((self.path, None))
+            self.reply(json.dumps({"models": installed}).encode())
+
+        def do_POST(self):
+            payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            calls.append((self.path, payload))
+            if self.path == "/api/pull":
+                installed.append({"name": ai.LIGHT_MODEL, "size": 523_000_000})
+                self.reply(b'{"status":"pulling"}\n{"status":"success"}\n')
+            else:
+                self.reply(b'{"done":true,"message":{"content":"Paris"},"eval_count":2,"prompt_eval_count":8}')
+
+        def reply(self, data):
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *_):
+            pass
+
+    def until(check):
+        for _ in range(250):
+            if check():
+                return
+            QTest.qWait(10)
+        assert check()
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), Ollama) as server:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        monkeypatch.setattr(ai, "OLLAMA_BASE", f"http://127.0.0.1:{server.server_port}")
+        settings = Settings(str(tmp_path / "ai.json"))
+        panel = ai.Intelligence(settings, lambda _: None, lambda: None)
+        panel.lightweight.setChecked(True)
+        until(lambda: calls and "download it once" in panel.status.text())
+        monkeypatch.setattr(ai, "confirm", lambda *_: False)
+        panel.download_lightweight()
+        assert not any(path == "/api/pull" for path, _ in calls)
+        monkeypatch.setattr(ai, "confirm", lambda *_: True)
+        panel.download_lightweight()
+        until(lambda: panel.model.currentText() == ai.LIGHT_MODEL)
+        panel.prompt.setPlainText("What is the capital of France?")
+        panel.send()
+        until(lambda: not panel.pending)
+        assert "Paris" in panel.log.toPlainText()
+        assert "10 tokens" in panel.status.text()
+        assert settings.get("ai_lightweight") is True
+        assert settings.get("conversations")[0]["messages"][-1]["content"] == "Paris"
+        panel.close()
+        server.shutdown()
+    assert [path for path, _ in calls] == ["/api/tags", "/api/pull", "/api/tags", "/api/chat"]
+    payload = calls[-1][1]
+    assert payload["model"] == ai.LIGHT_MODEL
+    assert payload["think"] is False and payload["keep_alive"] == 0
+    assert payload["options"]["num_ctx"] == 2048 and payload["options"]["num_predict"] == 256
+    assert 1 <= payload["options"]["num_thread"] <= 4
+
+
+def test_lightweight_chat_bounds_input_without_trimming_saved_history():
+    from aircursor_desktop.intelligence import LIGHT_PROMPT_BYTES, lightweight_messages, read_model_download
+    from io import BytesIO
+
+    user = {"role": "user", "content": "问"}
+    assistant = {"role": "assistant", "content": "答" * 1000}
+    history = [user, assistant] * 6 + [user]
+    assert lightweight_messages(history) == history[-5:]
+    assert len(history) == 13
+    with pytest.raises(ValueError, match="Shorten"):
+        lightweight_messages([{"role": "user", "content": "é" * LIGHT_PROMPT_BYTES}])
+    with pytest.raises(ValueError, match="without reporting success"):
+        read_model_download(BytesIO(b'{"status":"pulling"}\n'))
+
+
 def test_hotspot_requires_selected_interface_even_when_host_is_online(tmp_path, monkeypatch):
     settings = Settings(str(tmp_path / "s.json"))
     settings.set(phone_ssid="Phone")

@@ -4,13 +4,14 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import runpy
 import shutil
 import subprocess
 import sys
 from urllib.request import urlopen
 from zipfile import ZipFile
+from qt_runtime import ship_qt_file
 
 HERE = Path(__file__).resolve().parent
 DESKTOP = HERE.parent
@@ -28,6 +29,10 @@ def compile_nsis(nsis, script, **definitions):
     prefix = "/" if os.name == "nt" else "-"
     args = [nsis, prefix + "V2"] + [f"{prefix}D{key}={val}" for key, val in definitions.items()]
     subprocess.run(args + [str(HERE / script)], check=True)
+
+
+def nsis_path(path):
+    return '"$INSTDIR\\' + str(path).replace("/", "\\").replace("$", "$$") + '"'
 
 
 def main():
@@ -74,12 +79,21 @@ def main():
     rt.mkdir(parents=True)
     with ZipFile(embedded) as archive:
         archive.extractall(rt)
+    omitted = set()
+    omitted_bytes = 0
     for name, checksum in lock.items():
         file = wheels / name
         if digest(file) != checksum:
             raise ValueError(f"Unexpected wheel checksum: {name}")
         with ZipFile(file) as archive:
-            archive.extractall(rt)
+            for entry in archive.infolist():
+                if entry.is_dir():
+                    continue
+                if ship_qt_file(name, entry.filename):
+                    archive.extract(entry, rt)
+                else:
+                    omitted.add(PurePosixPath("runtime", entry.filename))
+                    omitted_bytes += entry.file_size
     # The embeddable interpreter ignores global site packages and PYTHONPATH.
     (rt / "python313._pth").write_text("python313.zip\n.\n", encoding="ascii")
     shutil.copytree(
@@ -100,11 +114,18 @@ def main():
     compile_nsis(args.nsis, "launcher.nsi", OUTPUT=stage / "AirCursor.exe", BRANDICON=ico)
     files = sorted(stage.rglob("*"), key=lambda p: len(p.parts), reverse=True)
     uninstall = stage.parent / "uninstall-files.nsh"
-    lines = []
-    for file in files:
-        relative = str(file.relative_to(stage)).replace("/", "\\").replace("$", "$$")
-        lines.append(("RMDir" if file.is_dir() else "Delete") + ' "$INSTDIR\\' + relative + '"')
+    lines = [f'{"RMDir" if file.is_dir() else "Delete"} {nsis_path(file.relative_to(stage))}' for file in files]
     uninstall.write_text("\n".join(lines) + "\n", encoding="utf-8-sig")
+    retired = stage.parent / "retired-runtime.nsh"
+    old_only = sorted(path for path in omitted if not (stage / path).exists())
+    old_dirs = {parent for path in old_only for parent in path.parents if parent.parts}
+    retire_lines = [f"Delete {nsis_path(path)}" for path in old_only]
+    retire_lines += [
+        f"RMDir {nsis_path(path)}"
+        for path in sorted(old_dirs, key=lambda p: (-len(p.parts), str(p)))
+        if not (stage / path).exists()
+    ]
+    retired.write_text("\n".join(retire_lines) + "\n", encoding="utf-8-sig")
     exe = output / "AirCursor-Windows.exe"
     version = runpy.run_path(str(DESKTOP / "aircursor_desktop/__init__.py"))["VERSION"]
     compile_nsis(
@@ -114,9 +135,17 @@ def main():
         OUTPUT=exe,
         BRANDICON=ico,
         UNINSTALL_FILES=uninstall,
+        RETIRED_RUNTIME=retired,
         AIRCURSOR_VERSION=version,
     )
     (output / "SHA256SUMS.txt").write_text(f"{digest(exe)}  {exe.name}\n", encoding="ascii")
+    sizes = {
+        "installer_bytes": exe.stat().st_size,
+        "payload_bytes": sum(file.stat().st_size for file in files if file.is_file()),
+        "retired_files": len(old_only),
+        "skipped_wheel_bytes": omitted_bytes,
+    }
+    (output / "package-size.json").write_text(json.dumps(sizes, indent=2) + "\n", encoding="ascii")
     print(exe, exe.stat().st_size, flush=True)
 
 

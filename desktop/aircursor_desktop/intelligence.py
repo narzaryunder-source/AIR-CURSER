@@ -38,6 +38,11 @@ ENDPOINTS = {
     "LM Studio": "http://127.0.0.1:1234/v1",
     "OpenRouter": "https://openrouter.ai/api/v1",
 }
+OLLAMA_BASE = ENDPOINTS["Ollama"].removesuffix("/v1")
+LIGHT_MODEL = "qwen3:0.6b"
+LIGHT_CONTEXT = 2048
+LIGHT_OUTPUT = 256
+LIGHT_PROMPT_BYTES = 8192
 
 
 class Credential(ct.Structure):
@@ -117,16 +122,27 @@ def key_target(provider, url):
     return ("Custom-" + hashlib.sha256(url.encode()).hexdigest()) if provider == "Custom" else provider
 
 
+def read_json_response(response):
+    data = response.read(8 * 1024 * 1024 + 1)
+    if len(data) > 8 * 1024 * 1024:
+        raise ValueError("Provider response exceeds 8 MiB.")
+    return json.loads(data)
+
+
 def api_call(provider, path, payload=None, custom=None):
     url = endpoint_url(custom) if provider == "Custom" else ENDPOINTS[provider]
-    headers = {"Content-Type": "application/json"}
+    headers = {}
     if os.name == "nt" and provider in ("OpenRouter", "Custom"):
         key = credential(key_target(provider, url))
         if key:
             headers["Authorization"] = "Bearer " + key
+    return api_request(provider, url, path, payload, headers, read_json_response)
+
+
+def api_request(provider, url, path, payload, headers, read_response):
     req = request.Request(
         url + path,
-        headers=headers,
+        headers={"Content-Type": "application/json", **headers},
         data=json.dumps(payload).encode() if payload is not None else None,
     )
     handlers = [NoRedirect()]
@@ -134,12 +150,59 @@ def api_call(provider, path, payload=None, custom=None):
         handlers.append(request.ProxyHandler({}))
     try:
         with request.build_opener(*handlers).open(req, timeout=90 if payload else 8) as response:
-            data = response.read(8 * 1024 * 1024 + 1)
-            if len(data) > 8 * 1024 * 1024:
-                raise ValueError("Provider response exceeds 8 MiB.")
-            return json.loads(data)
+            return read_response(response)
     except error.HTTPError as exc:
         raise ValueError(f"{provider} returned HTTP {exc.code}: {exc.reason}") from exc
+
+
+def ollama_call(path, payload=None, *, read_response=read_json_response):
+    return api_request("Ollama", OLLAMA_BASE, path, payload, {}, read_response)
+
+
+def read_model_download(response):
+    while line := response.readline(65537):
+        if len(line) > 65536:
+            raise ValueError("Ollama returned an oversized download status.")
+        update = json.loads(line)
+        if update.get("error"):
+            raise ValueError(update["error"])
+        if update.get("status") == "success":
+            return
+    raise ValueError("Ollama ended the download without reporting success.")
+
+
+def lightweight_messages(messages):
+    start = len(messages) - 1
+    used = len(messages[start]["content"].encode("utf-8"))
+    if used > LIGHT_PROMPT_BYTES:
+        raise ValueError("Shorten your message or turn off lightweight mode for a longer prompt.")
+    # Keep complete recent turns. The server applies the final token limit.
+    for index in range(start - 2, max(-1, start - 9), -2):
+        turn = messages[index:index + 2]
+        used += sum(len(message["content"].encode("utf-8")) for message in turn)
+        if used > LIGHT_PROMPT_BYTES:
+            break
+        start = index
+    return messages[start:]
+
+
+def lightweight_chat(messages):
+    result = ollama_call("/api/chat", {
+        "model": LIGHT_MODEL,
+        "messages": messages,
+        "stream": False,
+        "think": False,
+        "keep_alive": 0,
+        "options": {
+            "num_ctx": LIGHT_CONTEXT,
+            "num_predict": LIGHT_OUTPUT,
+            "num_thread": max(1, min(4, (os.cpu_count() or 1) // 2)),
+        },
+    })
+    if result.get("done") is not True:
+        raise ValueError("Ollama returned an incomplete response.")
+    counts = [result.get(key) for key in ("eval_count", "prompt_eval_count")]
+    return result["message"]["content"], sum(n for n in counts if isinstance(n, int)) or "Unknown"
 
 
 def free_model(model):
@@ -156,6 +219,7 @@ class Intelligence(QWidget):
         self.s, self.work = settings, Workers(self)
         self.models = []
         self.pending = False
+        self.downloading = False
         left, self.web, layout = sidebar(self, "Official services", 173)
         for name, url in SITES.items():
             item(self.web, name, url)
@@ -184,6 +248,11 @@ class Intelligence(QWidget):
         self.free.toggled.connect(self.filter)
         self.provider.currentTextChanged.connect(self.changed)
         self.model.currentIndexChanged.connect(self.pricing)
+        self.lightweight = QCheckBox("Lightweight local chat")
+        self.lightweight.setChecked(self.s.get("ai_lightweight", False) is True)
+        self.lightweight.setToolTip("Use Qwen3 0.6B with short replies and release model memory after each reply.")
+        self.get_model = button("Get Qwen3 0.6B…", self.download_lightweight)
+        row(layout, self.lightweight, self.get_model).addStretch()
         self.transcript = QStackedWidget()
         layout.addWidget(self.transcript, 1)
         welcome = QWidget()
@@ -223,6 +292,7 @@ class Intelligence(QWidget):
         send.setObjectName("primary")
         send.setFixedWidth(77)
         row(layout, self.status, send)
+        self.lightweight.toggled.connect(self.set_lightweight)
         self.sessions.currentIndexChanged.connect(self.render)
         if not self.conversations:
             self.new()
@@ -231,15 +301,55 @@ class Intelligence(QWidget):
 
     def changed(self, *_):
         self.models = []
-        self.filter()
-        remote = self.provider.currentText() == "OpenRouter" or (
-            self.provider.currentText() == "Custom" and not local_url(self.s.get("custom_ai_url"))
+        provider = self.provider.currentText()
+        self.lightweight.setVisible(provider == "Ollama")
+        self.free.setVisible(provider == "OpenRouter")
+        remote = provider == "OpenRouter" or (
+            provider == "Custom" and not local_url(self.s.get("custom_ai_url"))
         )
-        self.free.setVisible(self.provider.currentText() == "OpenRouter")
         self.status.setText(
             "Provider charges may apply."
             if remote
             else "Start the local model server, then discover models."
+        )
+        self.filter()
+
+    def lightweight_enabled(self):
+        return self.provider.currentText() == "Ollama" and self.lightweight.isChecked()
+
+    def set_lightweight(self, enabled):
+        self.s.set(ai_lightweight=enabled)
+        if enabled:
+            self.filter()
+            if not self.models and not self.downloading:
+                self.discover()
+        else:
+            self.status.setText("Find local models or select a model you've already discovered.")
+            self.filter()
+
+    def download_lightweight(self):
+        if self.pending or self.downloading or not self.lightweight_enabled():
+            return
+        if not confirm(self, "Download Qwen3 0.6B", "Let the local Ollama app download about 523 MB?"):
+            return
+        self.downloading = True
+        self.get_model.setEnabled(False)
+        self.status.setText("Ollama is downloading Qwen3 0.6B…")
+
+        def finished(message=None):
+            self.downloading = False
+            self.get_model.setEnabled(True)
+            if self.provider.currentText() == "Ollama":
+                if message:
+                    self.status.setText(f"{message} Start Ollama or install it from Air Store if needed.")
+                else:
+                    self.discover()
+
+        self.work.run(
+            lambda: ollama_call("/api/pull", {"model": LIGHT_MODEL, "stream": True},
+                                read_response=read_model_download),
+            finished,
+            finished,
         )
 
     def discover(self):
@@ -255,29 +365,36 @@ class Intelligence(QWidget):
                     return
                 self.models = [m for m in raw if isinstance(m, dict) and isinstance(m.get("id"), str)]
                 self.filter()
-                if not self.model.count():
+                if not self.model.count() and not self.lightweight_enabled():
                     self.status.setText("No matching models were returned.")
 
         def fetch():
-            result = api_call(provider, "/models", custom=endpoint)
-            if provider == "Ollama" and isinstance(result, dict) and isinstance(result.get("data"), list):
-                try:
-                    inventory = api_call("Custom", "/api/tags", custom="http://127.0.0.1:11434")
-                    sizes = {entry["name"]: entry["size"] for entry in inventory.get("models", [])}
-                    for model in result["data"]:
-                        if isinstance(model, dict):
-                            model["disk_bytes"] = sizes.get(model.get("id"))
-                except (OSError, ValueError, TypeError, KeyError):
-                    pass
-            return result
+            if provider == "Ollama":
+                inventory = ollama_call("/api/tags")
+                return {"data": [
+                    {"id": model.get("name"), "disk_bytes": model.get("size")}
+                    for model in inventory.get("models", []) if isinstance(model, dict)
+                ]}
+            return api_call(provider, "/models", custom=endpoint)
 
-        self.work.run(fetch, done, self.status.setText)
+        def failed(message):
+            if self.provider.currentText() == provider and self.s.get("custom_ai_url") == endpoint:
+                self.status.setText(message)
+
+        self.work.run(fetch, done, failed)
 
     def filter(self, *_):
         self.model.clear()
+        lightweight = self.lightweight_enabled()
         for m in self.models:
+            if lightweight and m["id"] != LIGHT_MODEL:
+                continue
             if self.provider.currentText() != "OpenRouter" or not self.free.isChecked() or free_model(m):
                 self.model.addItem(m["id"], m)
+        self.get_model.setVisible(lightweight and not self.model.count())
+        self.get_model.setEnabled(not self.downloading)
+        if lightweight and not self.model.count() and not self.downloading:
+            self.status.setText("Find Qwen3 0.6B in Ollama or download it once for offline use.")
         if self.model.count() == 1:
             self.model.setCurrentIndex(0)
         self.pricing()
@@ -296,7 +413,8 @@ class Intelligence(QWidget):
             ram = psutil.virtual_memory()
             size = m.get("disk_bytes")
             size_text = f" · {size / 2**30:.1f} GiB model on disk" if isinstance(size, int) else ""
-            self.status.setText(f"Local model · {ram.available / 2**30:.1f} GiB RAM available{size_text}")
+            mode = "Lightweight · unloads after reply" if self.lightweight_enabled() else "Local model"
+            self.status.setText(f"{mode} · {ram.available / 2**30:.1f} GiB RAM available{size_text}")
             return
         self.status.setText(
             f"USD per token · input {p.get('prompt', 'unknown')} · output {p.get('completion', 'unknown')}"
@@ -402,6 +520,12 @@ class Intelligence(QWidget):
         conv = self.conversations[i]
         provider = self.provider.currentText()
         messages = conv["messages"] + [{"role": "user", "content": text}]
+        lightweight = self.lightweight_enabled()
+        try:
+            sent = lightweight_messages(messages) if lightweight else messages
+        except ValueError as exc:
+            self.status.setText(str(exc))
+            return
         endpoint = self.s.get("custom_ai_url")
         recipient = endpoint if provider == "Custom" else ENDPOINTS[provider]
         if (
@@ -417,14 +541,8 @@ class Intelligence(QWidget):
         self.status.setText("Waiting for " + model + "…")
 
         def done(result):
+            answer, count = result
             self.pending = False
-            try:
-                answer = result["choices"][0]["message"]["content"]
-                if not isinstance(answer, str):
-                    raise ValueError("Provider returned no text.")
-            except (ValueError, KeyError, IndexError, TypeError) as exc:
-                failed(str(exc))
-                return
             conv.update(
                 endpoint=recipient,
                 title=conv["title"] if conv.get("named") else messages[0]["content"][:45],
@@ -433,9 +551,7 @@ class Intelligence(QWidget):
             self.sessions.setItemText(i, conv["title"])
             self.s.set(conversations=self.conversations)
             self.render()
-            self.status.setText(
-                f"{model} · {result.get('usage', {}).get('total_tokens', 'Unknown')} tokens"
-            )
+            self.status.setText(f"{model} · {count} tokens")
 
         def failed(message):
             self.pending = False
@@ -443,10 +559,15 @@ class Intelligence(QWidget):
                 self.prompt.setPlainText(text)
             self.status.setText(message)
 
-        self.work.run(
-            lambda: api_call(
-                provider, "/chat/completions", {"model": model, "messages": messages}, custom=endpoint
-            ),
-            done,
-            failed,
-        )
+        def fetch():
+            if lightweight:
+                answer, count = lightweight_chat(sent)
+            else:
+                result = api_call(provider, "/chat/completions", {"model": model, "messages": sent}, custom=endpoint)
+                answer = result["choices"][0]["message"]["content"]
+                count = (result.get("usage") or {}).get("total_tokens", "Unknown")
+            if not isinstance(answer, str) or not answer.strip():
+                raise ValueError("Provider returned no text.")
+            return answer, count
+
+        self.work.run(fetch, done, failed)

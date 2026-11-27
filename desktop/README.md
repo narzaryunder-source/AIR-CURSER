@@ -6,7 +6,7 @@ AirCursor opens a workspace alongside Windows Explorer in your signed-in Windows
 
 1. Download `AirCursor-Windows.exe` and `SHA256SUMS.txt` from the [latest stable release](https://github.com/narzaryunder-source/AIR-CURSER/releases/latest).
 2. In PowerShell, run `Get-FileHash .\AirCursor-Windows.exe -Algorithm SHA256` and compare the digest. The installer is unsigned.
-3. Close any running AirCursor instance. Run the installer in your normal Windows account. It installs the x64 application under `%LOCALAPPDATA%\Programs\AirCursor` and adds **AirCursor** to Start. It includes Python, Qt Quick, Qt WebEngine, the Chromium helper, mDNS discovery and the Windows receiver. Allow approximately 800 MiB of free space for the installed application, plus space for browser data and downloads.
+3. Close any running AirCursor instance. Run the installer in your normal Windows account. It installs the x64 application under `%LOCALAPPDATA%\Programs\AirCursor` and adds **AirCursor** to Start. It includes Python, Qt Quick, Qt WebEngine, the Chromium helper, mDNS discovery and the Windows receiver. Allow approximately 600 MiB of free space for the installed application, plus space for browser data, downloads and any optional AI runtime and model.
 4. Open **AirCursor** from Start to go directly to the workspace. Upgrades keep the settings in `%APPDATA%\AirCursor\settings.json`.
 5. Remove the application through Windows Settings → Apps. Uninstallation removes the installed program files. Your workspace data and saved Windows Wi-Fi profile remain available for reinstallation.
 
@@ -52,6 +52,16 @@ Select the PC in the phone app or enter the IPv4 address and port shown in **Con
 - **Air Store** uses Microsoft App Installer's `winget.exe` and the winget community source. Open a category, select a package and request **Package details**. Search accepts other names or package IDs. Install, update and uninstall require explicit approval. Source output supplies available metadata and exit status. Some publishers or architectures may have no matching manifest. The curated catalog does not guarantee availability. **Open downloaded installer** checks Windows Authenticode status and computes SHA-256 before offering to launch a local EXE/MSI.
 - **Air AI** opens the official ChatGPT, Claude, Gemini and Perplexity sites in Air Browser. For API chat, start Ollama on port 11434 or LM Studio on 1234 and choose **Find models**. OpenRouter uses its documented HTTPS API and an optional key saved in Windows Credential Manager. Zero-token-price filtering uses returned prompt and completion prices. Saved conversations are ordinary user-profile data. Model-server memory and GPU requirements vary by model and context size. **Open terminal** starts the user's Windows command prompt for installed CLIs.
 
+### Run a small AI task offline
+
+1. Install and start **Ollama** from Air Store or from the official Windows download. [Ollama for Windows](https://ollama.com/download/windows)
+2. Open **Air AI**, select **Ollama**, and enable **Lightweight local chat**. Choose **Get Qwen3 0.6B…** and approve the one-time download of about 523 MB, or use **Find models** if it is installed. [Qwen3 0.6B](https://ollama.com/library/qwen3:0.6b)
+3. Ask it to turn a short note into a checklist, for example. After setup, the Ollama app handles these requests locally and can run offline.
+
+The lightweight mode sends up to four previous turns with the new message, with a combined 8 KiB ceiling for message text. It requests a 2,048-token context, up to 256 output tokens and up to four CPU inference threads. Ollama handles final context fitting and unloads the model after replying. That frees model memory between tasks and adds a reload delay to the next message. Full conversations remain available in Air AI, and other models and providers are available with the setting off. The installer and model ship separately. [Ollama chat parameters](https://docs.ollama.com/api/chat)
+
+This design uses the small-model and bounded-memory ideas from the supplied guide to Alexey Fateev’s `llm.asm`. AirCursor uses native Windows Ollama for inference and retains its regular Windows workspace. [llm.asm](https://github.com/alesha-pro/llm.asm)
+
 ## Run, test or reproduce the installer
 
 Use a supported x64 Windows 10/11 installation with the Windows ICU components available to Qt. Python 3.13 is used for the packaged runtime.
@@ -68,7 +78,7 @@ Get-Content "$env:TEMP\aircursor-selftest.txt"
 .\.venv\Scripts\python packaging/build.py --nsis "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
 ```
 
-Use NSIS 3.11 or newer with the amd64 Unicode target. The builder verifies the embeddable Python ZIP and every Windows wheel against recorded SHA-256 digests. It produces `dist/AirCursor-Windows.exe` and `dist/SHA256SUMS.txt`. To test the installed build, run `& "$env:LOCALAPPDATA\Programs\AirCursor\AirCursor.exe" --self-test` and check the log. The test uses temporary settings and a loopback web fixture.
+Use NSIS 3.11 or newer with the amd64 Unicode target. The builder verifies the embeddable Python ZIP and every Windows wheel against recorded SHA-256 digests. It produces `dist/AirCursor-Windows.exe`, `dist/SHA256SUMS.txt` and `dist/package-size.json`. To test the installed build, run `& "$env:LOCALAPPDATA\Programs\AirCursor\AirCursor.exe" --self-test` and check the log. The test uses temporary settings, a generated PDF and a loopback web fixture.
 
 The branch workflow builds on a Windows Server runner, installs the generated file silently, and runs the installed self-test before uploading the artifact. Screenshots can be reproduced on a dedicated graphical desktop with `python tools/capture.py --output report`. This captures the entire display. Close unrelated applications first.
 

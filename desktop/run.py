@@ -18,6 +18,8 @@ def self_test():
         import psutil
         import zeroconf
         from PySide6.QtCore import QEventLoop, QTimer, QUrl
+        from PySide6.QtGui import QPainter, QPdfWriter
+        from PySide6.QtPdf import QPdfDocument
         from PySide6.QtWidgets import QApplication
         from aircursor_desktop import VERSION, inject
         from aircursor_desktop.browser import Browser
@@ -62,6 +64,16 @@ def self_test():
                 window.handle_session_message(session.SESSION_CHANGE, 8)
                 assert not window.locked
                 lines.append("Windows session pause and resume verified; AirCursor opened without an app password.")
+            sample = str(Path(folder) / "workspace.pdf")
+            writer = QPdfWriter(sample)
+            painter = QPainter(writer)
+            painter.drawText(40, 40, "AirCursor PDF check")
+            painter.end()
+            del writer
+            pdf = QPdfDocument(window)
+            assert pdf.load(sample) == QPdfDocument.Error.None_ and pdf.pageCount() == 1
+            pdf.close()
+            lines.append("Installed Qt PDF support verified.")
             tabs = [f"{url}?tab={index}" for index in range(15)]
             window.s.set(restore=True, browser_tabs=tabs, browser_active=6)
             browser = Browser(window.s)

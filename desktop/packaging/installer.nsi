@@ -40,6 +40,7 @@ Section "Install"
   SetRegView 64
   SetOutPath "$INSTDIR"
   File /r "${PAYLOAD_GLOB}"
+  !include "${RETIRED_RUNTIME}"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateShortcut "$SMPROGRAMS\AirCursor.lnk" "$INSTDIR\AirCursor.exe"
   CreateShortcut "$SMPROGRAMS\AirCursor (Safe Mode).lnk" "$INSTDIR\AirCursor.exe" "--safe-mode"
