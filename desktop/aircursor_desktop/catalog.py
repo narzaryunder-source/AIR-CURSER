@@ -28,7 +28,7 @@ CATALOG = {
         "Xonotic": "Xonotic.Xonotic",
     },
     "Video Editing": {
-        "DaVinci Resolve": "BlackmagicDesign.DaVinciResolve",
+        "OpenShot Video Editor": "OpenShot.OpenShot",
         "CapCut": "ByteDance.CapCut",
         "OBS Studio": "OBSProject.OBSStudio",
         "Kdenlive": "KDE.Kdenlive",
