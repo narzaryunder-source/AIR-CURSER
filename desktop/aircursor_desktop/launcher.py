@@ -37,17 +37,12 @@ def calculate(text):
 
 
 def shortcuts():
+    """Read classic Start menu and Recent links independently of Windows app registration."""
     items = []
     for base in ("APPDATA", "PROGRAMDATA"):
         if os.environ.get(base):
             root = Path(os.environ[base]) / "Microsoft/Windows/Start Menu/Programs"
             items.extend((p.stem, str(p)) for p in root.rglob("*.lnk"))
-    from .applications import registered_apps
-    import subprocess
-    try:
-        items.extend(registered_apps())
-    except (OSError, ValueError, subprocess.SubprocessError):
-        pass  # Keep classic Start menu shortcuts when the registered app query is unavailable.
     if os.environ.get("APPDATA"):
         recent = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Recent"
         items.extend((p.stem, str(p)) for p in recent.glob("*.lnk"))

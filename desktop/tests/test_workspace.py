@@ -301,6 +301,35 @@ def test_unreadable_saved_layout_does_not_prevent_unlock(tmp_path, monkeypatch):
     app.processEvents()
 
 
+def test_spotlight_shows_shortcuts_while_start_catalog_is_pending(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    from aircursor_desktop import surface
+    from aircursor_desktop.ui import Desktop
+
+    if os.name != "nt" and not os.getenv("DISPLAY"):
+        monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    app = QApplication.instance() or QApplication([])
+    settings = Settings(str(tmp_path / "spotlight.json"))
+    settings.set(auto_switch=False, restore=False)
+    desk = Desktop(settings)
+    pending = {}
+    desk.work.run = lambda task, done, failed: pending.update({task: (done, failed)})
+    try:
+        desk.show()
+        desk.shell.search("AirCursor test")
+        assert surface.shortcuts in pending and surface.registered_apps in pending
+        eager, _ = pending.pop(surface.shortcuts)
+        shortcut = str(tmp_path / "AirCursor test.lnk")
+        eager([("AirCursor test", shortcut)])
+        assert any(result["target"] == shortcut for result in desk.shell.results)
+        later, _ = pending.pop(surface.registered_apps)
+        later([("AirCursor test app", "startapp:AirCursor.Test")])
+        assert {shortcut, "startapp:AirCursor.Test"} <= {result["target"] for result in desk.shell.results}
+    finally:
+        desk.close()
+        app.processEvents()
+
+
 def test_a_failed_save_does_not_interrupt_workspace_shutdown(tmp_path, monkeypatch):
     from PySide6.QtWidgets import QApplication
     from aircursor_desktop.ui import Desktop

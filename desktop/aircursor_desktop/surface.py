@@ -8,6 +8,7 @@ from urllib.parse import quote
 
 from PySide6.QtCore import QObject, Property, QUrl, Qt, Signal, Slot, QPoint, QTimer
 from PySide6.QtWidgets import QApplication, QMenu
+from .applications import registered_apps
 from .design import ICONS
 from .launcher import calculate, indexed_files, shortcuts
 from .widgets import asset, open_path, system_link
@@ -263,6 +264,18 @@ class Shell(QObject):
 
         self.d.work.run(lambda: indexed_files(query), received, lambda error: received([]))
 
+    def index_apps(self):
+        index = self.index = []
+
+        def ready(items):
+            if self.index is index:
+                index.extend(items)
+                index.sort(key=lambda pair: pair[0].casefold())
+                self.search(self.query)
+
+        self.d.work.run(shortcuts, ready, self.feedback.emit)
+        self.d.work.run(registered_apps, ready, lambda _: None)
+
     @Slot(str)
     def search(self, query):
         if self.locked:
@@ -271,13 +284,7 @@ class Shell(QObject):
             return
         self.query = query
         if self.index is None:
-            self.index = []
-
-            def ready(data):
-                self.index = data
-                self.search(self.query)
-
-            self.d.work.run(shortcuts, ready, self.feedback.emit)
+            self.index_apps()
         q = query.casefold().strip()
         results = []
 
