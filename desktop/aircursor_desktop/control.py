@@ -378,7 +378,16 @@ class Preferences(QWidget):
         self.factor = button("", self.configure_factor)
         self.update_factor()
         privacy.addWidget(self.factor)
-        privacy.addWidget(button("Forget trusted Windows sign-in", lambda: desk.s.set(trusted_logon=None)))
+        from .session import IDLE_MINUTES
+
+        idle = QComboBox()
+        for minutes in IDLE_MINUTES:
+            idle.addItem(f"{minutes} min", minutes)
+        idle.setCurrentIndex(IDLE_MINUTES.index(desk.idle_timeout() // 60))
+        idle.currentIndexChanged.connect(lambda: desk.s.set(idle_lock_minutes=idle.currentData()))
+        idle.setEnabled(os.name == "nt")
+        row(privacy, label("Lock after Windows inactivity"), idle)
+        privacy.addWidget(button("Forget trusted Windows sign-in", self.revoke_trust))
         privacy.addStretch()
         workspace.addWidget(
             button("Open AirBoost profiles", lambda: desk.open("Control Center").setCurrentIndex(2))
@@ -396,37 +405,61 @@ class Preferences(QWidget):
 
     def update_factor(self):
         enabled = bool(self.desk.s.get("phone_factor"))
-        self.factor.setText("Disable phone authenticator…" if enabled else "Set up phone authenticator…")
+        self.factor.setText("Manage phone authenticator…" if enabled else "Set up phone authenticator…")
         self.factor.setEnabled(os.name == "nt")
+
+    def revoke_trust(self):
+        try:
+            self.desk.s.set(trusted_logon=None)
+            self.desk.notify("Trusted Windows sign-in removed.")
+        except OSError as exc:
+            self.desk.notify(str(exc))
 
     def configure_factor(self):
         from . import second_factor
-        current, ok = QInputDialog.getText(self, "Phone authenticator", "Current workspace password", QLineEdit.EchoMode.Password)
-        if not ok:
+        from .auth_dialogs import enroll, show_recovery
+
+        current, ok = QInputDialog.getText(self, "Phone authenticator", "Current master password", QLineEdit.EchoMode.Password)
+        if not ok or self.desk.locked:
             return
-        if not self.desk.auth.check(current):
-            self.desk.notify("Incorrect password or a retry delay is active.")
-            return
-        enabled = self.desk.s.get("phone_factor")
+        settings = self.desk.s
         try:
-            if enabled:
-                entered, ok = QInputDialog.getText(self, "Disable phone authenticator", "Current authenticator code or recovery code", QLineEdit.EchoMode.Password)
-                if not ok:
+            if not self.desk.auth.check(current):
+                self.desk.notify("Incorrect password or a retry delay is active.")
+                return
+            existing = settings.get("phone_factor")
+            if existing:
+                options = ["Replace authenticator", "Generate new recovery codes", "Disable authenticator"]
+                action, ok = QInputDialog.getItem(self, "Manage authenticator", "Action", options, editable=False)
+                if not ok or self.desk.locked:
                     return
-                second_factor.verify(self.desk.s, entered)
-                second_factor.disable(self.desk.s)
-            else:
-                secret, recovery = second_factor.enrollment()
-                message = ("In your phone’s authenticator choose manual entry. Use account AirCursor, "
-                    "time-based SHA-1, 6 digits, 30 seconds.\n\nSetup key: " + secret +
-                    "\n\nSave this single-use recovery code in a safe place: " + recovery +
-                    "\n\nEnter the code displayed by your phone to finish setup.")
-                entered, ok = QInputDialog.getText(self, "Set up phone authenticator", message, QLineEdit.EchoMode.Password)
-                if not ok:
+                entered, ok = QInputDialog.getText(self, "Confirm authenticator", "Current authenticator code or recovery code", QLineEdit.EchoMode.Password)
+                if not ok or self.desk.locked:
                     return
-                second_factor.enable(self.desk.s, secret, recovery, entered)
+                result = second_factor.verify(settings, entered)
+                self.update_factor()
+                if action == "Disable authenticator":
+                    second_factor.disable(settings)
+                    self.update_factor()
+                    self.desk.notify("Phone authentication disabled.")
+                    return
+                if action == "Generate new recovery codes" and result != "legacy_recovery":
+                    codes = second_factor.recovery_codes()
+                    second_factor.renew_recovery(settings, codes)
+                    show_recovery(self, codes)
+                    return
+            import platform
+
+            secret, codes = second_factor.enrollment()
+            uri = second_factor.enrollment_uri(secret, platform.node()[:64] or "Windows")
+            result = enroll(self, uri, require_both=bool(existing and not existing.get("alternative")))
+            if result is None or self.desk.locked:
+                return
+            entered, allow_alternative = result
+            second_factor.enable(settings, secret, codes, entered, allow_alternative=allow_alternative)
             self.update_factor()
-            self.desk.notify("Phone authentication settings updated.")
+            show_recovery(self, codes)
+            self.desk.notify("Phone authentication is ready.")
         except (ValueError, OSError) as exc:
             self.desk.notify(str(exc))
 
@@ -436,11 +469,11 @@ class Preferences(QWidget):
             value, ok = QInputDialog.getText(
                 self, "Change AirCursor password", name, QLineEdit.EchoMode.Password
             )
-            if not ok:
+            if not ok or self.desk.locked:
                 return
             values.append(value)
         try:
             self.desk.auth.change(*values)
             self.desk.notify("Password changed.")
-        except ValueError as exc:
+        except (ValueError, OSError) as exc:
             self.desk.notify(str(exc))

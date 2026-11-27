@@ -1,5 +1,7 @@
 """Windows service lifecycle and native application windows, with a Qt Quick desktop surface."""
 
+import ctypes
+from ctypes import wintypes
 import os
 from pathlib import Path
 import shutil
@@ -12,7 +14,7 @@ import psutil
 from PySide6.QtCore import QByteArray, Qt, QPoint, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QShortcut
 from PySide6.QtQuickWidgets import QQuickWidget
-from PySide6.QtWidgets import QApplication, QFileDialog, QInputDialog, QLineEdit, QMainWindow, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QInputDialog, QLineEdit, QMainWindow, QMessageBox
 from .chrome import Panel, stylesheet
 from .control import Control, Preferences, PROFILES
 from .design import ICONS, MaterialProvider
@@ -22,7 +24,7 @@ from .lock import PasswordLock
 from .server import RemoteHost, local_addresses
 from .settings import Settings
 from .surface import Shell
-from . import trust
+from . import second_factor, session, trust
 from .widgets import Workers, asset, confirm
 
 
@@ -87,8 +89,54 @@ class Desktop(QMainWindow):
             QShortcut(QKeySequence(key), self, activated=fn)
         self.apply_style()
         self.timer.start(15000)
+        self.session_watching = False
+        self.security_timer = QTimer(self, interval=1000)
+        if os.name == "nt":
+            self.session_watching = session.watch(int(self.winId()), True)
+            self.security_timer.timeout.connect(self.check_inactivity)
+            self.security_timer.start()
         if trust.active(self.s):
-            self.workspace()
+            if session.idle_seconds() < self.idle_timeout():
+                self.workspace()
+            else:
+                self.s.set(trusted_logon=None)
+
+    def idle_timeout(self):
+        value = self.s.get("idle_lock_minutes", session.DEFAULT_IDLE)
+        return 60 * (value if value in session.IDLE_MINUTES else session.DEFAULT_IDLE)
+
+    def check_inactivity(self):
+        if not self.locked and session.idle_seconds() >= self.idle_timeout():
+            self.lock_now()
+
+    def nativeEvent(self, event_type, message):
+        if os.name == "nt" and event_type == b"windows_generic_MSG":
+            msg = wintypes.MSG.from_address(int(message))
+            if session.lock_message(msg.message, msg.wParam) and hasattr(self, "security_timer"):
+                if self.locked:
+                    self.dismiss_dialogs()
+                else:
+                    self.lock_now(raise_window=False)
+        return super().nativeEvent(event_type, message)
+
+    def _finish_login(self, remember):
+        if os.name == "nt":
+            if remember:
+                trust.remember(self.s)
+            else:
+                self.s.set(trusted_logon=None)
+        self.workspace()
+
+    def unlock_with_code(self, code, remember):
+        if not (self.locked and self.auth.has_password and second_factor.alternative(self.s)):
+            return
+        try:
+            result = second_factor.verify(self.s, code)
+            self._finish_login(remember and result == "verified")
+            if result == "recovered":
+                self.notify("Recovery code accepted and used. Manage your remaining codes in Privacy and security.")
+        except (OSError, ValueError) as exc:
+            self.shell.feedback.emit(str(exc))
 
     def apply_style(self):
         QApplication.instance().setStyleSheet(stylesheet(self.shell.dark))
@@ -107,21 +155,20 @@ class Desktop(QMainWindow):
                 wait = self.auth.wait_left()
                 self.shell.feedback.emit(f"Try again in {wait} seconds." if wait else "Incorrect password.")
                 return
-            if self.s.get("phone_factor"):
-                from .second_factor import verify
+            result = None
+            if self.s.get("phone_factor") and not second_factor.alternative(self.s):
                 entered, ok = QInputDialog.getText(self, "Verify sign-in",
                     "Enter the current six-digit code from your authenticator, or your saved recovery code.",
                     QLineEdit.EchoMode.Password)
                 if not ok:
                     return
-                if verify(self.s, entered) == "recovered":
+                result = second_factor.verify(self.s, entered)
+                if result == "legacy_recovery":
                     QMessageBox.information(self, "Account recovered", "Phone authentication was reset. Enroll again in Privacy and security.")
-            if remember and os.name == "nt":
-                trust.remember(self.s)
+            self._finish_login(remember and result not in ("recovered", "legacy_recovery"))
         except (ValueError, OSError) as exc:
             self.shell.feedback.emit(str(exc))
             return
-        self.workspace()
 
     def reset(self):
         if not confirm(
@@ -146,14 +193,27 @@ class Desktop(QMainWindow):
             return
         self.close()
 
-    def lock_now(self):
+    def dismiss_dialogs(self):
+        for dialog in self.findChildren(QDialog):
+            if dialog.isVisible():
+                dialog.reject()
+
+    def lock_now(self, raise_window=True):
         if self.locked:
             return
         self.host.paused = True
         self.locked = True
         self.auto.stop()
-        self.persist()
-        self.s.set(trusted_logon=None)
+        # Block local entry and phone input before running cleanup that can touch the disk.
+        self.shell.lockedChanged.emit()
+        self.dismiss_dialogs()
+        for panel in self.panels.values():
+            panel.hide()
+        try:
+            self.s.set(trusted_logon=None)
+            self.persist()
+        except OSError:
+            self.shell.feedback.emit("AirCursor locked, but Windows could not save the session state.")
         self.clipboard.clear()
         self.material.previews.clear()
         self.external = []
@@ -162,11 +222,9 @@ class Desktop(QMainWindow):
         self.shell.file_query, self.shell.file_results = None, []
         if "Air Browser" in self.panels:
             self.panels["Air Browser"].content.close_private()
-        for panel in self.panels.values():
-            panel.hide()
-        self.shell.lockedChanged.emit()
-        self.raise_()
-        self.activateWindow()
+        if raise_window:
+            self.raise_()
+            self.activateWindow()
 
     def workspace(self):
         self.locked = False
@@ -464,6 +522,9 @@ class Desktop(QMainWindow):
                 self.panels["Air Browser"].content.save()
         self.locked = True
         self.timer.stop()
+        self.security_timer.stop()
+        if self.session_watching:
+            session.watch(int(self.winId()), False)
         self.auto.stop()
         self.host.stop()
         for panel in self.panels.values():

@@ -49,6 +49,12 @@ class Shell(QObject):
         return self.d.locked
 
     @Property(bool, notify=lockedChanged)
+    def codeLogin(self):
+        from .second_factor import alternative
+
+        return alternative(self.d.s)
+
+    @Property(bool, notify=lockedChanged)
     def first(self):
         return not self.d.auth.has_password
 
@@ -265,6 +271,10 @@ class Shell(QObject):
     @Slot(str, str, bool)
     def authenticate(self, password, again, remember):
         self.d.unlock(password, again, remember)
+
+    @Slot(str, bool)
+    def authenticateCode(self, code, remember):
+        self.d.unlock_with_code(code, remember)
 
     def find_files(self):
         query = self.query.strip()

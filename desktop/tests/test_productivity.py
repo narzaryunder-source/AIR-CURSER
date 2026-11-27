@@ -294,21 +294,19 @@ def test_phone_factor_enrollment_replay_throttle_and_recovery(tmp_path, monkeypa
     secret, recovery = factor.enrollment()
     current = lambda: factor.code(secret, clock[0] // 30)
     factor.enable(s, secret, recovery, current())
-    assert (
-        secret not in (tmp_path / "s.json").read_text()
-        and recovery not in (tmp_path / "s.json").read_text()
-    )
+    saved = (tmp_path / "s.json").read_text()
+    assert secret not in saved and all(value not in saved for value in recovery)
     assert not s.get("trusted_logon")
-    with pytest.raises(ValueError, match="new six-digit"):
+    with pytest.raises(ValueError, match="fresh six-digit"):
         factor.verify(s, current())
-    with pytest.raises(ValueError, match="Wait"):
-        factor.verify(Settings(str(tmp_path / "s.json")), recovery)
+    with pytest.raises(ValueError, match="again in"):
+        factor.verify(Settings(str(tmp_path / "s.json")), recovery[0])
     clock[0] += 30
     assert factor.verify(s, current()) == "verified"
-    assert factor.verify(s, recovery) == "recovered"
-    assert not s.get("phone_factor")
+    assert factor.verify(s, recovery[0]) == "recovered"
+    assert len(s.get("phone_factor")["recovery_codes"]) == 7
     with pytest.raises(ValueError):
-        factor.verify(s, recovery)
+        factor.verify(s, recovery[0])
 
 
 def test_publisher_checksum_comparison():
@@ -369,7 +367,7 @@ def test_native_trust_ticket_and_file_operations(tmp_path):
 
     settings = Settings(str(tmp_path / "settings.json"))
     lock = PasswordLock(settings)
-    lock.set_password("test-password", "test-password")
+    lock.set_password("test-master-password", "test-master-password")
     trust.remember(settings)
     assert trust.active(settings)
     lock.set_password("changed-test-password", "changed-test-password")

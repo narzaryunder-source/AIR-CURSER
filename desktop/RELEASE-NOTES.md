@@ -18,3 +18,9 @@ See the verification report for measurements, platform coverage and outstanding 
 - Added custom compatible AI endpoints with endpoint-specific credentials, conversation management and local memory information. Tested a real local inference round trip.
 - Added indexed Spotlight file results, a navigable calendar widget, and restoration of window geometry, active workspace and folder tabs.
 - Added an optional phone authenticator with one-time recovery and retained the original phone-input protocol. Control Center now counts Windows input rejections separately.
+
+## Windows authentication update
+
+- New and changed master passwords require 15 characters and use 900,000 PBKDF2-SHA256 iterations. Existing hashes migrate after a successful sign-in.
+- Google and Microsoft Authenticator enrollment uses a locally generated QR code and confirmation. The lock screen accepts an authenticator code as an alternative, and enrollments can also require both credentials. Eight one-time recovery codes can be rotated.
+- Trusted Windows sign-in tickets expire after eight hours and use DPAPI. AirCursor locks and revokes trust on idle timeout, Windows session lock and sleep.

@@ -105,7 +105,7 @@ def test_real_widget_paths_lock_and_exit(tmp_path, monkeypatch):
 
     fields = [desktop.view.rootObject().findChild(QObject, n) for n in ("password", "confirmPassword")]
     for field in fields:
-        field.setProperty("text", "workspace-test")
+        field.setProperty("text", "workspace-test-master")
     fields[-1].forceActiveFocus()
     QTest.keyClick(desktop.view, Qt.Key.Key_Return)
     assert not desktop.locked and desktop.auth.has_password
@@ -154,3 +154,64 @@ raise SystemExit(main())
     result = subprocess.run([sys.executable,"-c",probe],cwd=Path(__file__).resolve().parents[1],
                             env=env,capture_output=True,text=True,timeout=30)
     assert result.returncode==0, result.stderr
+
+
+def test_authenticator_lock_screen_recovery_and_idle_lock(tmp_path, monkeypatch):
+    import time
+    from PySide6.QtCore import Qt, QObject, QMetaObject
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+    from aircursor_desktop import second_factor, session, trust
+    from aircursor_desktop.auth_dialogs import qr_image
+    from aircursor_desktop.ui import Desktop
+
+    if os.name != "nt" and not os.getenv("DISPLAY"):
+        monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    app = QApplication.instance() or QApplication([])
+    settings = Settings(str(tmp_path / "auth.json"))
+    settings.set(auto_switch=False, restore=False)
+    master = "private test master password"
+    from aircursor_desktop.lock import PasswordLock
+    PasswordLock(settings).set_password(master)
+    monkeypatch.setattr(trust, "protect", lambda data, decrypt=False: bytes(x ^ 42 for x in data))
+    secret, recovery = second_factor.enrollment()
+    uri = second_factor.enrollment_uri(secret, "Office / 東京")
+    from urllib.parse import parse_qs, urlsplit
+    assert parse_qs(urlsplit(uri).query) == {
+        "secret": [secret], "issuer": ["AirCursor"], "algorithm": ["SHA1"], "digits": ["6"], "period": ["30"],
+    }
+    qr = qr_image(uri)
+    assert qr.pixelColor(0, 0).name() == "#ffffff"
+    assert qr.pixelColor(20, 20).name() == "#000000"
+    assert qr.pixelColor(25, 25).name() == "#ffffff"
+    second_factor.enable(settings, secret, recovery, second_factor.code(secret, int(time.time()) // 30))
+    window = Desktop(settings)
+    window.show()
+    app.processEvents()
+    root = window.view.rootObject()
+    choice = root.findChild(QObject, "authMethod")
+    assert choice and choice.property("visible")
+    assert QMetaObject.invokeMethod(choice, "clicked", Qt.ConnectionType.DirectConnection)
+    entry = root.findChild(QObject, "password")
+    assert entry.property("placeholderText") == "Phone or recovery code"
+    entry.setProperty("text", recovery[0])
+    entry.forceActiveFocus()
+    QTest.keyClick(window.view, Qt.Key.Key_Return)
+    assert not window.locked
+    assert not window.host.paused
+    assert len(settings.get("phone_factor")["recovery_codes"]) == 7
+    monkeypatch.setattr(session, "idle_seconds", lambda: window.idle_timeout())
+    window.check_inactivity()
+    assert window.locked and window.host.paused
+    assert entry.property("text") == ""
+    window.unlock_with_code(recovery[0], False)
+    assert window.locked
+    window.unlock(master, "", False)
+    assert not window.locked
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        ctypes.windll.user32.SendMessageW(wintypes.HWND(int(window.winId())), 0x02B1, 7, 0)
+        assert window.locked and window.host.paused
+    window.close()
+    app.processEvents()

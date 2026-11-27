@@ -15,6 +15,7 @@ Item {
     onOverlayChanged: shell.cover(overlay)
     property string notice: ""
     property string errorText: ""
+    property bool useCode: false
     property int dockSize: Math.min(59, Math.max(35, Math.floor((width - 115) / Math.max(9, shell.dock.length))))
     property string family: Qt.platform.os === "windows" ? "Segoe UI Variable" : "DejaVu Sans"
     function showOverlay(name) {
@@ -34,7 +35,10 @@ Item {
         shell.action(command);
     }
     function authenticate() {
-        shell.authenticate(secret.text, repeat.text, trust.checked);
+        if (root.useCode)
+            shell.authenticateCode(secret.text, trust.checked);
+        else
+            shell.authenticate(secret.text, repeat.text, trust.checked);
         secret.clear();
         repeat.clear();
     }
@@ -56,6 +60,9 @@ Item {
             root.errorText = "";
             root.notice = "";
             trust.checked = false;
+            root.useCode = false;
+            secret.clear();
+            repeat.clear();
             if (root.locked)
                 secret.forceActiveFocus();
         }
@@ -820,14 +827,15 @@ Item {
             }
             WhiteText {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: shell.first ? "Create a workspace password" : "Unlock your workspace"
+                text: shell.first ? "Create a master password (15 or more characters)" : "Unlock your workspace"
                 font.pixelSize: 12
             }
             AuthField {
                 id: secret
                 objectName: "password"
                 anchors.horizontalCenter: parent.horizontalCenter
-                placeholderText: "Password"
+                placeholderText: root.useCode ? "Phone or recovery code" : "Master password"
+                maximumLength: root.useCode ? 64 : 1024
                 onAccepted: shell.first ? repeat.forceActiveFocus() : root.authenticate()
                 ToolButton {
                     anchors.right: parent.right
@@ -844,14 +852,28 @@ Item {
                 objectName: "confirmPassword"
                 visible: shell.first
                 anchors.horizontalCenter: parent.horizontalCenter
+                maximumLength: 1024
                 placeholderText: "Confirm password"
                 onAccepted: root.authenticate()
+            }
+            ToolButton {
+                objectName: "authMethod"
+                visible: shell.codeLogin && !shell.first
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: root.useCode ? "Use master password" : "Use authenticator or recovery code"
+                palette.buttonText: "white"
+                onClicked: {
+                    root.useCode = !root.useCode;
+                    root.errorText = "";
+                    secret.clear();
+                    secret.forceActiveFocus();
+                }
             }
             CheckBox {
                 id: trust
                 visible: shell.canTrust
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: "Trust this Windows sign-in"
+                text: "Trust this Windows sign-in for up to 8 hours"
                 palette.windowText: "white"
                 font.pixelSize: 11
             }

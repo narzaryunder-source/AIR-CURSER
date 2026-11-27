@@ -29,7 +29,7 @@ def main():
         s = Settings()
         s.set(auto_switch=False, restore=False, appearance="Light")
         d = Desktop(s)
-        d.auth.set_password("render-session")
+        d.auth.set_password("render-master-session")
         d.shell.lockedChanged.emit()
         d.showFullScreen()
         QTest.qWait(350)
@@ -45,7 +45,7 @@ def main():
         grab("authentication.jpg")
         field = d.view.rootObject().findChild(QObject, "password")
         field.forceActiveFocus()
-        QTest.keyClicks(d.view, "render-session")
+        QTest.keyClicks(d.view, "render-master-session")
         QTest.keyClick(d.view, Qt.Key.Key_Return)
         assert not d.locked
         d.view.setFocus()

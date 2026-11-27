@@ -9,6 +9,8 @@ import time
 
 import psutil
 
+DURATION = 8 * 3600
+
 
 class Blob(c.Structure):
     _fields_ = [("size", w.DWORD), ("data", c.c_void_p)]
@@ -45,7 +47,13 @@ def logon():
 
 
 def remember(settings):
-    ticket = [logon(), int(psutil.boot_time()), settings.get("password")["hash"], time.time() + 8 * 3600]
+    ticket = [
+        logon(),
+        int(psutil.boot_time()),
+        settings.get("password")["hash"],
+        settings.get("phone_factor", {}).get("secret"),
+        time.time(),
+    ]
     settings.set(trusted_logon=base64.b64encode(protect(json.dumps(ticket).encode())).decode("ascii"))
 
 
@@ -54,12 +62,15 @@ def active(settings):
     if os.name != "nt" or not token or not settings.get("password"):
         return False
     try:
-        session, boot, revision, expires = json.loads(protect(base64.b64decode(token, validate=True), True))
+        session, boot, revision, factor_revision, issued = json.loads(
+            protect(base64.b64decode(token, validate=True), True)
+        )
         return (
             session == logon()
             and abs(boot - psutil.boot_time()) < 2
             and revision == settings.get("password")["hash"]
-            and time.time() < expires
+            and factor_revision == settings.get("phone_factor", {}).get("secret")
+            and 0 <= time.time() - issued < DURATION
         )
     except (OSError, ValueError, KeyError, TypeError):
         return False

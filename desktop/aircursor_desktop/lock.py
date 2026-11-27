@@ -3,14 +3,17 @@
 Wrong passwords cost a growing wait (1, 2, 4 … 30 seconds), counted on disk, so closing and opening
 the app does not reset it.
 """
+
 import hashlib
 import hmac
+import math
 import os
 import time
 
-ITERATIONS = 600_000
-MIN_LENGTH = 4
-MAX_WAIT = 30
+ITERATIONS = 900_000
+MIN_LENGTH = 15
+MAX_LENGTH = 1024
+MAX_WAIT = 300
 
 
 def _hash(password, salt, iterations):
@@ -31,6 +34,8 @@ class PasswordLock:
         """Why a new password cannot be used (a message), or None when it is fine."""
         if len(password) < MIN_LENGTH:
             return "Use at least %d characters." % MIN_LENGTH
+        if len(password) > MAX_LENGTH:
+            return f"Use at most {MAX_LENGTH} characters."
         if password.strip() != password:
             return "No spaces at the start or the end."
         if again is not None and again != password:
@@ -41,28 +46,41 @@ class PasswordLock:
         err = self.problem(password, again)
         if err:
             raise ValueError(err)
+        self._store(password)
+
+    def _store(self, password):
         salt = os.urandom(16)
-        self.s.set(password={"salt": salt.hex(), "iterations": ITERATIONS, "hash": _hash(password, salt, ITERATIONS)},
-                   wrong=0, wait_until=0)
+        self.s.set(
+            password={
+                "salt": salt.hex(),
+                "iterations": ITERATIONS,
+                "hash": _hash(password, salt, ITERATIONS),
+            },
+            wrong=0,
+            wait_until=0,
+            trusted_logon=None,
+        )
 
     def wait_left(self):
         """Seconds until the next try is allowed (0 = now)."""
-        return max(0, int(round(float(self.s.get("wait_until", 0)) - self.clock())))
+        return max(0, math.ceil(float(self.s.get("wait_until", 0)) - self.clock()))
 
     def check(self, password):
         """True for the right password. A wrong one (or a try while waiting) returns False."""
         p = self.s.get("password")
         if not p or self.wait_left() > 0:
             return False
-        good = hmac.compare_digest(_hash(password, bytes.fromhex(p["salt"]), int(p["iterations"])), p["hash"])
+        good = len(password) <= MAX_LENGTH and hmac.compare_digest(
+            _hash(password, bytes.fromhex(p["salt"]), int(p["iterations"])), p["hash"]
+        )
         if good:
             if int(p["iterations"]) < ITERATIONS:
-                self.set_password(password)
+                self._store(password)
             else:
                 self.s.set(wrong=0, wait_until=0)
             return True
         wrong = int(self.s.get("wrong", 0)) + 1
-        wait = 0 if wrong < 3 else min(MAX_WAIT, 2 ** min(5, wrong - 3))
+        wait = 0 if wrong < 3 else min(MAX_WAIT, 2 ** min(9, wrong - 3))
         self.s.set(wrong=wrong, wait_until=self.clock() + wait)
         return False
 
