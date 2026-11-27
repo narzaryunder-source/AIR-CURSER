@@ -55,7 +55,7 @@ Assert-ExitCode $Installer '/S' 0
 if ((Get-FileHash $settings).Hash -ne $profileHash) { throw 'Upgrade changed the user profile.' }
 if ((Get-FileHash $app).Hash -eq $appHash) { throw 'Upgrade did not replace the previous launcher.' }
 $registry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\AirCursor'
-if ((Get-ItemPropertyValue $registry -Name DisplayVersion) -ne '2.0.0') {
+if ((Get-ItemPropertyValue $registry -Name DisplayVersion) -ne '2.0.1') {
     throw 'Windows did not register the stable version.'
 }
 if (-not (Test-Path $safeShortcut)) { throw 'Safe Mode shortcut is missing.' }
@@ -83,4 +83,4 @@ Assert-ExitCode $uninstaller $removeArgs 0
 if ((Test-Path $app) -or (Test-Path $safeShortcut)) { throw 'Uninstall left the launcher or shortcut behind.' }
 if ((Get-FileHash $settings).Hash -ne $profileHash) { throw 'Uninstall changed the user profile.' }
 
-Add-Content $report "`nPreview 5 upgrade, guarded update and removal, Safe Mode shortcut, and preserved user settings verified."
+Add-Content $report "`nWindows 2.0.0 upgrade, guarded update and removal, Safe Mode shortcut, and preserved user settings verified."

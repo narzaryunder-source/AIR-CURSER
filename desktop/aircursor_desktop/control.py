@@ -1,9 +1,10 @@
 import os
 import time
+from functools import lru_cache
 
 import psutil
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap, QIcon
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QImageReader, QPixmap, QIcon
 from .navigation import sidebar, item, heading
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from . import VERSION
 from .widgets import asset, Workers, button, confirm, label, password, row, system_link
 
 PROFILES = {
@@ -303,6 +305,13 @@ class Control(QTabWidget):
         self.work.run(gather, self.process_list.setPlainText, self.process_list.setPlainText)
 
 
+@lru_cache(maxsize=3)
+def wallpaper_preview(scene):
+    reader = QImageReader(asset(scene + ".jpg"))
+    reader.setScaledSize(reader.size().scaled(QSize(440, 200), Qt.AspectRatioMode.KeepAspectRatio))
+    return QPixmap.fromImage(reader.read())
+
+
 class Preferences(QWidget):
     def __init__(self, desk):
         super().__init__()
@@ -346,11 +355,9 @@ class Preferences(QWidget):
         appearance.addWidget(self.mode)
         appearance.addWidget(label("Desktop picture"))
         pics = []
-        from PySide6.QtCore import QSize
-
         for scene in ("Fjord", "Violet", "Copper"):
             choose = button(scene, lambda scene=scene: desk.preference("wallpaper", scene))
-            choose.setIcon(QIcon(asset(scene.lower() + ".jpg")))
+            choose.setIcon(QIcon(wallpaper_preview(scene.lower())))
             choose.setIconSize(QSize(78, 56))
             pics.append(choose)
         row(appearance, *pics)
@@ -358,14 +365,9 @@ class Preferences(QWidget):
         preview.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
         def wallpaper():
-            photo = QPixmap(asset(desk.shell.scene + ".jpg"))
-            preview.setPixmap(
-                photo.scaled(
-                    440, 200, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
-                )
-            )
+            preview.setPixmap(wallpaper_preview(desk.shell.scene))
 
-        desk.shell.appsChanged.connect(wallpaper)
+        desk.shell.sceneChanged.connect(wallpaper)
         wallpaper()
         appearance.addWidget(preview)
         appearance.addStretch()
@@ -391,7 +393,7 @@ class Preferences(QWidget):
         workspace.addWidget(
             button("Open AirBoost profiles", lambda: desk.open("Control Center").setCurrentIndex(2))
         )
-        workspace.addWidget(label("AirCursor for Windows · 2.0"))
+        workspace.addWidget(label(f"AirCursor for Windows · {VERSION}"))
         workspace.addStretch()
         windows = section("Windows settings")
         for name, page in SYSTEM.items():

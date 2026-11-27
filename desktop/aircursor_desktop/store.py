@@ -6,8 +6,8 @@ import re
 import codecs
 from functools import lru_cache
 
-from PySide6.QtCore import QProcess, Qt, QSize, QUrl
-from PySide6.QtGui import QDesktopServices, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QProcess, QPointF, QRectF, Qt, QSize, QUrl
+from PySide6.QtGui import QDesktopServices, QIcon, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QComboBox,
@@ -62,6 +62,8 @@ class Studio(QFrame):
     def __init__(self, open_blender):
         super().__init__()
         self.pic = QPixmap(asset("studio.jpg"))
+        self.scaled = QPixmap()
+        self.image_size = QSize()
         self.setMinimumHeight(128)
         self.setMaximumHeight(190)
         layout = QVBoxLayout(self)
@@ -79,20 +81,21 @@ class Studio(QFrame):
         layout.addStretch()
 
     def paintEvent(self, event):
-        from PySide6.QtGui import QPainterPath
-        from PySide6.QtCore import QRectF
-
+        ratio = self.devicePixelRatioF()
+        size = self.size() * ratio
+        if size != self.image_size or ratio != self.scaled.devicePixelRatio():
+            self.image_size = size
+            self.scaled = self.pic.scaled(
+                size, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation
+            )
+            self.scaled.setDevicePixelRatio(ratio)
         p = QPainter(self)
         p.setRenderHints(QPainter.RenderHint.SmoothPixmapTransform | QPainter.RenderHint.Antialiasing)
         path = QPainterPath()
         path.addRoundedRect(QRectF(self.rect()), 13, 13)
         p.setClipPath(path)
-        pic = self.pic.scaled(
-            self.size(),
-            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        p.drawPixmap((self.width() - pic.width()) // 2, (self.height() - pic.height()) // 2, pic)
+        image = self.scaled.deviceIndependentSize()
+        p.drawPixmap(QPointF((self.width() - image.width()) / 2, (self.height() - image.height()) / 2), self.scaled)
 
 
 @lru_cache(maxsize=96)

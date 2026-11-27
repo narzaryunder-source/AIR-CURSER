@@ -13,7 +13,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument("mode", choices=["policy", "receiver", "startup", "dock", "tabs"])
+parser.add_argument("mode", choices=["policy", "receiver", "startup", "dock", "tabs", "workspace", "store"])
 parser.add_argument("--source", type=Path, default=ROOT)
 parser.add_argument("--notification", action="store_true")
 args = parser.parse_args()
@@ -257,7 +257,19 @@ def tabs():
         os.environ["AIRCURSOR_HOME"] = folder
         threading.Thread(target=http.serve_forever, daemon=True).start()
         settings = Settings()
-        settings.set(browser_tabs=[f"http://127.0.0.1:{http.server_port}/tab/{i}" for i in range(15)])
+        settings.set(
+            browser_history_enabled=True,
+            browser_tabs=[f"http://127.0.0.1:{http.server_port}/tab/{i}" for i in range(15)],
+        )
+        writes = 0
+        save_settings = settings.set
+
+        def record_write(**values):
+            nonlocal writes
+            writes += 1
+            save_settings(**values)
+
+        settings.set = record_write
         started = time.perf_counter()
         from aircursor_desktop.browser import Browser
 
@@ -283,11 +295,38 @@ def tabs():
                     memory += process.memory_info().rss
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
+            cold_requests = len(visits)
+            writes = 0
+            for index in range(15):
+                window.tabs.setCurrentIndex(index)
+                address = settings.get("browser_tabs")[index]
+                stop = time.monotonic() + 15
+                while time.monotonic() < stop:
+                    QTest.qWait(5)
+                    current = window.current()
+                    if (
+                        hasattr(current, "page") and current.url().toString() == address
+                        and current.title() == "AirCursor 15-tab benchmark" and not current.page().isLoading()
+                    ):
+                        break
+                else:
+                    raise RuntimeError(f"Tab {index + 1} did not finish loading")
+            window.save()
+            switches = []
+            for index in (1, 9, 2, 14, 3, 11, 0, 5, 2, 10, 14, 6, 4, 9, 7):
+                start = time.perf_counter()
+                window.tabs.setCurrentIndex(index)
+                app.processEvents()
+                switches.append(1000 * (time.perf_counter() - start))
             return {
                 "saved_tabs": window.tabs.count(),
                 "browser_window_ms": round(constructor_ms, 1),
                 "selected_page_title_ms": round(selected_ms, 1),
-                "page_requests_after_settle": len(visits),
+                "page_requests_after_settle": cold_requests,
+                "tabs_loaded": len(visits),
+                "settings_writes_loading_remaining_tabs": writes,
+                "warm_switch_median_ms": round(statistics.median(switches), 1),
+                "warm_switch_max_ms": round(max(switches), 1),
                 "process_tree_rss_mib": round(memory / 2**20, 1),
             }
         finally:
@@ -296,6 +335,68 @@ def tabs():
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
             app.processEvents()
             http.shutdown()
+
+
+def workspace():
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtTest import QTest
+    from aircursor_desktop.ui import Desktop
+    from aircursor_desktop.settings import Settings
+
+    app = QApplication([])
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
+        os.environ["AIRCURSOR_HOME"] = folder
+        settings = Settings()
+        names = ("Files", "Air Store", "Air AI", "Settings", "Control Center", "Air Browser")
+        settings.set(auto_switch=False, session_panels=dict.fromkeys(names, 1))
+        started = time.perf_counter()
+        window = Desktop(settings)
+        window.resize(1366, 768)
+        window.show()
+        assert not window.view.grabFramebuffer().isNull()
+        frame_ms = (time.perf_counter() - started) * 1000
+        initial_panels = len(window.panels)
+        try:
+            stop = time.monotonic() + 10
+            while len(window.panels) < len(names) and time.monotonic() < stop:
+                QTest.qWait(5)
+            assert set(window.panels) == set(names)
+            assert all(panel.isVisible() for panel in window.panels.values())
+            return {
+                "saved_apps": len(names),
+                "apps_constructed_before_first_frame": initial_panels,
+                "first_frame_ms": round(frame_ms, 1),
+                "apps_restored_ms": round((time.perf_counter() - started) * 1000, 1),
+            }
+        finally:
+            window.close()
+            app.processEvents()
+
+
+def store():
+    from PySide6.QtGui import QPixmap
+    from PySide6.QtWidgets import QApplication
+    from aircursor_desktop.store import Studio
+
+    app = QApplication([])
+    banner = Studio(lambda: None)
+    banner.resize(1000, 180)
+    banner.show()
+    buffer = QPixmap(banner.size() * banner.devicePixelRatioF())
+    buffer.setDevicePixelRatio(banner.devicePixelRatioF())
+    banner.render(buffer)
+    samples = []
+    for _ in range(150):
+        start = time.perf_counter()
+        banner.render(buffer)
+        samples.append((time.perf_counter() - start) * 1000)
+    banner.close()
+    app.processEvents()
+    return {
+        "paints": len(samples),
+        "paint_median_ms": round(statistics.median(samples), 3),
+        "paint_p95_ms": round(sorted(samples)[int(len(samples) * 0.95)], 3),
+    }
 
 
 if __name__ == "__main__":

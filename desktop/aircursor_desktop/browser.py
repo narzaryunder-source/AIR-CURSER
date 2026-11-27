@@ -46,6 +46,7 @@ def web_url(text):
 
 
 MAX_SAVED_TABS = 100
+MAX_HISTORY = 300
 DISCARD_AFTER_SECONDS = 300
 
 
@@ -69,6 +70,7 @@ class Browser(QWidget):
             path for path in self.s.get("browser_downloads", []) if isinstance(path, str)
         ][:50]
         self.tools = []
+        self.pending_history = []
         self._view_type = ()
         self._changing_tabs = False
         layout = QVBoxLayout(self)
@@ -381,11 +383,18 @@ class Browser(QWidget):
         if (
             ok
             and not private
+            and self.tabs.indexOf(view) >= 0
             and self.s.get("browser_history_enabled", False)
             and url.startswith(("https://", "http://"))
         ):
-            history = self.s.get("browser_history", [])
-            self.s.set(browser_history=([url] + [u for u in history if u != url])[:300])
+            self.pending_history = ([url] + [u for u in self.pending_history if u != url])[:MAX_HISTORY]
+            self.saver.start()
+
+    def history(self):
+        if not self.s.get("browser_history_enabled", False):
+            return []
+        saved = self.s.get("browser_history", [])
+        return list(dict.fromkeys([*self.pending_history, *saved]))[:MAX_HISTORY]
 
     def close_tab(self, index):
         view = self.tabs.widget(index)
@@ -437,8 +446,18 @@ class Browser(QWidget):
         self.saver.start()
 
     def save(self):
-        if self.recovery_mode or not self.s.get("restore", True):
-            return
+        updates = {}
+        if self.pending_history and self.s.get("browser_history_enabled", False):
+            history = self.history()
+            if history != self.s.get("browser_history", []):
+                updates["browser_history"] = history
+        if not self.recovery_mode and self.s.get("restore", True):
+            updates.update(self.tab_session_changes())
+        if updates:
+            self.s.set(**updates)
+        self.pending_history.clear()
+
+    def tab_session_changes(self):
         urls = []
         active = 0
         for index in range(self.tabs.count()):
@@ -453,7 +472,8 @@ class Browser(QWidget):
         values = urls[:MAX_SAVED_TABS]
         active = min(active, max(0, len(values) - 1))
         if self.s.get("browser_tabs", []) != values or self.s.get("browser_active", 0) != active:
-            self.s.set(browser_tabs=values, browser_active=active)
+            return dict(browser_tabs=values, browser_active=active)
+        return {}
 
     def menu(self):
         m = QMenu(self)
@@ -461,7 +481,7 @@ class Browser(QWidget):
         active = isinstance(self.current(), self._view_type)
         m.addAction("Bookmark this page", self.bookmark).setEnabled(active)
         m.addAction("Bookmarks", lambda: self.choose("Bookmarks", self.s.get("bookmarks", [])))
-        m.addAction("History", lambda: self.choose("History", self.s.get("browser_history", [])))
+        m.addAction("History", lambda: self.choose("History", self.history()))
         m.addAction("Downloads", self.show_downloads)
         memory_saver = m.addAction("Memory Saver · reload long-idle tabs when selected")
         memory_saver.setCheckable(True)

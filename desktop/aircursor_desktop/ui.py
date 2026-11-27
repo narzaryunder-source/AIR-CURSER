@@ -75,6 +75,9 @@ class Desktop(QMainWindow):
         self.timer.timeout.connect(self.tick)
         self.layout_save_timer = QTimer(self, interval=300, singleShot=True)
         self.layout_save_timer.timeout.connect(self.save_layout)
+        self.panel_restore_timer = QTimer(self, singleShot=True)
+        self.panel_restore_timer.timeout.connect(self.restore_next_panel)
+        self.panel_restore_queue = []
         self.message.connect(self.notify)
         self.receiver_changed.connect(self.refresh_control)
         self.setWindowTitle("AirCursor · Safe Mode" if safe_mode else "AirCursor")
@@ -180,6 +183,8 @@ class Desktop(QMainWindow):
         self.locked = True
         self.auto.stop()
         self.layout_save_timer.stop()
+        self.panel_restore_timer.stop()
+        self.panel_restore_queue.clear()
         # Block local entry and phone input before running cleanup that can touch the disk.
         self.shell.lockedChanged.emit()
         self.dismiss_dialogs()
@@ -232,25 +237,55 @@ class Desktop(QMainWindow):
         self.opened = {
             name: space for name, space in saved.items() if name in self.names and space in (1, 2)
         }
-        for name, space in list(self.opened.items()):
-            if space == self.space:
-                try:
-                    self.open(name)
-                except (OSError, TypeError, ValueError):
-                    self.opened.pop(name, None)
-                    self.notify(f"AirCursor skipped {name}. Open it again from the Dock.")
+        self.queue_panel_restore()
+
+    def queue_panel_restore(self):
+        self.panel_restore_timer.stop()
+        self.panel_restore_queue = [
+            name for name, space in self.opened.items()
+            if space == self.space and name not in ("Overview", "Launcher")
+        ]
+        if self.s.get("stage", False):
+            self.panel_restore_queue = self.panel_restore_queue[-1:]
+        self.resume_panel_restore()
+
+    def resume_panel_restore(self):
+        if not self.locked and self.panel_restore_queue and not self.view.rootObject().property("overlay"):
+            self.panel_restore_timer.start(32)
+
+    def restore_next_panel(self):
+        if self.locked or self.view.rootObject().property("overlay") or not self.panel_restore_queue:
+            return
+        name = self.panel_restore_queue.pop(0)
+        if self.opened.get(name) == self.space:
+            try:
+                self.open(name, activate=False)
+            except (OSError, TypeError, ValueError):
+                self.opened.pop(name, None)
+                self.notify(f"AirCursor skipped {name}. Open it again from the Dock.")
+                self.shell.appsChanged.emit()
+                self.layout_save_timer.start()
+        self.resume_panel_restore()
 
     def effects(self):
         return not self.safe_mode and PROFILES.get(self.s.get("profile"), PROFILES["Balanced"])[1]
 
     def preference(self, key, value):
-        self.s.set(**{key: value})
+        updates = {key: value}
+        if key == "browser_history_enabled" and not value:
+            updates["browser_history"] = []
+        self.s.set(**updates)
         if key == "clipboard" and not value:
             self.clipboard.clear()
         if key == "browser_history_enabled" and not value:
-            self.s.set(browser_history=[])
-        self.apply_style()
-        self.shell.appsChanged.emit()
+            if "Air Browser" in self.panels:
+                self.panels["Air Browser"].content.pending_history.clear()
+        if key == "appearance":
+            self.apply_style()
+        elif key == "wallpaper":
+            self.shell.sceneChanged.emit()
+        else:
+            self.shell.changed.emit()
 
     def save_layout(self):
         if not self.locked:
@@ -317,9 +352,7 @@ class Desktop(QMainWindow):
         self.space = n
         for panel in self.panels.values():
             panel.hide()
-        for name, space in list(self.opened.items()):
-            if space == n:
-                self.open(name)
+        self.queue_panel_restore()
         self.layout_save_timer.start()
         self.shell.changed.emit()
 
@@ -338,6 +371,10 @@ class Desktop(QMainWindow):
             self.s.set(profile=value)
         self.auto.every = self.probe_interval()
         self.timer.start(PROFILES[value][0] * 1000)
+        if save:
+            for panel in self.panels.values():
+                panel.update_effects()
+            self.shell.changed.emit()
 
     @staticmethod
     def sample_metrics():
@@ -431,12 +468,14 @@ class Desktop(QMainWindow):
 
             self.work.run(list_windows, update, lambda _: update([]))
 
-    def open(self, name):
+    def open(self, name, *, activate=True):
         if self.locked or name not in self.names:
             return
         if name in ("Overview", "Launcher"):
             self.show_overlay("overview" if name == "Overview" else "spotlight")
             return
+        if name in self.panel_restore_queue:
+            self.panel_restore_queue.remove(name)
         if name not in self.panels:
             if name == "Air Browser":
                 from .browser import Browser
@@ -474,10 +513,13 @@ class Desktop(QMainWindow):
         newly_open = name not in self.opened
         self.opened[name] = self.space
         if self.s.get("stage", False):
+            if activate:
+                self.panel_restore_queue.clear()
+                self.opened[name] = self.opened.pop(name)
             for other in self.panels.values():
                 if other != panel:
                     other.hide()
-        panel.present()
+        panel.present(activate=activate)
         if newly_open:
             self.shell.appsChanged.emit()
         self.layout_save_timer.start()
@@ -485,6 +527,8 @@ class Desktop(QMainWindow):
 
     def panel_closed(self, name):
         self.opened.pop(name, None)
+        if name in self.panel_restore_queue:
+            self.panel_restore_queue.remove(name)
         if name == "Air Browser":
             self.panels[name].content.close_private()
         if not self.locked:
@@ -551,6 +595,7 @@ class Desktop(QMainWindow):
         self.locked = True
         self.timer.stop()
         self.layout_save_timer.stop()
+        self.panel_restore_timer.stop()
         self.security_timer.stop()
         if self.session_watching:
             session.watch(int(self.winId()), False)

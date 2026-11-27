@@ -51,11 +51,20 @@ jobs:
       - name: Record Windows responsiveness and receiver measurements
         shell: pwsh
         run: |
-          foreach ($mode in @('startup', 'receiver', 'policy', 'dock', 'tabs')) {
+          foreach ($mode in @('startup', 'receiver', 'policy', 'dock', 'tabs', 'workspace', 'store')) {
             python desktop/tools/benchmark.py $mode | Tee-Object -FilePath desktop/dist/benchmarks.jsonl -Append
             if ($LASTEXITCODE) { throw "Benchmark failed for $mode" }
           }
           python desktop/tools/benchmark.py policy --notification | Tee-Object -FilePath desktop/dist/benchmarks.jsonl -Append
+          if ($LASTEXITCODE) { throw 'Network notification benchmark failed' }
+          git fetch --depth=1 origin refs/tags/windows-v2.0.0
+          if ($LASTEXITCODE) { throw 'Could not fetch the Windows 2.0.0 baseline' }
+          git worktree add --detach "$env:RUNNER_TEMP/aircursor-baseline" FETCH_HEAD
+          if ($LASTEXITCODE) { throw 'Could not check out the benchmark baseline' }
+          foreach ($mode in @('tabs', 'workspace', 'store')) {
+            python desktop/tools/benchmark.py $mode --source "$env:RUNNER_TEMP/aircursor-baseline/desktop" | Tee-Object -FilePath desktop/dist/benchmarks-v2.0.0.jsonl -Append
+            if ($LASTEXITCODE) { throw "Baseline benchmark failed for $mode" }
+          }
       - name: Build the Windows x64 installer
         shell: pwsh
         run: |
@@ -66,8 +75,8 @@ jobs:
         shell: pwsh
         run: |
           $previous = Join-Path $env:RUNNER_TEMP 'AirCursor-Windows-previous.exe'
-          curl.exe --fail --location --retry 3 --output $previous https://github.com/narzaryunder-source/AIR-CURSER/releases/download/windows-v2.0-preview.5/AirCursor-Windows.exe
-          if ($LASTEXITCODE -or (Get-FileHash $previous -Algorithm SHA256).Hash -ne 'bdac023f08674e6fa1acf2a664c56af4987d1431e4ef34d24b4ba5cb8e7b3d4f') { throw 'Previous installer verification failed' }
+          curl.exe --fail --location --retry 3 --output $previous https://github.com/narzaryunder-source/AIR-CURSER/releases/download/windows-v2.0.0/AirCursor-Windows.exe
+          if ($LASTEXITCODE -or (Get-FileHash $previous -Algorithm SHA256).Hash -ne '7aa77fec3c88ce771b89452781391757240e9f3a1accad13610799eeed2e2145') { throw 'Previous installer verification failed' }
           ./desktop/tools/verify_install.ps1 -Installer desktop/dist/AirCursor-Windows.exe -PreviousInstaller $previous
           Copy-Item "$env:TEMP/aircursor-selftest.txt" desktop/dist/aircursor-selftest.txt
       - uses: actions/upload-artifact@v4
@@ -82,6 +91,7 @@ jobs:
             desktop/dist/SHA256SUMS.txt
             desktop/dist/aircursor-selftest.txt
             desktop/dist/benchmarks.jsonl
+            desktop/dist/benchmarks-v2.0.0.jsonl
 
 
   compatibility:

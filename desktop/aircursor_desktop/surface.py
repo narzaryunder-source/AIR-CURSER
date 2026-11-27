@@ -15,6 +15,7 @@ from .widgets import asset, open_path, system_link
 
 class Shell(QObject):
     changed = Signal()
+    sceneChanged = Signal()
     lockedChanged = Signal()
     appsChanged = Signal()
     resultsChanged = Signal()
@@ -51,7 +52,7 @@ class Shell(QObject):
             return QApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
         return mode == "Dark"
 
-    @Property(str, notify=changed)
+    @Property(str, notify=sceneChanged)
     def scene(self):
         scene = self.d.s.get("wallpaper", "Fjord").lower()
         return scene if scene in ("fjord", "violet", "copper") else "fjord"
@@ -204,24 +205,16 @@ class Shell(QObject):
                 del preview[key]
         self.previews = []
         stamp = time.monotonic_ns()
-        for name, panel in self.d.panels.items():
-            if name in self.d.opened:
+        for name, space in self.d.opened.items():
+            panel = self.d.panels.get(name)
+            art = self.art(name)
+            if panel is not None and space == self.d.space and not panel.isMinimized():
                 key = ICONS[name]
-                preview[key] = (
-                    panel.grab()
-                    .toImage()
-                    .scaled(
-                        530,
-                        340,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
+                preview[key] = panel.grab().toImage().scaled(
+                    530, 340, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
                 )
-                self.previews.append(
-                    dict(
-                        label=name, target="window:" + name, preview=f"image://material/preview/{key}/{stamp}"
-                    )
-                )
+                art = f"image://material/preview/{key}/{stamp}"
+            self.previews.append(dict(label=name, target="window:" + name, preview=art))
         for window in self.d.external:
             # External app previews use their installed icon. Protected or minimized windows remain switchable.
             self.previews.append(
@@ -247,6 +240,7 @@ class Shell(QObject):
                 if self.d.opened.get(panel.name) == self.d.space:
                     panel.show()
             self.covered.clear()
+            self.d.resume_panel_restore()
 
     @Slot(str)
     def pinResult(self, target):
@@ -314,7 +308,9 @@ class Shell(QObject):
             elif not self.file_pending:
                 self.file_timer.start()
         if q and self.d.s.get("browser_history_enabled", False):
-            for url in self.d.s.get("browser_history", []):
+            panel = self.d.panels.get("Air Browser")
+            history = panel.content.history() if panel else self.d.s.get("browser_history", [])
+            for url in history:
                 if q in url.casefold() and len(results) < 60:
                     add(url, "Browser history", "web:" + url, "Air Browser")
         if q:

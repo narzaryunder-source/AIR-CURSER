@@ -94,6 +94,7 @@ class Panel(QMainWindow):
             body.setProperty("systemGlass", True)
             self.title.setProperty("systemGlass", True)
             content.setObjectName("content")
+        self.update_effects()
         for keys, fn in [
             ("Ctrl+Space", lambda: desk.show_overlay("spotlight")),
             ("Ctrl+Shift+L", desk.lock_windows),
@@ -131,18 +132,25 @@ class Panel(QMainWindow):
         else:
             super().mousePressEvent(event)
 
-    def present(self):
+    def update_effects(self):
+        if effect := self.body.graphicsEffect():
+            effect.setEnabled(self.desk.effects())
+
+    def present(self, *, activate=True):
         first = not self.isVisible() or self.isMinimized()
         self.closing = False
         self.fade.stop()
+        no_focus = Qt.WidgetAttribute.WA_ShowWithoutActivating
+        self.setAttribute(no_focus, not activate)
         if self.isMinimized():
             self.showNormal()
-        animate = self.composited and first and self.desk.effects()
+        animate = activate and self.composited and first and self.desk.effects()
         if self.composited:
             self.setWindowOpacity(0.7 if animate else 1)
         self.show()
-        self.raise_()
-        self.activateWindow()
+        if activate:
+            self.raise_()
+            self.activateWindow()
         if animate:
             self.fade.setStartValue(0.7)
             self.fade.setEndValue(1)

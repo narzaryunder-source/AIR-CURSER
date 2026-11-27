@@ -170,6 +170,7 @@ def test_fifteen_restored_tabs_load_on_selection(tmp_path, monkeypatch):
         urls = [f"http://127.0.0.1:{server.server_port}/tab/{i}" for i in range(15)]
         settings.set(browser_tabs=urls, browser_active=7, browser_history_enabled=True)
         browser = Browser(settings)
+        browser.saver.setInterval(60000)
         assert browser.normal is None
         assert all(isinstance(browser.tabs.widget(i), RestoredTab) for i in range(15))
         assert visits == []
@@ -190,6 +191,8 @@ def test_fifteen_restored_tabs_load_on_selection(tmp_path, monkeypatch):
                 )
             )
         assert len([url for url in visits if url.startswith("/tab/")]) == 15
+        until(lambda: set(browser.history()) == set(urls))
+        assert settings.get("browser_history") is None
         browser.freeze_idle_tabs()
         assert browser.current().page().lifecycleState() == browser.current().page().LifecycleState.Active
         for i in (2, 6, 14, 7):
@@ -200,6 +203,7 @@ def test_fifteen_restored_tabs_load_on_selection(tmp_path, monkeypatch):
         browser.save()
         assert settings.get("browser_tabs") == urls
         assert settings.get("browser_active") == 7
+        assert set(settings.get("browser_history")) == set(urls)
         # Terminate only this test's Chromium renderer to exercise the actual recovery signal.
         import psutil
 

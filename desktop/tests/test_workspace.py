@@ -236,6 +236,53 @@ def test_safe_mode_preserves_saved_layout_and_tabs(tmp_path, monkeypatch):
     assert all(settings.get(key) == value for key, value in saved.items())
 
 
+@pytest.mark.parametrize("stage", [False, True])
+def test_workspace_restores_after_first_frame_and_respects_space_and_overlays(tmp_path, monkeypatch, stage):
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+    from aircursor_desktop.ui import Desktop
+    from aircursor_desktop import session
+
+    if os.name != "nt" and not os.getenv("DISPLAY"):
+        monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setattr(session, "interactive_desktop", lambda: True)
+    app = QApplication.instance() or QApplication([])
+    saved = {"Files": 1, "Air Browser": 1, "Air Store": 2}
+    settings = Settings(str(tmp_path / "restore.json"))
+    settings.set(auto_switch=False, session_panels=saved, stage=stage)
+    desk = Desktop(settings)
+    desk.work.run = lambda *_: None
+
+    def until(check):
+        for _ in range(100):
+            if check():
+                return
+            QTest.qWait(10)
+        assert check()
+
+    try:
+        desk.show()
+        assert not desk.panels
+        desk.show_overlay("spotlight")
+        QTest.qWait(75)
+        assert not desk.panels
+        desk.view.rootObject().setProperty("overlay", "")
+        expected = {"Air Browser"} if stage else {"Files", "Air Browser"}
+        until(lambda: set(desk.panels) == expected)
+        desk.switch_space(2)
+        until(lambda: "Air Store" in desk.panels and desk.panels["Air Store"].isVisible())
+        assert all(not desk.panels[name].isVisible() for name in expected)
+        assert desk.opened == saved
+        desk.switch_space(1)
+        desk.suspend_workspace()
+        QTest.qWait(75)
+        assert not any(panel.isVisible() for panel in desk.panels.values())
+        assert settings.get("session_panels") == saved
+    finally:
+        desk.close()
+        app.processEvents()
+
+
 def test_unreadable_saved_layout_does_not_prevent_unlock(tmp_path, monkeypatch):
     from PySide6.QtWidgets import QApplication
     from aircursor_desktop.ui import Desktop

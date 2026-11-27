@@ -39,7 +39,7 @@ This report covers the Windows installer, sign-in, workspace, browser, Store, Fi
 
 ## Reproduce and report a problem
 
-- Open **AirCursor (Safe Mode)** from Start if a normal launch freezes during session restore. Use your existing password. Return to **AirCursor** in Start for the normal workspace.
+- Open **AirCursor (Safe Mode)** from Start if a normal launch freezes during session restore. Return to **AirCursor** in Start for the normal workspace.
 - Run `& "$env:LOCALAPPDATA\Programs\AirCursor\AirCursor.exe" --self-test` in PowerShell. Use `Get-Content "$env:TEMP\aircursor-selftest.txt"` to read the packaged smoke-test result.
 - Include the release version, Windows build, GPU model, steps to reproduce, expected behavior, and what happened. A screenshot or a self-test result helps isolate the issue. Keep passwords, pairing codes, recovery codes and private URLs out of the report.
 
@@ -49,3 +49,15 @@ This report covers the Windows installer, sign-in, workspace, browser, Store, Fi
 ## Windows 2.0 update
 
 Windows 2.0 uses the signed-in Windows session for workspace access. The PIN and password controls described in the preview history above applied to the preview builds. Current session tests verify opening directly, pausing on Windows lock and suspend, and resuming after Windows becomes interactive.
+
+## Windows 2.0.1 performance audit
+
+| ID | Symptom | Root cause and fix |
+| --- | --- | --- |
+| WIN-016 | The desktop takes longer to appear with multiple saved apps. | The first Windows show event built each saved window inline, including hidden Stage Manager windows. Restore now shows the desktop first and creates windows one at a time. An open Spotlight or Overview pauses the queue. A workspace change replaces it, and a Windows lock stops it. |
+| WIN-017 | Air Store's Discover view spends extra CPU on redraws. | The Blender banner performed a smooth image resize on each paint. It now reuses the fitted image until the banner size or display scaling changes. |
+| WIN-018 | Rapid navigation generates repeated disk writes with browsing history enabled. | Each successful page load rewrote the settings document. Regular tab history and session state now share a debounced write. The browser and Spotlight can read pending entries immediately. Private tabs stay out of history, and disabling history clears pending and saved entries. |
+| WIN-019 | Settings performs extra image work when running apps change. | App and Dock notifications regenerated the wallpaper thumbnail, and unrelated preferences reapplied the global Qt stylesheet. Cached thumbnails update when the wallpaper changes, and the global stylesheet changes with appearance. |
+| WIN-020 | Reduced-effects profiles still render fallback window shadows in software. | Qt's fallback shadow effect stayed enabled regardless of profile. Performance, Battery Saver, Mobile Hotspot, and Safe Mode now disable the fallback effect. Platform-provided window chrome remains available. |
+
+The Windows verification artifact includes `benchmarks-v2.0.0.jsonl` and `benchmarks.jsonl` for direct comparison on the same hosted runner. The browser workload restores 15 saved HTTP pages, loads each on selection, records settings writes, and measures switching among loaded tabs. Browser timings use a local server. Page complexity, hardware, drivers and internet conditions affect real-world workloads.
