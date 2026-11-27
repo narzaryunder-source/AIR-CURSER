@@ -1,10 +1,19 @@
 """Local new-tab UI stays usable offline and starts Chromium only on first navigation."""
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPixmap
+from functools import lru_cache
+
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QColor, QImageReader, QPainter, QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 from .design import icon
 from .widgets import asset, button, label
+
+
+@lru_cache(maxsize=1)
+def wallpaper():
+    reader = QImageReader(asset("fjord.jpg"))
+    reader.setScaledSize(reader.size().scaled(QSize(1280, 720), Qt.AspectRatioMode.KeepAspectRatio))
+    return QPixmap.fromImage(reader.read())
 
 
 class NewTab(QWidget):
@@ -13,7 +22,7 @@ class NewTab(QWidget):
     def __init__(self, private, bookmarks):
         super().__init__()
         self.private = private
-        self.photo = QPixmap(asset("fjord.jpg"))
+        self.scaled = QPixmap()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 18, 30, 24)
         layout.addStretch(2)
@@ -57,10 +66,16 @@ class NewTab(QWidget):
 
     def paintEvent(self, event):
         p = QPainter(self)
-        scaled = self.photo.scaled(
-            self.size(),
-            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-            Qt.TransformationMode.SmoothTransformation,
+        if self.scaled.isNull() or self.last_size != self.size():
+            self.last_size = self.size()
+            self.scaled = wallpaper().scaled(
+                self.last_size,
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        p.drawPixmap(
+            (self.width() - self.scaled.width()) // 2,
+            (self.height() - self.scaled.height()) // 2,
+            self.scaled,
         )
-        p.drawPixmap((self.width() - scaled.width()) // 2, (self.height() - scaled.height()) // 2, scaled)
         p.fillRect(self.rect(), QColor(15, 28, 49, 115 if self.private else 47))

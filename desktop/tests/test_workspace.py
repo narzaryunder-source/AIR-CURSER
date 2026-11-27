@@ -10,6 +10,13 @@ from aircursor_desktop.settings import Settings
 from aircursor_desktop.store import arguments
 
 
+def test_browser_uses_local_address_and_port_for_development_apps():
+    assert web_url("localhost:8080") == "http://localhost:8080"
+    assert web_url("[::1]:9200/index") == "http://[::1]:9200/index"
+    assert web_url("example.org:443/download") == "https://example.org:443/download"
+    assert web_url("javascript:alert(1)").startswith("https://duckduckgo.com/?q=")
+
+
 def test_store_arguments_are_exact_and_restricted_to_source():
     assert arguments("install", "Mozilla.Firefox") == [
         "install",

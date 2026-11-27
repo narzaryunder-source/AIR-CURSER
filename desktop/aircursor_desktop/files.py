@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 from .file_actions import file_mime, file_selection, open_with, valid_name
 from .navigation import sidebar, item, heading
 from .thumbnails import FileModel
-from .widgets import Workers, button, confirm, label, open_path, row
+from .widgets import WINDOWS_INSTALLERS, Workers, button, confirm, label, open_path, row
 
 
 def extract_new(archive):
@@ -354,7 +354,7 @@ class Files(QWidget):
                     menu.addAction("Edit photo…", lambda: edit_photo(self, path))
                 elif path.suffix.lower() in (".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"):
                     menu.addAction("Trim video…", lambda: trim_video(self, path))
-            if path.is_file() and path.suffix.lower() not in (".exe", ".msi"):
+            if path.is_file() and path.suffix.lower() not in WINDOWS_INSTALLERS:
                 menu.addAction("Open with…", lambda: self.choose_app(path))
             menu.addAction("Copy", lambda: QApplication.clipboard().setMimeData(file_mime([path])))
             menu.addAction("Cut", lambda: QApplication.clipboard().setMimeData(file_mime([path], True)))

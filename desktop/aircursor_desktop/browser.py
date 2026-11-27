@@ -1,12 +1,12 @@
 """Tabbed Qt WebEngine browser. Application navigation and profiles are separate from web content."""
 
+import os
+import time
 from pathlib import Path
 from urllib.parse import quote_plus, urlsplit
 
 from PySide6.QtCore import QStandardPaths, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QShortcut, QKeySequence
-from PySide6.QtWebEngineCore import QWebEngineDownloadRequest, QWebEnginePage, QWebEngineProfile, QWebEngineSettings
-from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
+    QMessageBox,
     QMenu,
     QTabWidget,
     QVBoxLayout,
@@ -21,27 +23,38 @@ from PySide6.QtWidgets import (
 )
 from .settings import data_dir
 from .browser_home import NewTab
-from .widgets import button, confirm, label, open_path, password, row
-
-HOME = "https://duckduckgo.com/"
+from .widgets import WINDOWS_INSTALLERS, button, confirm, label, open_path, password, row
 
 
 def web_url(text):
     value = text.strip()
     try:
         parsed = urlsplit(value)
+        if parsed.scheme in ("https", "http") and parsed.hostname:
+            return value
+        if "://" not in value and not any(character.isspace() for character in value):
+            candidate = urlsplit("//" + value)
+            host = candidate.hostname or ""
+            if host and candidate.username is None and (host == "localhost" or "." in host or ":" in host):
+                # A bare development server needs HTTP unless the user specifies HTTPS.
+                scheme = "http" if host in ("localhost", "127.0.0.1", "::1") else "https"
+                candidate.port  # Reject malformed or out-of-range ports.
+                return f"{scheme}://{value}"
     except ValueError:
-        return "https://duckduckgo.com/?q=" + quote_plus(value)
-    if parsed.scheme in ("https", "http") and parsed.hostname:
-        return value
-    if not parsed.scheme and " " not in value and "." in value:
-        return "https://" + value
+        pass
     return "https://duckduckgo.com/?q=" + quote_plus(value)
 
 
-class Page(QWebEnginePage):
-    def acceptNavigationRequest(self, url, kind, main):
-        return not main or url.scheme() in ("https", "http") or url.toString() == "about:blank"
+MAX_SAVED_TABS = 100
+DISCARD_AFTER_SECONDS = 300
+
+
+class RestoredTab(QWidget):
+    def __init__(self, url):
+        super().__init__()
+        self.target = url
+        layout = QVBoxLayout(self)
+        layout.addWidget(label(url), alignment=Qt.AlignmentFlag.AlignCenter)
 
 
 class Browser(QWidget):
@@ -51,7 +64,12 @@ class Browser(QWidget):
         self.normal = None
         self.private = None
         self.downloads = []
+        self._recent_downloads = [
+            path for path in self.s.get("browser_downloads", []) if isinstance(path, str)
+        ][:50]
         self.tools = []
+        self._view_type = ()
+        self._changing_tabs = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 7, 12, 10)
         self.address = QLineEdit()
@@ -66,22 +84,41 @@ class Browser(QWidget):
             button("↻", lambda: self.web_action("reload"), "Reload"),
             self.address,
             button("+", lambda: self.add(), "New tab"),
+            button("Downloads", self.show_downloads),
             more,
         )
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
         self.tabs.setDocumentMode(True)
         self.tabs.tabCloseRequested.connect(self.close_tab)
-        self.tabs.currentChanged.connect(self.sync)
+        self.tabs.currentChanged.connect(self.select_tab)
+        self.tabs.setMovable(True)
+        self.tabs.tabBar().tabMoved.connect(lambda *_: self.saver.start())
         layout.addWidget(self.tabs)
         self.saver = QTimer(self, interval=800, singleShot=True)
         self.saver.timeout.connect(self.save)
-        urls = self.s.get("browser_tabs", [])[:20] or [None]
-        for url in urls:
-            self.add(url, focus=False)
+        self.restore_timer = QTimer(self, interval=0, singleShot=True)
+        self.restore_timer.timeout.connect(self.restore_selected)
+        self.sleeper = QTimer(self, interval=15000)
+        self.sleeper.timeout.connect(self.freeze_idle_tabs)
+        self._changing_tabs = True
+        urls = self.s.get("browser_tabs", []) if self.s.get("restore", True) else []
+        for url in urls[:MAX_SAVED_TABS]:
+            if isinstance(url, str) and url.startswith(("https://", "http://")):
+                self.tabs.addTab(RestoredTab(url), (QUrl(url).host() or "Restored tab")[:32])
+        if self.tabs.count():
+            active = self.s.get("browser_active", 0)
+            self.tabs.setCurrentIndex(
+                min(max(0, active if isinstance(active, int) else 0), self.tabs.count() - 1)
+            )
+        else:
+            self.add()
+        self._changing_tabs = False
+        self.select_tab()
         for keys, cb in [
             ("Ctrl+L", self.address.setFocus),
             ("Ctrl+T", self.add),
+            ("Ctrl+Shift+J", self.show_downloads),
             ("Ctrl+W", lambda: self.close_tab(self.tabs.currentIndex())),
         ]:
             QShortcut(QKeySequence(keys), self, activated=cb)
@@ -91,22 +128,91 @@ class Browser(QWidget):
 
     def web_action(self, method):
         view = self.current()
-        if isinstance(view, QWebEngineView):
+        if isinstance(view, self._view_type):
             getattr(view, method)()
 
-    def navigate(self, view, text):
-        if not text.strip():
+    def showEvent(self, event):
+        super().showEvent(event)
+        if isinstance(self.current(), RestoredTab):
+            self.restore_timer.start()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self.restore_timer.stop()
+        if self._view_type:
+            self.sleeper.start()
+
+    def select_tab(self, *_):
+        if self._changing_tabs:
             return
-        if isinstance(view, NewTab):
+        if self._view_type:
+            self.sleeper.start()
+        current = self.current()
+        if isinstance(current, self._view_type):
+            current.idle_since = None
+            page = current.page()
+            if page.lifecycleState() != page.LifecycleState.Active:
+                page.setLifecycleState(page.LifecycleState.Active)
+        self.address.setModified(False)
+        self.sync()
+        if self.isVisible() and isinstance(current, RestoredTab):
+            self.restore_timer.start()
+
+    def restore_selected(self):
+        current = self.current()
+        if self.isVisible() and isinstance(current, RestoredTab):
+            self.navigate(current, current.target)
+
+    def freeze_idle_tabs(self):
+        now = time.monotonic()
+        memory_saver = self.s.get("browser_memory_saver", False)
+        downloading = {request.page() for request in self.downloads if not request.isFinished()}
+        hidden = False
+        for index in range(self.tabs.count()):
+            view = self.tabs.widget(index)
+            if not isinstance(view, self._view_type) or view.isVisible():
+                continue
+            hidden = True
+            if view.idle_since is None:
+                view.idle_since = now
+            page = view.page()
+            state = page.LifecycleState
+            recommended = page.recommendedState()
+            if recommended == state.Active or page in downloading:
+                continue
+            if (
+                memory_saver
+                and now - view.idle_since >= DISCARD_AFTER_SECONDS
+                and page.lifecycleState() != state.Discarded
+                and recommended == state.Discarded
+            ):
+                page.setLifecycleState(state.Discarded)
+            elif page.lifecycleState() == state.Active:
+                page.setLifecycleState(state.Frozen)
+        if not hidden:
+            self.sleeper.stop()
+
+    def navigate(self, view, text):
+        if not text.strip() or view is None:
+            return
+        url = web_url(text)
+        self.address.setModified(False)
+        if isinstance(view, self._view_type):
+            view.setUrl(QUrl(url))
+        else:
             index = self.tabs.indexOf(view)
             if index < 0:
                 return
-            private = view.private
+            selected = self.current() is view
+            private = isinstance(view, NewTab) and view.private
+            self._changing_tabs = True
             self.tabs.removeTab(index)
             view.deleteLater()
-            self.add(web_url(text), private=private, position=index)
-        else:
-            view.setUrl(QUrl(web_url(text)))
+            try:
+                self.add(url, private=private, focus=selected, position=index)
+            finally:
+                self._changing_tabs = False
+            self.select_tab()
 
     def add(self, url=None, private=False, focus=True, position=-1):
         if url is None:
@@ -120,6 +226,12 @@ class Browser(QWidget):
             if focus:
                 self.tabs.setCurrentIndex(index)
             return home
+        return self.add_web_view(private, focus, position, QUrl(web_url(url)))
+
+    def add_web_view(self, private, focus=True, position=-1, url=None):
+        from .browser_engine import Page, QWebEngineProfile, QWebEngineSettings, QWebEngineView
+
+        self._view_type = QWebEngineView
         if not private and self.normal is None:
             self.normal = QWebEngineProfile("AirBrowser", self)
             prefix = Path(data_dir()) / self.s.get("browser_profile", "")
@@ -129,10 +241,12 @@ class Browser(QWidget):
 
         if private and self.private is None:
             self.private = QWebEngineProfile(self)
-            self.private.downloadRequested.connect(self.download)
+            self.private.downloadRequested.connect(lambda request: self.download(request, private=True))
         view = QWebEngineView(self)
         engine = Page(self.private if private else self.normal, view)
         view.setPage(engine)
+        view.target = url
+        view.idle_since = None
         engine.settings().setAttribute(QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True)
         engine.permissionRequested.connect(
             lambda perm: (
@@ -159,14 +273,17 @@ class Browser(QWidget):
                 self.tabs.indexOf(view), ("Private · " if private else "") + (title[:32] or "New tab")
             )
         )
-        view.urlChanged.connect(self.sync)
+        view.urlChanged.connect(lambda address: self.url_changed(view, address))
         view.loadFinished.connect(lambda ok: self.loaded(view, private, ok))
-        view.setUrl(QUrl(web_url(url)))
+        if url is not None:
+            view.setUrl(url)
+        if view is not self.current():
+            self.sleeper.start()
         return view
 
     def popup(self, request, private):
         if request.isUserInitiated() and request.requestedUrl().scheme() in ("https", "http", ""):
-            request.openIn(self.add(request.requestedUrl().toString() or HOME, private=private).page())
+            request.openIn(self.add_web_view(private).page())
 
     def authenticate(self, url, auth):
         if not self.isVisible():
@@ -188,6 +305,7 @@ class Browser(QWidget):
         if dialog.exec():
             auth.setUser(user.text())
             auth.setPassword(secret.text())
+        dialog.deleteLater()
 
     def fullscreen(self, view, request):
         if request.toggleOn() and not confirm(
@@ -226,7 +344,7 @@ class Browser(QWidget):
         self.tabs.removeTab(index)
         view.deleteLater()
         if self.private and not any(
-            isinstance(self.tabs.widget(i), QWebEngineView)
+            isinstance(self.tabs.widget(i), self._view_type)
             and self.tabs.widget(i).page().profile() == self.private
             for i in range(self.tabs.count())
         ):
@@ -238,42 +356,67 @@ class Browser(QWidget):
         self.saver.start()
 
     def close_private(self):
-        for tool in self.tools:
+        for tool in self.tools[:]:
             tool.close()
             tool.deleteLater()
         self.tools.clear()
         for index in reversed(range(self.tabs.count())):
             tab = self.tabs.widget(index)
             if (isinstance(tab, NewTab) and tab.private) or (
-                isinstance(tab, QWebEngineView) and tab.page().profile().isOffTheRecord()
+                isinstance(tab, self._view_type) and tab.page().profile().isOffTheRecord()
             ):
                 self.close_tab(index)
         self.save()
 
-    def sync(self, *_):
-        if self.current():
-            self.address.setText(
-                self.current().url().toDisplayString() if isinstance(self.current(), QWebEngineView) else ""
-            )
+    def url_changed(self, view, address):
+        view.target = address
+        if view is self.current():
+            self.sync()
+        self.saver.start()
+
+    def tab_url(self, widget):
+        if isinstance(widget, RestoredTab):
+            return widget.target
+        if isinstance(widget, self._view_type) and widget.target:
+            return widget.target.toString()
+        return ""
+
+    def sync(self):
+        if not self.address.isModified():
+            self.address.setText(self.tab_url(self.current()))
         self.saver.start()
 
     def save(self):
-        urls = [
-            self.tabs.widget(i).url().toString()
-            for i in range(self.tabs.count())
-            if isinstance(self.tabs.widget(i), QWebEngineView)
-            and self.tabs.widget(i).page().profile() == self.normal
-        ]
-        self.s.set(browser_tabs=[u for u in urls if u.startswith(("https://", "http://"))][:20])
+        if not self.s.get("restore", True):
+            return
+        urls = []
+        active = 0
+        for index in range(self.tabs.count()):
+            view = self.tabs.widget(index)
+            if isinstance(view, self._view_type) and view.page().profile() != self.normal:
+                continue
+            url = self.tab_url(view)
+            if url.startswith(("https://", "http://")):
+                if index == self.tabs.currentIndex():
+                    active = len(urls)
+                urls.append(url)
+        values = urls[:MAX_SAVED_TABS]
+        active = min(active, max(0, len(values) - 1))
+        if self.s.get("browser_tabs", []) != values or self.s.get("browser_active", 0) != active:
+            self.s.set(browser_tabs=values, browser_active=active)
 
     def menu(self):
         m = QMenu(self)
         m.addAction("New private tab", lambda: self.add(private=True))
-        active = isinstance(self.current(), QWebEngineView)
+        active = isinstance(self.current(), self._view_type)
         m.addAction("Bookmark this page", self.bookmark).setEnabled(active)
         m.addAction("Bookmarks", lambda: self.choose("Bookmarks", self.s.get("bookmarks", [])))
         m.addAction("History", lambda: self.choose("History", self.s.get("browser_history", [])))
         m.addAction("Downloads", self.show_downloads)
+        memory_saver = m.addAction("Memory Saver · reload long-idle tabs when selected")
+        memory_saver.setCheckable(True)
+        memory_saver.setChecked(self.s.get("browser_memory_saver", False))
+        memory_saver.toggled.connect(lambda enabled: self.s.set(browser_memory_saver=enabled))
         m.addAction(
             "Open in default browser", lambda: QDesktopServices.openUrl(self.current().url())
         ).setEnabled(active)
@@ -300,14 +443,16 @@ class Browser(QWidget):
             QMessageBox.information(self, title, "No saved pages.")
 
     def devtools(self):
-        view = QWebEngineView(self.window())
+        view = self._view_type(self.window())
         view.setWindowFlag(Qt.WindowType.Window, True)
         view.resize(880, 620)
+        view.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.current().page().setDevToolsPage(view.page())
         self.tools.append(view)
+        view.destroyed.connect(lambda: self.tools.remove(view) if view in self.tools else None)
         view.show()
 
-    def download(self, request):
+    def download(self, request, private=False):
         if not self.isVisible():
             request.cancel()
             return
@@ -325,7 +470,28 @@ class Browser(QWidget):
         request.destroyed.connect(
             lambda: self.downloads.remove(request) if request in self.downloads else None
         )
+        request.isFinishedChanged.connect(lambda: self.download_finished(request, path, private))
         request.accept()
+
+    def download_finished(self, request, path, private):
+        if request.state().name == "DownloadCompleted":
+            if os.name == "nt" and path.suffix.lower() in WINDOWS_INSTALLERS:
+                try:
+                    mark_internet_download(path)
+                except OSError:
+                    # Downloads to drives that lack alternate streams are still visible in Explorer.
+                    pass
+            if not private:
+                value = str(path)
+                self._recent_downloads = [value, *(p for p in self._recent_downloads if p != value)][:50]
+                try:
+                    self.s.set(browser_downloads=self._recent_downloads)
+                except OSError:
+                    pass  # File completed; only its entry in the recent list could not be saved.
+        finished = [entry for entry in self.downloads if entry.isFinished()]
+        for entry in finished[:-50]:
+            self.downloads.remove(entry)
+            entry.deleteLater()
 
     def show_downloads(self):
         dialog = QDialog(self)
@@ -336,46 +502,101 @@ class Browser(QWidget):
 
         def selected():
             entry = listing.currentItem()
-            return entry.data(Qt.ItemDataRole.UserRole) if entry is not None else None
-
-        state = QWebEngineDownloadRequest.DownloadState
+            return rows.get(entry.data(Qt.ItemDataRole.UserRole)) if entry is not None else None
 
         def controls():
-            request = selected()
-            completed = request is not None and request.state() == state.DownloadCompleted
-            open_file.setEnabled(completed)
-            reveal.setEnabled(completed)
-            stop.setEnabled(request is not None and request.state() == state.DownloadInProgress)
+            record = selected()
+            complete = record is not None and record[2] == "DownloadCompleted"
+            open_file.setEnabled(complete)
+            reveal.setEnabled(complete)
+            stop.setEnabled(record is not None and record[2] == "DownloadInProgress")
 
         def open_selected(folder=False):
-            request = selected()
-            if request is None or request.state() != state.DownloadCompleted:
+            record = selected()
+            if record is None or record[2] != "DownloadCompleted":
                 return
-            path = Path(request.downloadDirectory()) / request.downloadFileName()
-            if not path.is_file():
-                from PySide6.QtWidgets import QMessageBox
-                QMessageBox.information(dialog, "Downloads", "The downloaded file has moved or was deleted.")
+            path = record[1]
+            exists = path.parent.is_dir() if folder else path.is_file()
+            if not exists:
+                QMessageBox.information(
+                    dialog, "Downloads", "The downloaded file or its folder has moved or was deleted."
+                )
                 return
+            if not folder and os.name == "nt" and path.suffix.lower() in WINDOWS_INSTALLERS:
+                try:
+                    mark_internet_download(path)
+                except OSError:
+                    QMessageBox.warning(
+                        dialog,
+                        "Downloads",
+                        "Move the installer to your Windows Downloads folder before opening it. This drive cannot preserve the internet security marker.",
+                    )
+                    return
             open_path(dialog, path.parent if folder else path)
+
+        def cancel():
+            record = selected()
+            if record and record[0] is not None:
+                record[0].cancel()
+
+        def clear_history():
+            try:
+                self.s.set(browser_downloads=[])
+            except OSError as exc:
+                QMessageBox.warning(dialog, "Downloads", str(exc))
+                return
+            self._recent_downloads.clear()
+            self.downloads[:] = [item for item in self.downloads if not item.isFinished()]
+            update()
 
         open_file = button("Open file…", open_selected)
         reveal = button("Open folder", lambda: open_selected(True))
-        stop = button("Cancel download", lambda: selected() and selected().cancel())
-        row(layout, open_file, reveal, stop)
+        stop = button("Cancel download", cancel)
+        row(layout, open_file, reveal, stop, button("Clear history", clear_history))
         listing.itemSelectionChanged.connect(controls)
         listing.itemDoubleClicked.connect(lambda *_: open_selected())
 
+        rows = {}
+        painted = []
+
         def update():
-            from PySide6.QtWidgets import QListWidgetItem
-            previous = selected()
+            entries = []
+            live_paths = set()
+            for request in self.downloads:
+                path = Path(request.downloadDirectory()) / request.downloadFileName()
+                status = request.state().name
+                total = f"{request.totalBytes():,}" if request.totalBytes() >= 0 else "unknown size"
+                text = f"{path.name} · {request.receivedBytes():,} / {total} bytes · {status}"
+                entries.append((f"live-{id(request)}", request, path, status, text))
+                live_paths.add(str(path))
+            for value in self._recent_downloads:
+                if value not in live_paths:
+                    path = Path(value)
+                    entries.append(
+                        (value, None, path, "DownloadCompleted", f"{path.name} · Download completed")
+                    )
+            if not listing.count() and not entries:
+                controls()
+                return
+            snapshot = [(key, text) for key, _, _, _, text in entries]
+            if snapshot == painted:
+                return
+            painted[:] = snapshot
+            previous = listing.currentItem()
+            selection = previous.data(Qt.ItemDataRole.UserRole) if previous else None
             listing.blockSignals(True)
-            listing.clear()
-            for d in self.downloads:
-                total = f"{d.totalBytes():,}" if d.totalBytes() >= 0 else "unknown size"
-                entry = QListWidgetItem(f"{d.downloadFileName()} · {d.receivedBytes():,} / {total} bytes · {d.state().name}", listing)
-                entry.setData(Qt.ItemDataRole.UserRole, d)
-                if d is previous:
-                    listing.setCurrentItem(entry)
+            if list(rows) != [key for key, *_ in entries]:
+                listing.clear()
+                for key, _, _, _, text in entries:
+                    entry = QListWidgetItem(text, listing)
+                    entry.setData(Qt.ItemDataRole.UserRole, key)
+                    if key == selection:
+                        listing.setCurrentItem(entry)
+            else:
+                for index, (_, _, _, _, text) in enumerate(entries):
+                    listing.item(index).setText(text)
+            rows.clear()
+            rows.update({key: (request, path, status) for key, request, path, status, _ in entries})
             if listing.currentRow() < 0 and listing.count():
                 listing.setCurrentRow(0)
             listing.blockSignals(False)
@@ -385,6 +606,15 @@ class Browser(QWidget):
         timer.timeout.connect(update)
         timer.start()
         update()
-        dialog.resize(600, 320)
+        dialog.resize(640, 340)
         dialog.exec()
         dialog.deleteLater()
+
+
+def mark_internet_download(path):
+    """Preserve an existing zone marker or attach the standard Windows internet zone."""
+    try:
+        with open(str(path) + ":Zone.Identifier", "xb") as stream:
+            stream.write(b"[ZoneTransfer]\r\nZoneId=3\r\n")
+    except FileExistsError:
+        pass

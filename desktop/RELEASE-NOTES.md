@@ -31,3 +31,10 @@ See the verification report for measurements, platform coverage and outstanding 
 - System telemetry runs off the UI thread. Layout saves are coalesced, and changing a Windows window title no longer rebuilds the Dock when its entries stay the same.
 - Phone discovery refreshes its address after Wi-Fi, hotspot and USB tethering changes. Pairing and remote input work over a reachable local network without internet access.
 - The Windows receiver keeps fractional motion and skips input for unchanged cursor positions. Virtual-screen coordinates target the center of each pixel.
+
+## Windows browser and catalog update
+
+- Restored browser tabs load on selection. Air Browser starts Chromium on demand, pauses eligible idle pages, can unload them with the optional Memory Saver, and uses an opaque native browser window to reduce whole-window compositing.
+- Saved tab selection and order persist. Background navigation preserves text entered in the address bar. Localhost addresses and explicit ports work in the address bar.
+- Downloads are a toolbar action with recent completed downloads, progress, cancel and open controls. Installer launches use the Windows application association or signature review, and downloads preserve the Windows internet-zone marker.
+- Air Store offers new game, launcher and creative entries, app artwork and Microsoft Store search through winget.

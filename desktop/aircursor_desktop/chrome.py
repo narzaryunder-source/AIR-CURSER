@@ -30,20 +30,22 @@ class Panel(QMainWindow):
     def __init__(self, desk, name, content):
         super().__init__(desk, Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
         self.desk, self.name, self.content = desk, name, content
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.composited = name != "Air Browser"
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, self.composited)
         self.setWindowTitle(name + " · AirCursor")
         self.setWindowIcon(icon(name))
         self.setMinimumSize(560, 365)
         frame = QWidget()
         outer = QVBoxLayout(frame)
-        outer.setContentsMargins(20, 12, 20, 24)
+        outer.setContentsMargins(*((20, 12, 20, 24) if self.composited else (0, 0, 0, 0)))
         body = QFrame()
         body.setObjectName("windowBody")
-        shadow = QGraphicsDropShadowEffect(body)
-        shadow.setBlurRadius(33)
-        shadow.setOffset(0, 8)
-        shadow.setColor(QColor(8, 20, 32, 95))
-        body.setGraphicsEffect(shadow)
+        if self.composited:
+            shadow = QGraphicsDropShadowEffect(body)
+            shadow.setBlurRadius(33)
+            shadow.setOffset(0, 8)
+            shadow.setColor(QColor(8, 20, 32, 95))
+            body.setGraphicsEffect(shadow)
         outer.addWidget(body)
         layout = QVBoxLayout(body)
         layout.setContentsMargins(1, 1, 1, 1)
@@ -83,7 +85,7 @@ class Panel(QMainWindow):
         self.fade.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.closing = False
         self.fade.finished.connect(self.finish_animation)
-        if apply_backdrop(self, desk.shell.dark):
+        if self.composited and apply_backdrop(self, desk.shell.dark):
             # DWM owns the native frame. A transparent Qt shadow source otherwise casts
             # a second shadow from every child control onto the acrylic background.
             body.setGraphicsEffect(None)
@@ -135,11 +137,13 @@ class Panel(QMainWindow):
         self.fade.stop()
         if self.isMinimized():
             self.showNormal()
-        self.setWindowOpacity(0.7 if first and self.desk.effects() else 1)
+        animate = self.composited and first and self.desk.effects()
+        if self.composited:
+            self.setWindowOpacity(0.7 if animate else 1)
         self.show()
         self.raise_()
         self.activateWindow()
-        if first and self.desk.effects():
+        if animate:
             self.fade.setStartValue(0.7)
             self.fade.setEndValue(1)
             self.fade.start()
@@ -161,7 +165,7 @@ class Panel(QMainWindow):
 
     def closeEvent(self, event):
         self.desk.panel_closed(self.name)
-        if self.desk.effects() and self.isVisible() and not self.desk.locked:
+        if self.composited and self.desk.effects() and self.isVisible() and not self.desk.locked:
             event.ignore()
             self.fade.stop()
             self.closing = True

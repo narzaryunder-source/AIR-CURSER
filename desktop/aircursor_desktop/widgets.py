@@ -52,15 +52,33 @@ def confirm(parent, title, message):
     return dlg.exec() == QMessageBox.StandardButton.Yes
 
 
+WINDOWS_INSTALLERS = frozenset(
+    {".exe", ".msi", ".msp", ".msix", ".msixbundle", ".appx", ".appxbundle", ".appinstaller"}
+)
+
+
 def open_path(parent, path):
     path = Path(path)
-    if os.name == "nt" and path.suffix.lower() in {".exe", ".msi"}:
+    if os.name == "nt" and path.suffix.lower() in {".exe", ".msi", ".msp"}:
         from .installer import approve
 
         approve(parent, path)
         return
-    if path.suffix.lower() in {".exe", ".msi", ".cmd", ".bat", ".ps1", ".lnk", ".com", ".scr"}:
-        if not confirm(parent, "Launch with Windows?", f"Open this file using your Windows account?\n{path}"):
+    if path.suffix.lower() in WINDOWS_INSTALLERS | {
+        ".cmd",
+        ".bat",
+        ".ps1",
+        ".lnk",
+        ".com",
+        ".scr",
+        ".hta",
+        ".js",
+        ".vbs",
+        ".reg",
+    }:
+        if not confirm(
+            parent, "Launch with Windows?", f"Open this file using your Windows account?\n{path}"
+        ):
             return
     if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
         QMessageBox.warning(parent, "Open file", f"Windows could not open {path}.")

@@ -4,11 +4,13 @@ from pathlib import Path
 import shutil
 import re
 import codecs
+from functools import lru_cache
 
 from PySide6.QtCore import QProcess, Qt, QSize
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
+    QComboBox,
     QGridLayout,
     QStackedWidget,
     QFileDialog,
@@ -20,35 +22,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from .navigation import sidebar, item, heading
+from .catalog import CATALOG, LOGOS, STORE_IDS
+from .design import icon
 from .applications import launch_cli, launch_registered, match_apps, registered_apps
-from .widgets import Workers, asset, button, confirm, label, open_path, row
-
-CATALOG = {
-    "Artificial Intelligence": {"Ollama": "Ollama.Ollama", "LM Studio": "ElementLabs.LMStudio"},
-    "Video Editing": {
-        "DaVinci Resolve": "BlackmagicDesign.DaVinciResolve",
-        "CapCut": "ByteDance.CapCut",
-        "OBS Studio": "OBSProject.OBSStudio",
-    },
-    "Photo Editing": {"GIMP": "GIMP.GIMP.3"},
-    "Graphic Design": {"Blender": "BlenderFoundation.Blender", "Krita": "KDE.Krita"},
-    "Programming": {
-        "Visual Studio Code": "Microsoft.VisualStudioCode",
-        "Python 3.13": "Python.Python.3.13",
-    },
-    "Productivity": {"LibreOffice": "TheDocumentFoundation.LibreOffice"},
-    "Entertainment": {"VLC": "VideoLAN.VLC", "Audacity": "Audacity.Audacity"},
-    "Browsers": {"Firefox": "Mozilla.Firefox", "Google Chrome": "Google.Chrome"},
-    "Utilities": {"FFmpeg": "Gyan.FFmpeg"},
-    "Development Tools": {"Git": "Git.Git", "Node.js LTS": "OpenJS.NodeJS.LTS"},
-}
+from .widgets import WINDOWS_INSTALLERS, Workers, asset, button, confirm, label, open_path, row
 
 
-def arguments(action, value):
+def arguments(action, value, source="winget"):
     if not value.strip() or value.startswith("-") or any(c in value for c in "\r\n\x00"):
         raise ValueError("Enter a package name or ID.")
+    if source not in ("winget", "msstore"):
+        raise ValueError("Choose an application source.")
     selector = ["--query", value] if action == "search" else ["--id", value, "--exact"]
-    return [action, *selector, "--source", "winget", "--disable-interactivity"]
+    return [action, *selector, "--source", source, "--disable-interactivity"]
 
 
 def search_rows(output):
@@ -109,31 +95,10 @@ class Studio(QFrame):
         p.drawPixmap((self.width() - pic.width()) // 2, (self.height() - pic.height()) // 2, pic)
 
 
-def package_icon(name):
-    colors = {
-        "Blender": "#b96d39",
-        "Krita": "#6957ac",
-        "OBS Studio": "#35434e",
-        "GIMP": "#677768",
-        "Visual Studio Code": "#3388b1",
-        "VLC": "#ba7536",
-        "Ollama": "#476575",
-        "LM Studio": "#85628d",
-    }
-    pix = QPixmap(72, 72)
-    pix.fill(Qt.GlobalColor.transparent)
-    p = QPainter(pix)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QColor(colors.get(name, "#58758d")))
-    p.drawRoundedRect(2, 2, 68, 68, 18, 18)
-    p.setPen(QColor("white"))
-    font = QFont("Segoe UI", 17)
-    font.setWeight(QFont.Weight.DemiBold)
-    p.setFont(font)
-    p.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, name[:2])
-    p.end()
-    return QIcon(pix)
+@lru_cache(maxsize=96)
+def package_icon(package):
+    logo = LOGOS.get(package)
+    return QIcon(asset(f"app-logos/{logo}.png")) if logo else icon("Air Store")
 
 
 class Store(QWidget):
@@ -148,7 +113,10 @@ class Store(QWidget):
         self.query = QLineEdit()
         self.query.setPlaceholderText("Search winget by application name or package ID")
         self.query.returnPressed.connect(lambda: self.run("search"))
-        row(layout, self.query, button("Search", lambda: self.run("search")))
+        self.source = QComboBox()
+        self.source.addItem("winget Community", "winget")
+        self.source.addItem("Microsoft Store", "msstore")
+        row(layout, self.query, self.source, button("Search", lambda: self.run("search")))
         self.stack = QStackedWidget()
         layout.addWidget(self.stack, 1)
         explore = QWidget()
@@ -157,7 +125,7 @@ class Store(QWidget):
         front.setSpacing(9)
         heading(front, "Discover")
         front.addWidget(Studio(lambda: self.details("Graphic Design", "Blender")), 2)
-        section = label("Creative and development tools")
+        section = label("Games, creative tools and AI")
         section.setObjectName("section")
         front.addWidget(section)
         grid = QGridLayout()
@@ -165,7 +133,8 @@ class Store(QWidget):
         self.featured = []
         for i, (name, category) in enumerate(
             [
-                ("Krita", "Graphic Design"),
+                ("Steam", "Game Launchers"),
+                ("Roblox", "Games"),
                 ("OBS Studio", "Video Editing"),
                 ("GIMP", "Photo Editing"),
                 ("Visual Studio Code", "Programming"),
@@ -174,7 +143,7 @@ class Store(QWidget):
             ]
         ):
             card = button(name + "  ›", lambda n=name, c=category: self.details(c, n))
-            card.setIcon(package_icon(name))
+            card.setIcon(package_icon(CATALOG[category][name]))
             card.setIconSize(QSize(32, 32))
             card.setStyleSheet("text-align:left;padding:8px 10px")
             grid.addWidget(card, i // 2, i % 2)
@@ -221,7 +190,7 @@ class Store(QWidget):
             button("Launch selected app…", self.launch),
             button("Open downloaded installer…", self.installer),
         )
-        left.addWidget(label("Source  ·  winget"))
+        left.addWidget(label("Windows Package Manager"))
         self.process = QProcess(self)
         self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         self.process.readyReadStandardOutput.connect(self.read)
@@ -246,19 +215,19 @@ class Store(QWidget):
         self.title.setText(category)
         self.apps.clear()
         for name, package in CATALOG[category].items():
-            art = {
-                "Artificial Intelligence": "Air AI",
-                "Browsers": "Air Browser",
-                "Development Tools": "Terminal",
-                "Programming": "Terminal",
-            }.get(category, "Air Store")
-            item(self.apps, name, package, art).setIcon(package_icon(name))
+            self.add_package(name, package, "msstore" if package in STORE_IDS else "winget")
         self.apps.setCurrentRow(0)
+
+    def add_package(self, name, package, source):
+        entry = item(self.apps, name, package)
+        entry.setIcon(package_icon(package))
+        entry.setData(Qt.ItemDataRole.UserRole + 1, source)
 
     def pick(self, entry, previous=None):
         if entry:
             package = entry.data(Qt.ItemDataRole.UserRole)
             self.query.setText(package)
+            self.source.setCurrentIndex(self.source.findData(entry.data(Qt.ItemDataRole.UserRole + 1)))
             self.selected.setText(package)
         else:
             self.selected.clear()
@@ -312,7 +281,7 @@ class Store(QWidget):
             self.title.setText("Search results")
             self.apps.clear()
             for title, package in rows:
-                item(self.apps, title, package)
+                self.add_package(title, package, self.package_source)
             if rows:
                 self.apps.setCurrentRow(0)
             self.status.setText(f"{len(rows)} selectable packages. Full winget results appear below.")
@@ -339,9 +308,9 @@ class Store(QWidget):
             "Accept agreements",
             f"Review the agreements and publisher links in winget’s output. Accept {terms} for {self.package} and retry?",
         ):
-            self.run(self.operation, agreed=True, value=self.package)
+            self.run(self.operation, agreed=True, value=self.package, source=self.package_source)
 
-    def run(self, action, agreed=False, value=None):
+    def run(self, action, agreed=False, value=None, source=None):
         if self.process.state() != QProcess.ProcessState.NotRunning:
             self.status.setText("Wait for the current package operation to finish.")
             return
@@ -351,8 +320,9 @@ class Store(QWidget):
             self.status.setText("Install or update Microsoft App Installer to use winget.")
             return
         value = self.query.text().strip() if value is None else value
+        source = source or self.source.currentData()
         try:
-            args = arguments(action, value)
+            args = arguments(action, value, source)
         except ValueError as exc:
             self.status.setText(str(exc))
             return
@@ -360,7 +330,7 @@ class Store(QWidget):
             if not confirm(
                 self,
                 f"{action.capitalize()} package",
-                f"{action.capitalize()} {value} using the winget community source? Review Details for publisher and license. Windows may ask for approval.",
+                f"{action.capitalize()} {value} using {source}? Review Details for publisher and license. Windows may ask for approval.",
             ):
                 return
         if agreed:
@@ -370,13 +340,14 @@ class Store(QWidget):
         self.agreements.hide()
         self.output.clear()
         self.status.setText("Running winget " + action + "…")
-        self.operation, self.package = action, value
+        self.operation, self.package, self.package_source = action, value, source
         self.decoder = codecs.getincrementaldecoder("utf-8")("replace")
         self.process.start(exe, args)
 
     def installer(self):
+        patterns = " ".join("*" + suffix for suffix in sorted(WINDOWS_INSTALLERS))
         path, _ = QFileDialog.getOpenFileName(
-            self, "Choose installer", "", "Windows installers (*.exe *.msi)"
+            self, "Choose installer", "", f"Windows installers ({patterns})"
         )
         if path:
             open_path(self, Path(path))

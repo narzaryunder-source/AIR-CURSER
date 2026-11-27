@@ -75,8 +75,16 @@ def self_test():
                 assert len(window.s.get("phone_factor")["recovery_codes"]) == 7
                 window.lock_now()
                 lines.append("Authenticator QR, code sign-in, recovery and DPAPI trust verified.")
-            window.s.set(browser_tabs=[url])
+            tabs = [f"{url}?tab={index}" for index in range(15)]
+            window.s.set(restore=True, browser_tabs=tabs, browser_active=6)
             browser = Browser(window.s)
+            assert browser.normal is None and browser.tabs.count() == 15
+            browser.save()
+            assert window.s.get("browser_tabs") == tabs
+            browser.show()
+            app.processEvents()
+            assert sum(hasattr(browser.tabs.widget(i), "page") for i in range(15)) == 1
+            lines.append("Fifteen restored tabs, only the selected page loaded.")
             view = browser.add(url, private=True)
             assert view.page().profile().isOffTheRecord()
             loop = QEventLoop()

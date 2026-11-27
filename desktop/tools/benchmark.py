@@ -13,7 +13,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument("mode", choices=["policy", "receiver", "startup", "dock"])
+parser.add_argument("mode", choices=["policy", "receiver", "startup", "dock", "tabs"])
 parser.add_argument("--source", type=Path, default=ROOT)
 parser.add_argument("--notification", action="store_true")
 args = parser.parse_args()
@@ -218,6 +218,82 @@ def dock():
         window.close()
         app.processEvents()
         return result
+
+
+def tabs():
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    import psutil
+    from PySide6.QtCore import QCoreApplication, QEvent, Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    visits = set()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path.startswith("/tab/"):
+                visits.add(self.path)
+            data = b"<title>AirCursor 15-tab benchmark</title><p>Local page</p>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *_):
+            pass
+
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
+    app = QApplication([])
+    with (
+        tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder,
+        ThreadingHTTPServer(("127.0.0.1", 0), Handler) as http,
+    ):
+        from aircursor_desktop.settings import Settings
+
+        os.environ["AIRCURSOR_HOME"] = folder
+        threading.Thread(target=http.serve_forever, daemon=True).start()
+        settings = Settings()
+        settings.set(browser_tabs=[f"http://127.0.0.1:{http.server_port}/tab/{i}" for i in range(15)])
+        started = time.perf_counter()
+        from aircursor_desktop.browser import Browser
+
+        window = Browser(settings)
+        window.resize(1080, 720)
+        window.show()
+        constructor_ms = 1000 * (time.perf_counter() - started)
+        try:
+            stop = time.monotonic() + 25
+            while time.monotonic() < stop:
+                QTest.qWait(20)
+                current = window.current()
+                if hasattr(current, "title") and current.title() == "AirCursor 15-tab benchmark":
+                    break
+            else:
+                raise RuntimeError("Selected tab did not render")
+            selected_ms = 1000 * (time.perf_counter() - started)
+            QTest.qWait(750)
+            processes = [psutil.Process(), *psutil.Process().children(recursive=True)]
+            memory = 0
+            for process in processes:
+                try:
+                    memory += process.memory_info().rss
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            return {
+                "saved_tabs": window.tabs.count(),
+                "browser_window_ms": round(constructor_ms, 1),
+                "selected_page_title_ms": round(selected_ms, 1),
+                "page_requests_after_settle": len(visits),
+                "process_tree_rss_mib": round(memory / 2**20, 1),
+            }
+        finally:
+            window.close()
+            window.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            app.processEvents()
+            http.shutdown()
 
 
 if __name__ == "__main__":

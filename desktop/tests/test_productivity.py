@@ -383,3 +383,21 @@ def test_native_trust_ticket_and_file_operations(tmp_path):
     shell_transfer([folder / source.name], second, True, 0)
     assert not (folder / source.name).exists()
     assert (second / source.name).read_bytes() == source.read_bytes()
+
+
+def test_store_game_entries_and_logos(app):
+    from aircursor_desktop.catalog import CATALOG, LOGOS
+    from aircursor_desktop.widgets import asset
+    from pathlib import Path
+
+    assert CATALOG["Game Launchers"]["Steam"] == "Valve.Steam"
+    assert CATALOG["Games"]["The Battle for Wesnoth"] == "Wesnoth.BattleForWesnoth"
+    assert len({package for group in CATALOG.values() for package in group.values()}) >= 55
+    assert all(Path(asset(f"app-logos/{slug}.png")).is_file() for slug in LOGOS.values())
+    widget = store.Store()
+    widget.populate("Game Launchers")
+    xbox = next(widget.apps.item(i) for i in range(widget.apps.count()) if widget.apps.item(i).text() == "Xbox")
+    widget.apps.setCurrentItem(xbox)
+    assert widget.source.currentData() == "msstore"
+    assert store.arguments("show", widget.query.text(), widget.source.currentData())[-2] == "msstore"
+    widget.close()

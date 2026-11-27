@@ -7,9 +7,16 @@ import json
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLineEdit, QMessageBox, QVBoxLayout
+from PySide6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QLineEdit,
+    QMessageBox,
+    QProgressDialog,
+    QVBoxLayout,
+)
 from .widgets import Workers, label
 from . import powershell
 
@@ -33,11 +40,19 @@ def inspect_file(path):
 
 def locked_inspection(path):
     import msvcrt
+
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     open_file = kernel.CreateFileW
     open_file.restype = wintypes.HANDLE
-    open_file.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
-                          wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    open_file.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
     handle = open_file(str(path), 0x80000000, 1, None, 3, 0x80, None)
     if handle == wintypes.HANDLE(-1).value:
         raise ctypes.WinError(ctypes.get_last_error())
@@ -56,7 +71,9 @@ def locked_inspection(path):
 
 def checksum_matches(expected, actual):
     value = expected.strip().casefold()
-    return not value or (value.isascii() and len(value) == 64 and hmac.compare_digest(value, actual.lower()))
+    return not value or (
+        value.isascii() and len(value) == 64 and hmac.compare_digest(value, actual.lower())
+    )
 
 
 def approve(parent, path):
@@ -64,20 +81,46 @@ def approve(parent, path):
     if not hasattr(parent, "installer_workers"):
         parent.installer_workers = Workers(parent)
 
+    progress = QProgressDialog("Checking the publisher signature and SHA-256…", "Cancel", 0, 0, parent)
+    progress.setWindowTitle("Review Windows installer")
+    progress.setWindowModality(Qt.WindowModality.WindowModal)
+    progress.setMinimumDuration(250)
+
+    dismissed = False
+
+    def dismiss():
+        nonlocal dismissed
+        dismissed = True
+
+    progress.rejected.connect(dismiss)
+
+    def inspection_closed():
+        cancelled = dismissed or progress.wasCanceled() or not parent.isVisible()
+        progress.hide()
+        progress.deleteLater()
+        return cancelled
+
     def inspected(result):
         lease, data = result
         with lease:
-            if not parent.isVisible():
+            if inspection_closed():
                 return
             if data["status"] not in ("Valid", "NotSigned"):
-                QMessageBox.warning(parent, "Installer signature",
-                    f"Windows signature status: {data['status']}. Choose another copy from the publisher.")
+                QMessageBox.warning(
+                    parent,
+                    "Installer signature",
+                    f"Windows signature status: {data['status']}. Choose another copy from the publisher.",
+                )
                 return
             dialog = QDialog(parent)
             dialog.setWindowTitle("Review Windows installer")
             layout = QVBoxLayout(dialog)
             publisher = data.get("publisher") or "Unsigned file"
-            layout.addWidget(label(f"{path.name}\n\nPublisher: {publisher}\nSignature: {data['status']}\nSHA-256: {data['sha256']}"))
+            layout.addWidget(
+                label(
+                    f"{path.name}\n\nPublisher: {publisher}\nSignature: {data['status']}\nSHA-256: {data['sha256']}"
+                )
+            )
             checksum = QLineEdit()
             checksum.setPlaceholderText("Optional SHA-256 from the publisher")
             layout.addWidget(checksum)
@@ -85,7 +128,9 @@ def approve(parent, path):
             launch = actions.addButton("Run installer", QDialogButtonBox.ButtonRole.AcceptRole)
             actions.button(QDialogButtonBox.StandardButton.Cancel).setDefault(True)
             launch.setAutoDefault(False)
-            checksum.textChanged.connect(lambda text: launch.setEnabled(checksum_matches(text, data["sha256"])))
+            checksum.textChanged.connect(
+                lambda text: launch.setEnabled(checksum_matches(text, data["sha256"]))
+            )
             actions.accepted.connect(dialog.accept)
             actions.rejected.connect(dialog.reject)
             layout.addWidget(actions)
@@ -93,10 +138,8 @@ def approve(parent, path):
                 if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
                     QMessageBox.warning(parent, "Installer", "Windows could not open the installer.")
 
-    parent.installer_workers.run(
-        lambda: locked_inspection(path),
-        inspected,
-        lambda error: (
-            QMessageBox.warning(parent, "Installer inspection", error) if parent.isVisible() else None
-        ),
-    )
+    def failed(error):
+        if not inspection_closed():
+            QMessageBox.warning(parent, "Installer inspection", error)
+
+    parent.installer_workers.run(lambda: locked_inspection(path), inspected, failed)
