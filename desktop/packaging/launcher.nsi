@@ -10,7 +10,10 @@ Name "AirCursor"
 OutFile "${OUTPUT}"
 Icon "${BRANDICON}"
 !include FileFunc.nsh
+!include "runtime-lock.nsh"
+Var RuntimeHandle
 Section
+  !insertmacro RequireAirCursorMutex "${AIRCURSOR_RUNTIME_MUTEX}" $RuntimeHandle "AirCursor is already running or setup is in progress."
   SetOutPath "$EXEDIR\runtime"
   ${GetParameters} $0
   ClearErrors

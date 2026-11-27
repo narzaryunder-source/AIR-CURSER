@@ -97,3 +97,10 @@ Air Browser creates saved tab entries immediately and loads each page when you s
 Click **Downloads** in Air Browser or press **Ctrl+Shift+J**. After a download completes, use **Open file** to launch or install it through Windows, or **Open folder** to access archives and companion files. EXE, MSI and MSP installers get an Authenticode and SHA-256 review. Windows App Installer handles APPX and MSIX packages, bundles and App Installer files where supported. A download needs to match your Windows version and architecture. Browser downloads retain Windows internet-zone handling.
 
 Air Store offers separate **Game Launchers** and **Games** categories, plus video editing, AI, browsers and other tools. Use the source selector to search winget Community or Microsoft Store. Publisher artwork is bundled where available. Hardware requirements, accounts and licensing come from the selected publisher, installer or launcher.
+
+
+## Recover from a slow or stuck startup
+
+Close AirCursor before running an update or uninstall. If the workspace stalls while restoring a session, open **AirCursor (Safe Mode)** from Start. It asks for your existing credentials, skips automatic restoration and uses software graphics for the workspace. Start AirCursor normally to return to the saved layout. If an individual browser tab stops after its Chromium renderer fails, use **Reload tab** or **Open in default browser**.
+
+[Windows bug report](report/WINDOWS-BUG-REPORT.md)

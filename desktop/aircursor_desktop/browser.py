@@ -58,9 +58,10 @@ class RestoredTab(QWidget):
 
 
 class Browser(QWidget):
-    def __init__(self, settings, parent=None):
+    def __init__(self, settings, parent=None, *, recovery_mode=False):
         super().__init__(parent)
         self.s = settings
+        self.recovery_mode = recovery_mode
         self.normal = None
         self.private = None
         self.downloads = []
@@ -87,6 +88,16 @@ class Browser(QWidget):
             button("Downloads", self.show_downloads),
             more,
         )
+        self.crash_banner = QWidget()
+        self.crash_label = label()
+        row(
+            QVBoxLayout(self.crash_banner),
+            self.crash_label,
+            button("Reload tab", self.reload_crashed_tab),
+            button("Open in default browser", self.open_crashed_externally),
+        )
+        self.crash_banner.hide()
+        layout.addWidget(self.crash_banner)
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
         self.tabs.setDocumentMode(True)
@@ -102,7 +113,9 @@ class Browser(QWidget):
         self.sleeper = QTimer(self, interval=15000)
         self.sleeper.timeout.connect(self.freeze_idle_tabs)
         self._changing_tabs = True
-        urls = self.s.get("browser_tabs", []) if self.s.get("restore", True) else []
+        urls = self.s.get("browser_tabs", []) if not recovery_mode and self.s.get("restore", True) else []
+        if not isinstance(urls, (list, tuple)):
+            urls = []
         for url in urls[:MAX_SAVED_TABS]:
             if isinstance(url, str) and url.startswith(("https://", "http://")):
                 self.tabs.addTab(RestoredTab(url), (QUrl(url).host() or "Restored tab")[:32])
@@ -155,6 +168,7 @@ class Browser(QWidget):
                 page.setLifecycleState(page.LifecycleState.Active)
         self.address.setModified(False)
         self.sync()
+        self.update_crash_banner()
         if self.isVisible() and isinstance(current, RestoredTab):
             self.restore_timer.start()
 
@@ -198,6 +212,8 @@ class Browser(QWidget):
         url = web_url(text)
         self.address.setModified(False)
         if isinstance(view, self._view_type):
+            view.renderer_error = None
+            self.update_crash_banner()
             view.setUrl(QUrl(url))
         else:
             index = self.tabs.indexOf(view)
@@ -247,6 +263,10 @@ class Browser(QWidget):
         view.setPage(engine)
         view.target = url
         view.idle_since = None
+        view.renderer_error = None
+        engine.renderProcessTerminated.connect(
+            lambda status, code: self.renderer_terminated(view, status, code)
+        )
         engine.settings().setAttribute(QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True)
         engine.permissionRequested.connect(
             lambda perm: (
@@ -280,6 +300,36 @@ class Browser(QWidget):
         if view is not self.current():
             self.sleeper.start()
         return view
+
+    def renderer_terminated(self, view, status, code):
+        if status == view.page().RenderProcessTerminationStatus.NormalTerminationStatus:
+            return
+        if self.tabs.indexOf(view) >= 0:
+            view.renderer_error = (status.name, code)
+            self.update_crash_banner()
+
+    def update_crash_banner(self):
+        view = self.current()
+        failure = getattr(view, "renderer_error", None)
+        self.crash_banner.setVisible(bool(failure))
+        if failure:
+            self.crash_label.setText(f"This tab stopped responding ({failure[0]}, {failure[1]}).")
+
+    def reload_crashed_tab(self):
+        view = self.current()
+        url = self.tab_url(view)
+        if getattr(view, "renderer_error", None) and url.startswith(("https://", "http://")):
+            view.renderer_error = None
+            self.update_crash_banner()
+            if view.url().isEmpty():
+                view.setUrl(QUrl(url))
+            else:
+                view.reload()
+
+    def open_crashed_externally(self):
+        url = self.tab_url(self.current())
+        if url.startswith(("https://", "http://")):
+            QDesktopServices.openUrl(QUrl(url))
 
     def popup(self, request, private):
         if request.isUserInitiated() and request.requestedUrl().scheme() in ("https", "http", ""):
@@ -387,7 +437,7 @@ class Browser(QWidget):
         self.saver.start()
 
     def save(self):
-        if not self.s.get("restore", True):
+        if self.recovery_mode or not self.s.get("restore", True):
             return
         urls = []
         active = 0

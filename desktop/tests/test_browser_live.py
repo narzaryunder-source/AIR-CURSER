@@ -200,6 +200,22 @@ def test_fifteen_restored_tabs_load_on_selection(tmp_path, monkeypatch):
         browser.save()
         assert settings.get("browser_tabs") == urls
         assert settings.get("browser_active") == 7
+        # Terminate only this test's Chromium renderer to exercise the actual recovery signal.
+        import psutil
+
+        view = browser.current()
+        pid = view.page().renderProcessPid()
+        children = {child.pid: child for child in psutil.Process().children(recursive=True)}
+        assert pid in children, "The fixture renderer must belong to this browser process"
+        children[pid].kill()
+        until(lambda: browser.crash_banner.isVisible())
+        assert "This tab stopped responding" in browser.crash_label.text()
+        assert browser.tab_url(view) == urls[7]
+        loaded = []
+        view.loadFinished.connect(loaded.append)
+        browser.reload_crashed_tab()
+        until(lambda: any(loaded))
+        assert view.title() == "/tab/7" and not browser.crash_banner.isVisible()
         browser.close()
         browser.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)

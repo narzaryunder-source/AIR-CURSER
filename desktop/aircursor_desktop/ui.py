@@ -14,7 +14,15 @@ import psutil
 from PySide6.QtCore import QByteArray, Qt, QPoint, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QShortcut
 from PySide6.QtQuickWidgets import QQuickWidget
-from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QInputDialog, QLineEdit, QMainWindow, QMessageBox
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QFileDialog,
+    QInputDialog,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+)
 from .chrome import Panel, stylesheet
 from .control import Control, Preferences, PROFILES
 from .design import ICONS, MaterialProvider
@@ -33,9 +41,11 @@ class Desktop(QMainWindow):
     receiver_changed = Signal()
     names = [n for n in ICONS if n not in ("Terminal", "Downloads")]
 
-    def __init__(self, settings=None):
+    def __init__(self, settings=None, *, safe_mode=False):
         super().__init__()
         self.s = settings or Settings()
+        self.safe_mode = safe_mode
+        self.restore_enabled = not safe_mode and self.s.get("restore", True)
         self.auth, self.hot = PasswordLock(self.s), Hotspot(self.s)
         self.host = RemoteHost(Controller(backend()), self.receiver_changed.emit)
         self.host.ctl.speed = self.s.get("pointer_speed", 1.0)
@@ -45,8 +55,9 @@ class Desktop(QMainWindow):
         self.work = Workers(self)
         self.panels, self.opened, self.clipboard, self.messages = {}, {}, [], []
         self.locked = True
-        self.space = 2 if self.s.get("restore", True) and self.s.get("active_space") == 2 else 1
-        self.saved_geometry = dict(self.s.get("panel_geometry", {})) if self.s.get("restore", True) else {}
+        self.space = 2 if self.restore_enabled and self.s.get("active_space") == 2 else 1
+        geometry = self.s.get("panel_geometry", {})
+        self.saved_geometry = dict(geometry) if self.restore_enabled and isinstance(geometry, dict) else {}
         self.net_pending = False
         self.last_net = -1000
         self.metrics_pending = False
@@ -66,7 +77,7 @@ class Desktop(QMainWindow):
         self.layout_save_timer.timeout.connect(self.save_layout)
         self.message.connect(self.notify)
         self.receiver_changed.connect(self.refresh_control)
-        self.setWindowTitle("AirCursor")
+        self.setWindowTitle("AirCursor · Safe Mode" if safe_mode else "AirCursor")
         self.setWindowIcon(QIcon(asset("aircursor.ico")))
         self.resize(1180, 740)
         self.setMinimumSize(640, 450)
@@ -97,7 +108,7 @@ class Desktop(QMainWindow):
             self.session_watching = session.watch(int(self.winId()), True)
             self.security_timer.timeout.connect(self.check_inactivity)
             self.security_timer.start()
-        if trust.active(self.s):
+        if not self.safe_mode and trust.active(self.s):
             if session.idle_seconds() < self.idle_timeout():
                 self.workspace()
             else:
@@ -136,7 +147,9 @@ class Desktop(QMainWindow):
             result = second_factor.verify(self.s, code)
             self._finish_login(remember and result == "verified")
             if result == "recovered":
-                self.notify("Recovery code accepted and used. Manage your remaining codes in Privacy and security.")
+                self.notify(
+                    "Recovery code accepted and used. Manage your remaining codes in Privacy and security."
+                )
         except (OSError, ValueError) as exc:
             self.shell.feedback.emit(str(exc))
 
@@ -159,14 +172,21 @@ class Desktop(QMainWindow):
                 return
             result = None
             if self.s.get("phone_factor") and not second_factor.alternative(self.s):
-                entered, ok = QInputDialog.getText(self, "Verify sign-in",
+                entered, ok = QInputDialog.getText(
+                    self,
+                    "Verify sign-in",
                     "Enter the current six-digit code from your authenticator, or your saved recovery code.",
-                    QLineEdit.EchoMode.Password)
+                    QLineEdit.EchoMode.Password,
+                )
                 if not ok:
                     return
                 result = second_factor.verify(self.s, entered)
                 if result == "legacy_recovery":
-                    QMessageBox.information(self, "Account recovered", "Phone authentication was reset. Enroll again in Privacy and security.")
+                    QMessageBox.information(
+                        self,
+                        "Account recovered",
+                        "Phone authentication was reset. Enroll again in Privacy and security.",
+                    )
             self._finish_login(remember and result not in ("recovered", "legacy_recovery"))
         except (ValueError, OSError) as exc:
             self.shell.feedback.emit(str(exc))
@@ -234,28 +254,44 @@ class Desktop(QMainWindow):
         self.locked = False
         self.host.paused = False
         self.shell.lockedChanged.emit()
-        if sys.platform == "win32" and self.s.get("remote_on") and not self.host.running:
+        if (
+            not self.safe_mode
+            and sys.platform == "win32"
+            and self.s.get("remote_on")
+            and not self.host.running
+        ):
             try:
                 self.host.start()
             except OSError as exc:
                 self.notify(str(exc))
-        if self.s.get("auto_switch", True):
+        if not self.safe_mode and self.s.get("auto_switch", True):
             self.auto.start()
         self.profile(self.s.get("profile", "Balanced"), save=False)
         self.tick()
-        if self.s.get("restore", True):
-            self.opened = {name: space for name, space in
-                           (self.opened or self.s.get("session_panels", {})).items()
-                           if name in self.names and space in (1, 2)}
-            for name, space in list(self.opened.items()):
-                if name in self.names and space == self.space:
-                    self.open(name)
-                elif name in self.names:
-                    self.opened[name] = space
+        if not self.safe_mode and self.s.get("restore", True):
+            self.restore_panels()
+        elif self.safe_mode:
+            self.notify("Safe Mode is active. Saved windows and tabs will be available on a normal launch.")
         self.shell.appsChanged.emit()
 
+    def restore_panels(self):
+        saved = self.opened or self.s.get("session_panels", {})
+        if not isinstance(saved, dict):
+            self.notify("AirCursor skipped an unreadable workspace layout.")
+            return
+        self.opened = {
+            name: space for name, space in saved.items() if name in self.names and space in (1, 2)
+        }
+        for name, space in list(self.opened.items()):
+            if space == self.space:
+                try:
+                    self.open(name)
+                except (OSError, TypeError, ValueError):
+                    self.opened.pop(name, None)
+                    self.notify(f"AirCursor skipped {name}. Open it again from the Dock.")
+
     def effects(self):
-        return PROFILES.get(self.s.get("profile"), PROFILES["Balanced"])[1]
+        return not self.safe_mode and PROFILES.get(self.s.get("profile"), PROFILES["Balanced"])[1]
 
     def preference(self, key, value):
         self.s.set(**{key: value})
@@ -274,10 +310,14 @@ class Desktop(QMainWindow):
                 self.notify("AirCursor could not save the workspace layout.")
 
     def persist(self):
+        if self.safe_mode:
+            return
         for name, panel in self.panels.items():
             if name in self.opened:
                 self.saved_geometry[name] = bytes(panel.saveGeometry().toHex()).decode("ascii")
-        state = dict(session_panels=dict(self.opened), active_space=self.space, panel_geometry=self.saved_geometry)
+        state = dict(
+            session_panels=dict(self.opened), active_space=self.space, panel_geometry=self.saved_geometry
+        )
         if "Files" in self.opened and "Files" in self.panels:
             state["files_session"] = self.panels["Files"].content.session()
         if any(self.s.get(key) != value for key, value in state.items()):
@@ -406,8 +446,10 @@ class Desktop(QMainWindow):
                 state = health.state if health else "Checking internet…"
                 latency = f" · {health.latency_ms} ms" if health and health.latency_ms is not None else ""
                 return (
-                    f"{info['ssid']}  {info['signal']}\n" if info and info["ssid"] else ""
-                ) + state + latency
+                    (f"{info['ssid']}  {info['signal']}\n" if info and info["ssid"] else "")
+                    + state
+                    + latency
+                )
 
             def done(result):
                 self.net_pending = False
@@ -420,7 +462,8 @@ class Desktop(QMainWindow):
         if (
             os.name == "nt"
             and not self.window_job
-            and t - self.last_windows >= max(6, PROFILES.get(self.s.get("profile"), PROFILES["Balanced"])[0])
+            and t - self.last_windows
+            >= max(6, PROFILES.get(self.s.get("profile"), PROFILES["Balanced"])[0])
         ):
             from .windows import list_windows
 
@@ -448,12 +491,12 @@ class Desktop(QMainWindow):
             if name == "Air Browser":
                 from .browser import Browser
 
-                content = Browser(self.s)
+                content = Browser(self.s, recovery_mode=self.safe_mode)
             elif name == "Files":
                 from .files import Files
 
                 content = Files(self.s)
-                if self.s.get("restore", True) and name in self.s.get("session_panels", {}):
+                if not self.safe_mode and self.s.get("restore", True) and name in self.opened:
                     content.restore_session(self.s.get("files_session", {}))
             elif name == "Air Store":
                 from .store import Store
@@ -499,7 +542,9 @@ class Desktop(QMainWindow):
             self.layout_save_timer.start()
 
     def browse(self, url):
-        self.open("Air Browser").add(url)
+        browser = self.open("Air Browser")
+        if browser is not None:
+            browser.add(url)
 
     def terminal(self):
         if os.name == "nt":
@@ -546,9 +591,13 @@ class Desktop(QMainWindow):
 
     def closeEvent(self, event):
         if not self.locked:
-            self.persist()
-            if "Air Browser" in self.panels:
-                self.panels["Air Browser"].content.save()
+            try:
+                self.persist()
+                if "Air Browser" in self.panels:
+                    self.panels["Air Browser"].content.save()
+            except OSError:
+                if sys.stderr is not None:
+                    sys.stderr.write("AirCursor could not save the session before closing.\n")
         self.locked = True
         self.timer.stop()
         self.layout_save_timer.stop()
@@ -564,7 +613,7 @@ class Desktop(QMainWindow):
         QApplication.quit()
 
 
-def main():
+def main(*, safe_mode=False):
     if QApplication.instance() is None:
         QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
     app = QApplication.instance() or QApplication(sys.argv)
@@ -589,7 +638,7 @@ def main():
             return 0
         app.aboutToQuit.connect(lambda: kernel.CloseHandle(wintypes.HANDLE(mutex)))
     try:
-        window = Desktop()
+        window = Desktop(safe_mode=True) if safe_mode else Desktop()
     except (OSError, ValueError) as exc:
         QMessageBox.critical(None, "AirCursor settings", f"Could not read your saved settings.\n{exc}")
         return 1

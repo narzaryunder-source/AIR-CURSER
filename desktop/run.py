@@ -110,6 +110,10 @@ def self_test():
 if __name__ == "__main__":
     if "--self-test" in sys.argv:
         sys.exit(self_test())
+    safe_mode = "--safe-mode" in sys.argv
+    if safe_mode:
+        os.environ["QT_QUICK_BACKEND"] = "software"
+        sys.argv.remove("--safe-mode")
     try:
         from aircursor_desktop.ui import main
     except ImportError as exc:
@@ -120,4 +124,4 @@ if __name__ == "__main__":
                 None, f"AirCursor could not load its Windows runtime.\n{exc}", "AirCursor startup", 0x10
             )
         raise
-    sys.exit(main())
+    sys.exit(main(safe_mode=safe_mode))

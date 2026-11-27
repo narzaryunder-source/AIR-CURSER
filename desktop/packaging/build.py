@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import subprocess
 import sys
@@ -82,7 +83,9 @@ def main():
     # The embeddable interpreter ignores global site packages and PYTHONPATH.
     (rt / "python313._pth").write_text("python313.zip\n.\n", encoding="ascii")
     shutil.copytree(
-        DESKTOP / "aircursor_desktop", rt / "aircursor_desktop", ignore=shutil.ignore_patterns("__pycache__")
+        DESKTOP / "aircursor_desktop",
+        rt / "aircursor_desktop",
+        ignore=shutil.ignore_patterns("__pycache__"),
     )
     shutil.copytree(DESKTOP / "assets", rt / "assets")
     shutil.copy2(DESKTOP / "run.py", rt)
@@ -103,8 +106,15 @@ def main():
         lines.append(("RMDir" if file.is_dir() else "Delete") + ' "$INSTDIR\\' + relative + '"')
     uninstall.write_text("\n".join(lines) + "\n", encoding="utf-8-sig")
     exe = output / "AirCursor-Windows.exe"
+    version = runpy.run_path(str(DESKTOP / "aircursor_desktop/__init__.py"))["VERSION"]
     compile_nsis(
-        args.nsis, "installer.nsi", PAYLOAD_GLOB=stage / "*", OUTPUT=exe, BRANDICON=ico, UNINSTALL_FILES=uninstall
+        args.nsis,
+        "installer.nsi",
+        PAYLOAD_GLOB=stage / "*",
+        OUTPUT=exe,
+        BRANDICON=ico,
+        UNINSTALL_FILES=uninstall,
+        AIRCURSOR_VERSION=version,
     )
     (output / "SHA256SUMS.txt").write_text(f"{digest(exe)}  {exe.name}\n", encoding="ascii")
     print(exe, exe.stat().st_size, flush=True)

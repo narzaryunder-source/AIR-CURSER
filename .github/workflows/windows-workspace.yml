@@ -62,18 +62,14 @@ jobs:
           $nsis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
           if (-not (Test-Path $nsis)) { choco install nsis --yes --no-progress }
           python desktop/packaging/build.py --nsis $nsis
-      - name: Install as current user and launch the packaged GUI and web engine
+      - name: Verify installer upgrade, uninstall and packaged GUI startup
         shell: pwsh
         run: |
-          $installer = Start-Process desktop/dist/AirCursor-Windows.exe -ArgumentList '/S' -PassThru -Wait
-          if ($installer.ExitCode) { throw "Installer returned $($installer.ExitCode)" }
-          $app = "$env:LOCALAPPDATA\Programs\AirCursor\AirCursor.exe"
-          $test = Start-Process $app -ArgumentList '--self-test' -PassThru
-          if (-not $test.WaitForExit(120000)) { throw "Installed application timed out" }
-          $log = Get-Content "$env:TEMP\aircursor-selftest.txt"
-          $log
-          Copy-Item "$env:TEMP\aircursor-selftest.txt" desktop/dist/aircursor-selftest.txt
-          if ($test.ExitCode -ne 0 -or $log[-1] -ne 'OK') { throw "Installed application self-test failed" }
+          $previous = Join-Path $env:RUNNER_TEMP 'AirCursor-Windows-previous.exe'
+          curl.exe --fail --location --retry 3 --output $previous https://github.com/narzaryunder-source/AIR-CURSER/releases/download/windows-v2.0-preview.4/AirCursor-Windows.exe
+          if ($LASTEXITCODE -or (Get-FileHash $previous -Algorithm SHA256).Hash -ne 'caf59232d3df8f2b0171866ef7c1acdbf472dcfb8ac2d1a261bdd8f022c9041f') { throw 'Previous installer verification failed' }
+          ./desktop/tools/verify_install.ps1 -Installer desktop/dist/AirCursor-Windows.exe -PreviousInstaller $previous
+          Copy-Item "$env:TEMP/aircursor-selftest.txt" desktop/dist/aircursor-selftest.txt
       - uses: actions/upload-artifact@v4
         with:
           name: release-windows

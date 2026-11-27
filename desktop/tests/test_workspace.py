@@ -222,3 +222,88 @@ def test_authenticator_lock_screen_recovery_and_idle_lock(tmp_path, monkeypatch)
         assert window.locked and window.host.paused
     window.close()
     app.processEvents()
+
+
+def test_safe_mode_preserves_saved_layout_tabs_and_authentication(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    from aircursor_desktop.ui import Desktop
+
+    if os.name != "nt" and not os.getenv("DISPLAY"):
+        monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    app = QApplication.instance() or QApplication([])
+    settings = Settings(str(tmp_path / "safe.json"))
+    saved = {
+        "restore": True,
+        "active_space": 2,
+        "session_panels": {"Files": 2, "Air Browser": 2},
+        "browser_tabs": ["https://example.org/previous"],
+        "auto_switch": True,
+        "remote_on": True,
+    }
+    settings.set(**saved)
+    desk = Desktop(settings, safe_mode=True)
+    desk.auth.set_password("safe mode test password")
+    desk.work.run = lambda *_: None
+    desk.show()
+    assert desk.locked
+    desk.unlock("wrong password", "", False)
+    assert desk.locked
+    desk.unlock("safe mode test password", "", False)
+    assert not desk.locked and not desk.panels and not desk.host.running
+    assert desk.space == 1 and not desk.effects()
+    browser = desk.open("Air Browser")
+    assert browser.tabs.count() == 1 and browser.normal is None
+    browser.save()
+    desk.close()
+    app.processEvents()
+    assert all(settings.get(key) == value for key, value in saved.items())
+
+
+def test_unreadable_saved_layout_does_not_prevent_unlock(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    from aircursor_desktop.ui import Desktop
+
+    if os.name != "nt" and not os.getenv("DISPLAY"):
+        monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    app = QApplication.instance() or QApplication([])
+    settings = Settings(str(tmp_path / "broken-layout.json"))
+    settings.set(panel_geometry=["invalid"], session_panels=["invalid"], auto_switch=False)
+    desk = Desktop(settings)
+    desk.work.run = lambda *_: None
+    desk.show()
+    desk.unlock("workspace test password", "workspace test password", False)
+    assert not desk.locked
+    assert desk.open("Files") is not None
+    desk.close()
+    app.processEvents()
+
+
+def test_a_failed_save_does_not_interrupt_workspace_shutdown(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    from aircursor_desktop.ui import Desktop
+
+    if os.name != "nt" and not os.getenv("DISPLAY"):
+        monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    app = QApplication.instance() or QApplication([])
+    settings = Settings(str(tmp_path / "shutdown.json"))
+    settings.set(auto_switch=False)
+    desk = Desktop(settings)
+    desk.work.run = lambda *_: None
+    desk.show()
+    desk.unlock("workspace test password", "workspace test password", False)
+
+    def fail():
+        raise OSError("fixture write failure")
+
+    monkeypatch.setattr(desk, "persist", fail)
+    stopped = []
+    original_stop = desk.host.stop
+
+    def stop():
+        stopped.append(True)
+        original_stop()
+
+    monkeypatch.setattr(desk.host, "stop", stop)
+    assert desk.close() and stopped and desk.locked
+    assert not desk.timer.isActive() and not desk.security_timer.isActive()
+    app.processEvents()
