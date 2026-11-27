@@ -40,23 +40,9 @@ class Shell(QObject):
     def assets(self):
         return QUrl.fromLocalFile(asset("") + os.sep).toString()
 
-    @Property(bool, constant=True)
-    def canTrust(self):
-        return os.name == "nt"
-
     @Property(bool, notify=lockedChanged)
     def locked(self):
         return self.d.locked
-
-    @Property(bool, notify=lockedChanged)
-    def codeLogin(self):
-        from .second_factor import alternative
-
-        return alternative(self.d.s)
-
-    @Property(bool, notify=lockedChanged)
-    def first(self):
-        return not self.d.auth.has_password
 
     @Property(bool, notify=changed)
     def dark(self):
@@ -268,14 +254,6 @@ class Shell(QObject):
             self.d.pin(target)
             self.feedback.emit("Shortcut pinned to the Dock.")
 
-    @Slot(str, str, bool)
-    def authenticate(self, password, again, remember):
-        self.d.unlock(password, again, remember)
-
-    @Slot(str, bool)
-    def authenticateCode(self, code, remember):
-        self.d.unlock_with_code(code, remember)
-
     def find_files(self):
         query = self.query.strip()
         if self.locked or self.file_pending or not 2 <= len(query) <= 100:
@@ -358,8 +336,6 @@ class Shell(QObject):
     @Slot(str)
     def action(self, cmd):
         if self.locked:
-            if cmd == "reset":
-                self.d.reset()
             return
         if cmd in ("Launcher", "Overview"):
             self.d.show_overlay("spotlight" if cmd == "Launcher" else "overview")
@@ -426,7 +402,8 @@ class Shell(QObject):
             m.addSeparator()
             m.addAction("Exit desktop mode" if d.isFullScreen() else "Enter desktop mode", d.fullscreen)
         if name == "AirCursor":
-            m.addAction("Lock AirCursor", d.lock_now)
+            if os.name == "nt":
+                m.addAction("Lock Windows", d.lock_windows)
             m.addAction("Quit AirCursor", d.close)
         if name in ("Window", "View"):
             m.addAction("Window overview", lambda: d.show_overlay("overview"))

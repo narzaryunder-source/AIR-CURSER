@@ -45,36 +45,23 @@ def self_test():
             threading.Thread(target=http.serve_forever, daemon=True).start()
             url = f"http://127.0.0.1:{http.server_port}/"
             os.environ["AIRCURSOR_HOME"] = folder
-            window = Desktop(Settings(str(Path(folder) / "test.json")))
+            settings = Settings(str(Path(folder) / "test.json"))
+            settings.set(auto_switch=False, restore=False, password={"hash": "legacy-preview-fixture"})
+            window = Desktop(settings)
             window.show()
             app.processEvents()
-            assert window.locked and not window.host.running
-            lines.append(f"AirCursor {VERSION}, lock frame {time.perf_counter() - start:.3f}s")
+            assert not window.locked and not window.host.running
+            lines.append(f"AirCursor {VERSION}, workspace opened in {time.perf_counter() - start:.3f}s")
             if sys.platform == "win32":
+                from aircursor_desktop import session
+
                 b = inject.backend()
                 lines.append(f"Virtual desktop {b.screen()}, cursor {b.cursor()}")
-            if sys.platform == "win32":
-                from aircursor_desktop import second_factor, trust
-                from aircursor_desktop.auth_dialogs import qr_image
-
-                window.s.set(auto_switch=False, restore=False)
-                password = "AirCursor self-test master password"
-                window.auth.set_password(password)
-                secret, recovery = second_factor.enrollment()
-                assert not qr_image(second_factor.enrollment_uri(secret, "Windows self-test")).isNull()
-                if time.time() % 30 > 29:
-                    time.sleep(1)
-                previous = int(time.time()) // 30 - 1
-                second_factor.enable(window.s, secret, recovery, second_factor.code(secret, previous))
-                window.unlock_with_code(second_factor.code(secret, previous + 1), True)
-                assert not window.locked and trust.active(window.s)
-                window.lock_now()
-                assert window.locked and not trust.active(window.s)
-                window.unlock_with_code(recovery[0], True)
-                assert not window.locked and not trust.active(window.s)
-                assert len(window.s.get("phone_factor")["recovery_codes"]) == 7
-                window.lock_now()
-                lines.append("Authenticator QR, code sign-in, recovery and DPAPI trust verified.")
+                window.handle_session_message(session.SESSION_CHANGE, 7)
+                assert window.locked and window.host.paused
+                window.handle_session_message(session.SESSION_CHANGE, 8)
+                assert not window.locked
+                lines.append("Windows session pause and resume verified; AirCursor opened without an app password.")
             tabs = [f"{url}?tab={index}" for index in range(15)]
             window.s.set(restore=True, browser_tabs=tabs, browser_active=6)
             browser = Browser(window.s)

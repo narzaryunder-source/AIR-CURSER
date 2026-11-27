@@ -96,7 +96,7 @@ class Panel(QMainWindow):
             content.setObjectName("content")
         for keys, fn in [
             ("Ctrl+Space", lambda: desk.show_overlay("spotlight")),
-            ("Ctrl+Shift+L", desk.lock_now),
+            ("Ctrl+Shift+L", desk.lock_windows),
             ("Ctrl+Alt+Left", lambda: self.snap(False)),
             ("Ctrl+Alt+Right", lambda: self.snap(True)),
             ("F11", desk.fullscreen),

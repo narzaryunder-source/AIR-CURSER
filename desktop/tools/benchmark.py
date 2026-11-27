@@ -121,7 +121,8 @@ def startup():
         process = psutil.Process()
         rss = process.memory_info().rss / 2**20
         window.s.set(auto_switch=False)
-        window.unlock("benchmark-session", "benchmark-session", False)
+        if hasattr(window, "unlock"):  # Earlier preview sources still use a password screen.
+            window.unlock("benchmark-session", "benchmark-session", False)
         app.processEvents()
         assert not window.locked
         loop = QEventLoop()
@@ -175,7 +176,8 @@ def dock():
         window.resize(1366, 768)
         window.show()
         window.s.set(auto_switch=False)
-        window.unlock("benchmark-session", "benchmark-session", False)
+        if hasattr(window, "unlock"):  # Earlier preview sources still use a password screen.
+            window.unlock("benchmark-session", "benchmark-session", False)
         root = window.view.rootObject()
         item = root.findChild(QQuickItem, "workspaceDock")
         if item is None:

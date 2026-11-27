@@ -1,3 +1,11 @@
+# Windows 2.0.0
+
+- Consolidates the five Windows previews into one release.
+- Opens directly in the signed-in Windows session. The workspace and phone input pause when Windows locks or suspends.
+- Adds an original illuminated cursor icon for the app, Start menu, taskbar, installer and workspace.
+- Air Store includes 86 package entries and 18 curated PC-game links for Steam and Epic Games, including Marvel’s Spider-Man, Battlefield, Fortnite and open-world titles.
+- Carries over saved settings and the existing Android download for the repository’s Latest release links.
+
 # AirCursor Windows 2.0 development preview
 
 The Windows frontend now uses Qt Quick for the desktop and authentication, native Qt windows for productivity apps, and Qt WebEngine for web content. AirCursor's fjord wallpaper, app artwork and glass surfaces are original project assets. Android, Ubuntu and protocol v1 remain compatible.

@@ -42,7 +42,6 @@ While-WorkspaceReserved 'Local\AirCursor.Windows.Workspace' {
     if (Test-Path $app) { throw 'Setup touched files while the workspace was reserved.' }
 }
 Assert-ExitCode $PreviousInstaller '/S' 0
-if (Test-Path $safeShortcut) { throw 'Expected the previous version before upgrade.' }
 
 New-Item -ItemType Directory -Path (Split-Path $settings) -Force | Out-Null
 Set-Content $settings '{"restore":true,"browser_tabs":["https://example.org/"],"install_test":true}'
@@ -55,6 +54,10 @@ While-WorkspaceReserved 'Local\AirCursor.Windows.Runtime' {
 Assert-ExitCode $Installer '/S' 0
 if ((Get-FileHash $settings).Hash -ne $profileHash) { throw 'Upgrade changed the user profile.' }
 if ((Get-FileHash $app).Hash -eq $appHash) { throw 'Upgrade did not replace the previous launcher.' }
+$registry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\AirCursor'
+if ((Get-ItemPropertyValue $registry -Name DisplayVersion) -ne '2.0.0') {
+    throw 'Windows did not register the stable version.'
+}
 if (-not (Test-Path $safeShortcut)) { throw 'Safe Mode shortcut is missing.' }
 $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($safeShortcut)
 if ($shortcut.TargetPath -ne $app -or $shortcut.Arguments -ne '--safe-mode') {
@@ -80,4 +83,4 @@ Assert-ExitCode $uninstaller $removeArgs 0
 if ((Test-Path $app) -or (Test-Path $safeShortcut)) { throw 'Uninstall left the launcher or shortcut behind.' }
 if ((Get-FileHash $settings).Hash -ne $profileHash) { throw 'Uninstall changed the user profile.' }
 
-Add-Content $report "Preview 4 upgrade, guarded update and removal, Safe Mode shortcut, and preserved user settings verified."
+Add-Content $report "`nPreview 5 upgrade, guarded update and removal, Safe Mode shortcut, and preserved user settings verified."

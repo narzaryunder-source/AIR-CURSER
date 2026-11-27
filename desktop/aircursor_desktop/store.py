@@ -6,8 +6,8 @@ import re
 import codecs
 from functools import lru_cache
 
-from PySide6.QtCore import QProcess, Qt, QSize
-from PySide6.QtGui import QIcon, QPainter, QPixmap
+from PySide6.QtCore import QProcess, Qt, QSize, QUrl
+from PySide6.QtGui import QDesktopServices, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QComboBox,
@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from .navigation import sidebar, item, heading
-from .catalog import CATALOG, LOGOS, STORE_IDS
+from .catalog import CATALOG, GAMES, LOGOS, STORE_IDS
 from .design import icon
 from .applications import launch_cli, launch_registered, match_apps, registered_apps
 from .widgets import WINDOWS_INSTALLERS, Workers, asset, button, confirm, label, open_path, row
@@ -101,13 +101,76 @@ def package_icon(package):
     return QIcon(asset(f"app-logos/{logo}.png")) if logo else icon("Air Store")
 
 
+class GameCatalog(QWidget):
+    def __init__(self, show_launcher):
+        super().__init__()
+        self.show_launcher = show_launcher
+        layout = QVBoxLayout(self)
+        heading(layout, "PC Games")
+        search = QLineEdit()
+        search.setPlaceholderText("Find a game, genre, or launcher")
+        search.textChanged.connect(self.filter)
+        layout.addWidget(search)
+        self.games = QListWidget()
+        self.games.setIconSize(QSize(28, 28))
+        self.games.currentItemChanged.connect(self.select)
+        self.games.itemDoubleClicked.connect(lambda *_: self.open_game())
+        layout.addWidget(self.games, 1)
+        self.description = label("")
+        self.description.setObjectName("secondary")
+        layout.addWidget(self.description)
+        self.open_button = button("Open official listing", self.open_game)
+        self.open_button.setObjectName("primary")
+        self.launcher_button = button("Get launcher", self.get_launcher)
+        row(layout, self.open_button, self.launcher_button)
+        self.filter("")
+
+    def filter(self, query):
+        self.games.clear()
+        terms = re.findall(r"\w+", query.casefold())
+        for index, game in enumerate(GAMES):
+            text = f"{game.name} {game.genre} {game.launcher}".casefold()
+            if all(term in text for term in terms):
+                entry = item(self.games, game.name, index)
+                entry.setIcon(package_icon(CATALOG["Game Launchers"][game.launcher]))
+                entry.setToolTip(f"{game.genre} · {game.launcher}")
+        if self.games.count():
+            self.games.setCurrentRow(0)
+        else:
+            self.select(None)
+
+    def current_game(self):
+        selected = self.games.currentItem()
+        return GAMES[selected.data(Qt.ItemDataRole.UserRole)] if selected is not None else None
+
+    def select(self, *_):
+        game = self.current_game()
+        self.open_button.setEnabled(game is not None)
+        self.launcher_button.setEnabled(game is not None)
+        self.description.setText(
+            f"{game.genre} · {game.launcher}. Check price, accounts and PC requirements on the store page."
+            if game
+            else "No games matched that search."
+        )
+
+    def open_game(self):
+        game = self.current_game()
+        if game and not QDesktopServices.openUrl(QUrl(game.url)):
+            self.description.setText("Windows could not open the official listing.")
+
+    def get_launcher(self):
+        game = self.current_game()
+        if game:
+            self.show_launcher("Game Launchers", game.launcher)
+
+
 class Store(QWidget):
     def __init__(self, apps_changed=lambda: None):
         super().__init__()
         self.apps_changed = apps_changed
         self.work = Workers(self)
         left, self.nav, layout = sidebar(self, "Browse", 190)
-        for category in ["Discover", *CATALOG]:
+        for category in ["Discover", "PC Games", *CATALOG]:
             item(self.nav, category, category)
         self.nav.currentTextChanged.connect(self.populate)
         self.query = QLineEdit()
@@ -148,8 +211,11 @@ class Store(QWidget):
             card.setStyleSheet("text-align:left;padding:8px 10px")
             grid.addWidget(card, i // 2, i % 2)
         front.addLayout(grid)
+        front.addWidget(button("Browse PC Games", lambda: self.nav.setCurrentRow(1)))
         front.addStretch()
         self.stack.addWidget(explore)
+        self.games = GameCatalog(self.details)
+        self.stack.addWidget(self.games)
         detail = QWidget()
         self.stack.addWidget(detail)
         layout = QVBoxLayout(detail)
@@ -199,7 +265,7 @@ class Store(QWidget):
         self.nav.setCurrentRow(0)
 
     def details(self, category, name):
-        self.nav.setCurrentRow(list(CATALOG).index(category) + 1)
+        self.nav.setCurrentRow(list(CATALOG).index(category) + 2)
         matches = self.apps.findItems(name, Qt.MatchFlag.MatchExactly)
         if matches:
             self.apps.setCurrentItem(matches[0])
@@ -210,7 +276,10 @@ class Store(QWidget):
             self.stack.setCurrentIndex(0)
             self.query.clear()
             return
-        self.stack.setCurrentIndex(1)
+        if category == "PC Games":
+            self.stack.setCurrentWidget(self.games)
+            return
+        self.stack.setCurrentIndex(2)
         self.active_category = category
         self.title.setText(category)
         self.apps.clear()
@@ -314,7 +383,7 @@ class Store(QWidget):
         if self.process.state() != QProcess.ProcessState.NotRunning:
             self.status.setText("Wait for the current package operation to finish.")
             return
-        self.stack.setCurrentIndex(1)
+        self.stack.setCurrentIndex(2)
         exe = shutil.which("winget.exe")
         if not exe:
             self.status.setText("Install or update Microsoft App Installer to use winget.")

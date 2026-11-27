@@ -16,7 +16,7 @@ def main():
     args = parser.parse_args()
     target = args.output.resolve()
     target.mkdir(parents=True, exist_ok=True)
-    from PySide6.QtCore import QPoint, QObject, Qt
+    from PySide6.QtCore import QPoint
     from PySide6.QtGui import QCursor
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication
@@ -29,8 +29,6 @@ def main():
         s = Settings()
         s.set(auto_switch=False, restore=False, appearance="Light")
         d = Desktop(s)
-        d.auth.set_password("render-master-session")
-        d.shell.lockedChanged.emit()
         d.showFullScreen()
         QTest.qWait(350)
         screen = d.screen()
@@ -42,11 +40,6 @@ def main():
                 raise RuntimeError("Could not capture " + name)
             return pix
 
-        grab("authentication.jpg")
-        field = d.view.rootObject().findChild(QObject, "password")
-        field.forceActiveFocus()
-        QTest.keyClicks(d.view, "render-master-session")
-        QTest.keyClick(d.view, Qt.Key.Key_Return)
         assert not d.locked
         d.view.setFocus()
         grab("workspace.png")
@@ -69,6 +62,9 @@ def main():
                 pane.go(ROOT / "assets")
             QTest.qWait(400)
             grab(file + ".jpg")
+            if name == "Air Store":
+                pane.nav.setCurrentRow(1)
+                grab("pc-games.jpg")
             d.panels[name].close()
             QTest.qWait(240)
         for mode, file in [("quick", "control-center"), ("spotlight", "spotlight")]:

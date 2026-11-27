@@ -279,36 +279,6 @@ def test_store_search_click_and_package_approval(app, tmp_path, monkeypatch):
     window.close()
 
 
-def test_phone_factor_enrollment_replay_throttle_and_recovery(tmp_path, monkeypatch):
-    import base64
-
-    from aircursor_desktop import second_factor as factor
-
-    # RFC 6238 SHA-1 vector at time 59, truncated to six digits.
-    assert factor.code(base64.b32encode(b"12345678901234567890").decode(), 1) == "287082"
-    clock = [1700000000]
-    monkeypatch.setattr(factor.time, "time", lambda: clock[0])
-    monkeypatch.setattr(factor.trust, "protect", lambda data, decrypt=False: bytes(x ^ 42 for x in data))
-    s = Settings(str(tmp_path / "s.json"))
-    s.set(trusted_logon="old")
-    secret, recovery = factor.enrollment()
-    current = lambda: factor.code(secret, clock[0] // 30)
-    factor.enable(s, secret, recovery, current())
-    saved = (tmp_path / "s.json").read_text()
-    assert secret not in saved and all(value not in saved for value in recovery)
-    assert not s.get("trusted_logon")
-    with pytest.raises(ValueError, match="fresh six-digit"):
-        factor.verify(s, current())
-    with pytest.raises(ValueError, match="again in"):
-        factor.verify(Settings(str(tmp_path / "s.json")), recovery[0])
-    clock[0] += 30
-    assert factor.verify(s, current()) == "verified"
-    assert factor.verify(s, recovery[0]) == "recovered"
-    assert len(s.get("phone_factor")["recovery_codes"]) == 7
-    with pytest.raises(ValueError):
-        factor.verify(s, recovery[0])
-
-
 def test_publisher_checksum_comparison():
     from aircursor_desktop.installer import checksum_matches
 
@@ -348,7 +318,9 @@ def test_external_drop_never_tells_source_to_delete_when_copying(app, tmp_path, 
     monkeypatch.setattr("aircursor_desktop.files.confirm", lambda *_: True)
 
     def drop(actions):
-        event = QDropEvent(QPointF(10, 10), actions, mime, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ShiftModifier)
+        event = QDropEvent(
+            QPointF(10, 10), actions, mime, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ShiftModifier
+        )
         files.tabs.currentWidget().dropEvent(event)
         return event
 
@@ -359,19 +331,10 @@ def test_external_drop_never_tells_source_to_delete_when_copying(app, tmp_path, 
     files.deleteLater()
 
 
-@pytest.mark.skipif(os.name != "nt", reason="requires Windows DPAPI and shell copy/move")
-def test_native_trust_ticket_and_file_operations(tmp_path):
-    from aircursor_desktop import trust
+@pytest.mark.skipif(os.name != "nt", reason="requires Windows shell copy/move")
+def test_native_file_operations(tmp_path):
     from aircursor_desktop.files import shell_transfer
-    from aircursor_desktop.lock import PasswordLock
 
-    settings = Settings(str(tmp_path / "settings.json"))
-    lock = PasswordLock(settings)
-    lock.set_password("test-master-password", "test-master-password")
-    trust.remember(settings)
-    assert trust.active(settings)
-    lock.set_password("changed-test-password", "changed-test-password")
-    assert not trust.active(settings)
     source = tmp_path / "first.txt"
     source.write_text("Native Shell transfer")
     folder = tmp_path / "folder"
@@ -396,8 +359,37 @@ def test_store_game_entries_and_logos(app):
     assert all(Path(asset(f"app-logos/{slug}.png")).is_file() for slug in LOGOS.values())
     widget = store.Store()
     widget.populate("Game Launchers")
-    xbox = next(widget.apps.item(i) for i in range(widget.apps.count()) if widget.apps.item(i).text() == "Xbox")
+    xbox = next(
+        widget.apps.item(i) for i in range(widget.apps.count()) if widget.apps.item(i).text() == "Xbox"
+    )
     widget.apps.setCurrentItem(xbox)
     assert widget.source.currentData() == "msstore"
     assert store.arguments("show", widget.query.text(), widget.source.currentData())[-2] == "msstore"
+    widget.close()
+
+
+def test_pc_games_open_the_correct_publisher_listing_and_launcher(app, monkeypatch):
+    from aircursor_desktop.catalog import GAMES
+
+    opened, operations = [], []
+    services = type(
+        "Services", (), {"openUrl": staticmethod(lambda url: opened.append(url.toString()) or True)}
+    )
+    monkeypatch.setattr(store, "QDesktopServices", services)
+    widget = store.Store()
+    monkeypatch.setattr(widget, "run", lambda action: operations.append(action))
+    widget.nav.setCurrentRow(1)
+    assert widget.stack.currentWidget() is widget.games
+    assert widget.games.games.count() == len(GAMES)
+    widget.games.filter("spider man")
+    assert widget.games.games.count() == 3
+    widget.games.open_button.click()
+    assert opened == ["https://store.steampowered.com/app/1817070/"]
+    widget.games.filter("storm fortnite")
+    assert not widget.games.open_button.isEnabled()
+    widget.games.filter("fortnite")
+    widget.games.open_button.click()
+    assert opened[-1] == "https://store.epicgames.com/en-US/p/fortnite"
+    widget.games.launcher_button.click()
+    assert widget.query.text() == "EpicGames.EpicGamesLauncher" and operations == ["show"]
     widget.close()

@@ -1,16 +1,14 @@
 # AirCursor for Windows
 
-AirCursor opens a password-protected workspace alongside Windows Explorer. The Dock opens Files, Air Browser, Air Store, Air AI, Spotlight, the Windows command prompt, Settings, window overview and Downloads. Open **AirCursor → Enter desktop mode** or press **F11**. The menu bar offers **Exit desktop** in full screen. **Esc** dismisses a panel overlay or exits desktop mode when the workspace has focus.
+AirCursor opens a workspace alongside Windows Explorer in your signed-in Windows session. The Dock opens Files, Air Browser, Air Store, Air AI, Spotlight, the Windows command prompt, Settings, window overview and Downloads. Open **AirCursor → Enter desktop mode** or press **F11**. The menu bar offers **Exit desktop** in full screen. **Esc** dismisses a panel overlay or exits desktop mode when the workspace has focus.
 
-## Install the development build
+## Install AirCursor for Windows
 
-1. Download `AirCursor-Windows.exe` and its accompanying `SHA256SUMS.txt` from the development build. Open [Windows development builds](https://github.com/narzaryunder-source/AIR-CURSER/actions/workflows/windows-workspace.yml?query=branch%3Awindows%2Faircursor-workspace) and select a successful run. On its Summary screen, the installer is inside the **release-windows** artifact and the checksum is in **windows-verification**.
-2. In PowerShell, run `Get-FileHash .\AirCursor-Windows.exe -Algorithm SHA256` and compare the digest. The preview installer is unsigned.
+1. Download `AirCursor-Windows.exe` and `SHA256SUMS.txt` from the [AirCursor 2.0 Windows release](https://github.com/narzaryunder-source/AIR-CURSER/releases/tag/windows-v2.0.0).
+2. In PowerShell, run `Get-FileHash .\AirCursor-Windows.exe -Algorithm SHA256` and compare the digest. The installer is unsigned.
 3. Close any running AirCursor instance. Run the installer in your normal Windows account. It installs the x64 application under `%LOCALAPPDATA%\Programs\AirCursor` and adds **AirCursor** to Start. It includes Python, Qt Quick, Qt WebEngine, the Chromium helper, mDNS discovery and the Windows receiver. Allow approximately 800 MiB of free space for the installed application, plus space for browser data and downloads.
-4. Open AirCursor and enter your existing password, or create one on a new profile. Existing settings remain in `%APPDATA%\AirCursor\settings.json`. New and changed master passwords require at least 15 characters. Existing passwords remain valid and their hashes are upgraded on successful sign-in.
+4. Open **AirCursor** from Start to go directly to the workspace. Upgrades keep the settings in `%APPDATA%\AirCursor\settings.json`.
 5. Remove the application through Windows Settings → Apps. Uninstallation removes the installed program files. Your workspace data and saved Windows Wi-Fi profile remain available for reinstallation.
-
-The project website’s Windows button resolves to the latest approved GitHub release asset. Development artifacts are separate from that production download.
 
 ## Connect with or without a hotspot
 
@@ -27,7 +25,7 @@ Select the PC in the phone app or enter the IPv4 address and port shown in **Con
 1. On the phone, enable the hotspot in Android Quick Settings. Open **Control Center → All controls → Hotspot → Find hotspots**, select the phone, enter its Wi-Fi password, and choose **Save and connect**. The Windows WLAN service stores the key in a current-user Wi-Fi profile. The SSID and adapter identifier are saved in AirCursor.
 2. Wait for association with the specified SSID and an internet check. On native WLAN the content check sends traffic over the selected adapter. Control Center also reports whole-computer reachability; proxy-only Wi-Fi can remain unverified. Adapter diagnostics shows gateways, DNS servers and possible USB tether adapters. Newer Windows builds can require location access for Wi-Fi discovery.
 3. Under **Connected phone**, turn the receiver on. On the existing Android app, select **Use as keyboard & touchpad**, choose the computer or enter its displayed IPv4 address and port, then enter the six-digit code displayed on Windows. Choose an appropriate local-network firewall permission if Windows prompts.
-4. Test pointer movement, left/right clicks, two-finger scrolling and typing. Hold a modifier and lock AirCursor with **Ctrl+Shift+L**. The receiver should release held inputs immediately. Unlock and pair again if the connection timed out.
+4. Test pointer movement, left/right clicks, two-finger scrolling and typing. Hold a modifier and lock Windows with **Windows + L**. The receiver should release held inputs immediately. Unlock Windows to resume AirCursor.
 5. For failover, return to regular Wi-Fi, leave the configured phone hotspot available, and enable automatic switching. Disconnect regular internet and watch the status. Repeat with the phone out of range. Optional return to the previous Wi-Fi waits for two stable sightings and idle transfer activity. This applies to Wi-Fi that AirCursor itself displaced.
 6. For USB tethering, use a data-capable USB cable and enable tethering in Android settings. Windows manages the tether interface. AirCursor's diagnostics identifies likely RNDIS/USB Ethernet adapters.
 
@@ -82,10 +80,9 @@ The branch workflow builds on a Windows Server runner, installs the generated fi
 - **Open a downloaded installer.** Choose Air Browser → ⋯ → Downloads → Open file. Review its Windows signature and SHA-256. You can paste the publisher's digest before choosing Run installer.
 - **Edit media.** Right-click a picture in Files and choose Edit photo to rotate or resize to a new PNG. For a video, install FFmpeg, then choose Trim video, specify start/end seconds, and choose a new MP4 name. Existing output files are protected.
 - **Connect an AI service.** Start your local model server or enter an HTTPS provider URL under Configure endpoint. Choose Provider key if the endpoint requires credentials, Find models, select a model and Send. Windows Credential Manager stores API keys. Separate conversations can be renamed or deleted.
-- **Sign in with an authenticator.** Open Settings → Privacy and security → Set up phone authenticator. Enter your master password, scan the locally generated QR code with Google Authenticator or Microsoft Authenticator, and confirm the six-digit code. Save the eight one-time recovery codes. At the lock screen, select **Use authenticator or recovery code** to sign in without entering the master password. You can require the master password and phone code together during enrollment. Earlier enrollments retain that two-step setting until you replace them. The authenticator sign-in code is separate from the remote-input pairing code in Control Center.
-- **Trust this Windows sign-in.** Check this on the lock screen to reopen AirCursor for up to eight hours in the same Windows logon. The ticket and authenticator secret use Windows DPAPI. AirCursor locks after 10 minutes of Windows inactivity by default, on Windows session lock or on sleep. Locking revokes the ticket, as do credential changes and **Forget trusted Windows sign-in**. Settings → Privacy and security lets you choose the inactivity timeout. Existing trusted tickets must be renewed after upgrading.
-- **Recover access.** Enter a saved recovery code in place of an authenticator code. Each entry works once and cannot create a trusted session. Use **Manage phone authenticator** to replace the phone or rotate recovery codes after confirming your credentials.
-- **Restore your work.** Enable Restore open panels at sign-in. AirCursor remembers your active workspace, managed window geometry, file tabs and views, and regular browser URLs. The calendar widget can be enabled from Settings → Workspace or the desktop context menu.
+- **Lock the workspace.** Use **Windows + L**. AirCursor follows the Windows session and pauses phone controls when the session closes, locks or suspends. The six-digit pairing code in Control Center is for connecting a phone.
+- **Find a PC game.** Open **Air Store → PC Games** for supported game listings on Steam or Epic Games. Select **Get launcher** to find the Windows launcher package, and use the publisher listing to check requirements, purchase and install the game.
+- **Restore your work.** Enable Restore open panels at startup. AirCursor remembers your active workspace, managed window geometry, file tabs and views, and regular browser URLs. The calendar widget can be enabled from Settings → Workspace or the desktop context menu.
 
 See [the feature audit](report/FUNCTIONAL-AUDIT.md), [measurements and native checks](report/VERIFICATION.md) and [the local AI session](report/ai-local.jpg).
 
@@ -101,6 +98,6 @@ Air Store offers separate **Game Launchers** and **Games** categories, plus vide
 
 ## Recover from a slow or stuck startup
 
-Close AirCursor before running an update or uninstall. If the workspace stalls while restoring a session, open **AirCursor (Safe Mode)** from Start. It asks for your existing credentials, skips automatic restoration and uses software graphics for the workspace. Start AirCursor normally to return to the saved layout. If an individual browser tab stops after its Chromium renderer fails, use **Reload tab** or **Open in default browser**.
+Close AirCursor before running an update or uninstall. If the workspace stalls while restoring a session, open **AirCursor (Safe Mode)** from Start. It skips automatic restoration and uses software graphics for the workspace. Start AirCursor normally to return to the saved layout. If an individual browser tab stops after its Chromium renderer fails, use **Reload tab** or **Open in default browser**.
 
 [Windows bug report](report/WINDOWS-BUG-REPORT.md)

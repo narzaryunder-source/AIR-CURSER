@@ -14,8 +14,6 @@ Item {
     property string overlay: ""
     onOverlayChanged: shell.cover(overlay)
     property string notice: ""
-    property string errorText: ""
-    property bool useCode: false
     property int dockSize: Math.min(59, Math.max(35, Math.floor((width - 115) / Math.max(9, shell.dock.length))))
     property string family: Qt.platform.os === "windows" ? "Segoe UI Variable" : "DejaVu Sans"
     function showOverlay(name) {
@@ -34,37 +32,18 @@ Item {
         overlay = "";
         shell.action(command);
     }
-    function authenticate() {
-        if (root.useCode)
-            shell.authenticateCode(secret.text, trust.checked);
-        else
-            shell.authenticate(secret.text, repeat.text, trust.checked);
-        secret.clear();
-        repeat.clear();
-    }
     Connections {
         target: shell
         function onOverlayRequested(name) {
             root.showOverlay(name);
         }
         function onFeedback(message) {
-            if (root.locked) {
-                root.errorText = message;
-            } else {
-                root.notice = message;
-                noticeTimer.restart();
-            }
+            root.notice = message;
+            noticeTimer.restart();
         }
         function onLockedChanged() {
             root.overlay = "";
-            root.errorText = "";
             root.notice = "";
-            trust.checked = false;
-            root.useCode = false;
-            secret.clear();
-            repeat.clear();
-            if (root.locked)
-                secret.forceActiveFocus();
         }
     }
     Keys.onEscapePressed: {
@@ -206,7 +185,7 @@ Item {
                         anchors.centerIn: parent
                         width: 18
                         height: 18
-                        source: shell.assets + "icons/mark.svg"
+                        source: shell.assets + "logo96.png"
                     }
                     Hit {
                         onClicked: shell.menu("AirCursor", 14, 30)
@@ -812,19 +791,11 @@ Item {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: Math.max(19, Math.min(parent.height * .075, 70))
             spacing: 8
-            Rectangle {
+            Image {
                 anchors.horizontalCenter: parent.horizontalCenter
+                source: shell.assets + "logo96.png"
                 width: 54
                 height: 54
-                radius: 27
-                color: "#d12d4352"
-                border.color: "#b7dae4e8"
-                Image {
-                    anchors.centerIn: parent
-                    source: shell.assets + "icons/mark.svg"
-                    width: 32
-                    height: 32
-                }
             }
             WhiteText {
                 anchors.horizontalCenter: parent.horizontalCenter
@@ -834,90 +805,9 @@ Item {
             }
             WhiteText {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: shell.first ? "Create a master password (15 or more characters)" : "Unlock your workspace"
+                text: "Resume from your Windows session"
                 font.pixelSize: 12
             }
-            AuthField {
-                id: secret
-                objectName: "password"
-                anchors.horizontalCenter: parent.horizontalCenter
-                placeholderText: root.useCode ? "Phone or recovery code" : "Master password"
-                maximumLength: root.useCode ? 64 : 1024
-                onAccepted: shell.first ? repeat.forceActiveFocus() : root.authenticate()
-                ToolButton {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 32
-                    height: 30
-                    text: "→"
-                    palette.buttonText: "white"
-                    onClicked: root.authenticate()
-                }
-            }
-            AuthField {
-                id: repeat
-                objectName: "confirmPassword"
-                visible: shell.first
-                anchors.horizontalCenter: parent.horizontalCenter
-                maximumLength: 1024
-                placeholderText: "Confirm password"
-                onAccepted: root.authenticate()
-            }
-            ToolButton {
-                objectName: "authMethod"
-                visible: shell.codeLogin && !shell.first
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: root.useCode ? "Use master password" : "Use authenticator or recovery code"
-                palette.buttonText: "white"
-                onClicked: {
-                    root.useCode = !root.useCode;
-                    root.errorText = "";
-                    secret.clear();
-                    secret.forceActiveFocus();
-                }
-            }
-            CheckBox {
-                id: trust
-                visible: shell.canTrust
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: "Trust this Windows sign-in for up to 8 hours"
-                palette.windowText: "white"
-                font.pixelSize: 11
-            }
-            WhiteText {
-                visible: root.errorText !== ""
-                text: root.errorText
-                width: 290
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.WordWrap
-                color: "#fff1c2"
-                font.pixelSize: 12
-            }
-            WhiteText {
-                visible: !shell.first
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: "Reset AirCursor…"
-                font.pixelSize: 11
-                Hit {
-                    onClicked: shell.action("reset")
-                }
-            }
-        }
-    }
-    component AuthField: TextField {
-        width: 240
-        height: 35
-        color: "white"
-        echoMode: TextInput.Password
-        placeholderTextColor: "#dce7ed"
-        font.family: root.family
-        font.pixelSize: 13
-        leftPadding: 14
-        rightPadding: 32
-        background: Rectangle {
-            radius: 17
-            color: "#a52c404e"
-            border.color: parent.activeFocus ? "#dbdceff6" : "#7eb7c8d3"
         }
     }
     Rectangle {

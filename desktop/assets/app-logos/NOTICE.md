@@ -44,3 +44,10 @@ Brand artwork from Simple Icons 16.38.1. Shapes are shown as locally bundled PNG
 | VLC media player | [Artwork](https://cdn.jsdelivr.net/npm/simple-icons@16.38.1/icons/vlcmediaplayer.svg) |
 | Zoom | [Artwork](https://cdn.jsdelivr.net/npm/simple-icons@16.38.1/icons/zoom.svg) |
 | Visual Studio Code | [Microsoft’s product icon](https://code.visualstudio.com/assets/branding/code-stable.png) |
+| Figma | [Artwork](https://cdn.jsdelivr.net/npm/simple-icons@16.38.1/icons/figma.svg) |
+| FreeCAD | [Artwork](https://cdn.jsdelivr.net/npm/simple-icons@16.38.1/icons/freecad.svg) |
+| KiCad | [Artwork](https://cdn.jsdelivr.net/npm/simple-icons@16.38.1/icons/kicad.svg) |
+| Bitwarden | [Artwork](https://cdn.jsdelivr.net/npm/simple-icons@16.38.1/icons/bitwarden.svg) |
+| KeePassXC | [Artwork](https://cdn.jsdelivr.net/npm/simple-icons@16.38.1/icons/keepassxc.svg) |
+| Tailscale | [Artwork](https://cdn.jsdelivr.net/npm/simple-icons@16.38.1/icons/tailscale.svg) |
+| Transmission | [Artwork](https://cdn.jsdelivr.net/npm/simple-icons@16.38.1/icons/transmission.svg) |

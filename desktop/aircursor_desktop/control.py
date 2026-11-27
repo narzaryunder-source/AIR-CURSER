@@ -10,8 +10,6 @@ from PySide6.QtWidgets import (
     QComboBox,
     QStackedWidget,
     QDoubleSpinBox,
-    QInputDialog,
-    QLineEdit,
     QPlainTextEdit,
     QTabWidget,
     QVBoxLayout,
@@ -58,6 +56,7 @@ def diagnostics():
     }
     """
     from . import powershell
+
     completed = powershell.run(script, timeout=22)
     return (completed.stdout + completed.stderr).decode(
         "oem", errors="replace"
@@ -231,6 +230,9 @@ class Control(QTabWidget):
         if os.name != "nt":
             self.remote.setText("The input receiver requires Windows.")
             return
+        if not host.running and (self.desk.locked or not self.desk.session_watching):
+            self.remote.setText("Windows session notifications must be available to enable phone controls.")
+            return
         try:
             (host.stop if host.running else host.start)()
             self.desk.s.set(remote_on=host.running)
@@ -265,6 +267,7 @@ class Control(QTabWidget):
             if ($g) { 'Busiest engine sample: ' + (($g | Measure-Object UtilizationPercentage -Maximum).Maximum) + '%' }
             else { 'GPU utilization counter unavailable.' }"""
             from . import powershell
+
             result = powershell.run(script, timeout=20)
             return (result.stdout + result.stderr).decode("oem", errors="replace")
 
@@ -284,7 +287,11 @@ class Control(QTabWidget):
                 try:
                     if proc.info["memory_info"]:
                         rows.append(
-                            (proc.info["memory_info"].rss, proc.info["name"] or "Unknown", proc.cpu_percent())
+                            (
+                                proc.info["memory_info"].rss,
+                                proc.info["name"] or "Unknown",
+                                proc.cpu_percent(),
+                            )
                         )
                 except psutil.Error:
                     continue
@@ -322,6 +329,7 @@ class Preferences(QWidget):
             content.setSpacing(13)
             heading(content, name)
             from PySide6.QtWidgets import QScrollArea
+
             area = QScrollArea()
             area.setFrameShape(area.Shape.NoFrame)
             area.setWidgetResizable(True)
@@ -366,7 +374,7 @@ class Preferences(QWidget):
         for pane, title, key, default in [
             (privacy, "Remember visited pages for search", "browser_history_enabled", False),
             (privacy, "Keep recent clipboard text until lock", "clipboard", False),
-            (workspace, "Restore open panels at sign-in", "restore", True),
+            (workspace, "Restore open panels at startup", "restore", True),
             (workspace, "Show desktop calendar widget", "calendar_widget", False),
             (workspace, "Show one panel at a time", "stage", False),
         ]:
@@ -374,106 +382,29 @@ class Preferences(QWidget):
             check.setChecked(desk.s.get(key, default))
             check.toggled.connect(lambda state, k=key: desk.preference(k, state))
             pane.addWidget(check)
-        privacy.addWidget(button("Change AirCursor password…", self.change_password))
-        self.factor = button("", self.configure_factor)
-        self.update_factor()
-        privacy.addWidget(self.factor)
-        from .session import IDLE_MINUTES
-
-        idle = QComboBox()
-        for minutes in IDLE_MINUTES:
-            idle.addItem(f"{minutes} min", minutes)
-        idle.setCurrentIndex(IDLE_MINUTES.index(desk.idle_timeout() // 60))
-        idle.currentIndexChanged.connect(lambda: desk.s.set(idle_lock_minutes=idle.currentData()))
-        idle.setEnabled(os.name == "nt")
-        row(privacy, label("Lock after Windows inactivity"), idle)
-        privacy.addWidget(button("Forget trusted Windows sign-in", self.revoke_trust))
+        privacy.addWidget(
+            label(
+                "AirCursor opens in your signed-in Windows session. Use Windows + L to pause the workspace and phone controls."
+            )
+        )
         privacy.addStretch()
         workspace.addWidget(
             button("Open AirBoost profiles", lambda: desk.open("Control Center").setCurrentIndex(2))
         )
-        workspace.addWidget(label("AirCursor for Windows · 2.0 preview"))
+        workspace.addWidget(label("AirCursor for Windows · 2.0"))
         workspace.addStretch()
         windows = section("Windows settings")
         for name, page in SYSTEM.items():
             windows.addWidget(button(name, lambda page=page: system_link(self, "ms-settings:" + page)))
         from PySide6.QtCore import QUrl
         from PySide6.QtGui import QDesktopServices
-        windows.addWidget(button("AirCursor releases", lambda: QDesktopServices.openUrl(
-            QUrl("https://github.com/narzaryunder-source/AIR-CURSER/releases"))))
-        windows.addStretch()
 
-    def update_factor(self):
-        enabled = bool(self.desk.s.get("phone_factor"))
-        self.factor.setText("Manage phone authenticator…" if enabled else "Set up phone authenticator…")
-        self.factor.setEnabled(os.name == "nt")
-
-    def revoke_trust(self):
-        try:
-            self.desk.s.set(trusted_logon=None)
-            self.desk.notify("Trusted Windows sign-in removed.")
-        except OSError as exc:
-            self.desk.notify(str(exc))
-
-    def configure_factor(self):
-        from . import second_factor
-        from .auth_dialogs import enroll, show_recovery
-
-        current, ok = QInputDialog.getText(self, "Phone authenticator", "Current master password", QLineEdit.EchoMode.Password)
-        if not ok or self.desk.locked:
-            return
-        settings = self.desk.s
-        try:
-            if not self.desk.auth.check(current):
-                self.desk.notify("Incorrect password or a retry delay is active.")
-                return
-            existing = settings.get("phone_factor")
-            if existing:
-                options = ["Replace authenticator", "Generate new recovery codes", "Disable authenticator"]
-                action, ok = QInputDialog.getItem(self, "Manage authenticator", "Action", options, editable=False)
-                if not ok or self.desk.locked:
-                    return
-                entered, ok = QInputDialog.getText(self, "Confirm authenticator", "Current authenticator code or recovery code", QLineEdit.EchoMode.Password)
-                if not ok or self.desk.locked:
-                    return
-                result = second_factor.verify(settings, entered)
-                self.update_factor()
-                if action == "Disable authenticator":
-                    second_factor.disable(settings)
-                    self.update_factor()
-                    self.desk.notify("Phone authentication disabled.")
-                    return
-                if action == "Generate new recovery codes" and result != "legacy_recovery":
-                    codes = second_factor.recovery_codes()
-                    second_factor.renew_recovery(settings, codes)
-                    show_recovery(self, codes)
-                    return
-            import platform
-
-            secret, codes = second_factor.enrollment()
-            uri = second_factor.enrollment_uri(secret, platform.node()[:64] or "Windows")
-            result = enroll(self, uri, require_both=bool(existing and not existing.get("alternative")))
-            if result is None or self.desk.locked:
-                return
-            entered, allow_alternative = result
-            second_factor.enable(settings, secret, codes, entered, allow_alternative=allow_alternative)
-            self.update_factor()
-            show_recovery(self, codes)
-            self.desk.notify("Phone authentication is ready.")
-        except (ValueError, OSError) as exc:
-            self.desk.notify(str(exc))
-
-    def change_password(self):
-        values = []
-        for name in ("Current password", "New password", "Confirm new password"):
-            value, ok = QInputDialog.getText(
-                self, "Change AirCursor password", name, QLineEdit.EchoMode.Password
+        windows.addWidget(
+            button(
+                "AirCursor releases",
+                lambda: QDesktopServices.openUrl(
+                    QUrl("https://github.com/narzaryunder-source/AIR-CURSER/releases")
+                ),
             )
-            if not ok or self.desk.locked:
-                return
-            values.append(value)
-        try:
-            self.desk.auth.change(*values)
-            self.desk.notify("Password changed.")
-        except (ValueError, OSError) as exc:
-            self.desk.notify(str(exc))
+        )
+        windows.addStretch()

@@ -71,7 +71,7 @@ def test_archive_rejects_unsafe_names(tmp_path, entry):
     assert not (tmp_path / "bad").exists()
 
 
-def test_corrupt_settings_cannot_open_a_fresh_unprotected_workspace(tmp_path):
+def test_corrupt_settings_preserves_the_saved_file(tmp_path):
     path = tmp_path / "settings.json"
     path.write_text("{")
     with pytest.raises(ValueError):
@@ -98,8 +98,6 @@ def test_real_widget_paths_lock_and_exit(tmp_path, monkeypatch):
     if os.name != "nt":
         monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
-    from PySide6.QtTest import QTest
-    from PySide6.QtCore import Qt
     from aircursor_desktop.ui import Desktop
 
     app = QApplication.instance() or QApplication([])
@@ -110,12 +108,8 @@ def test_real_widget_paths_lock_and_exit(tmp_path, monkeypatch):
     desktop.show()
     from PySide6.QtCore import QObject
 
-    fields = [desktop.view.rootObject().findChild(QObject, n) for n in ("password", "confirmPassword")]
-    for field in fields:
-        field.setProperty("text", "workspace-test-master")
-    fields[-1].forceActiveFocus()
-    QTest.keyClick(desktop.view, Qt.Key.Key_Return)
-    assert not desktop.locked and desktop.auth.has_password
+    assert not desktop.locked
+    assert desktop.view.rootObject().findChild(QObject, "password") is None
     desktop.preference("calendar_widget", True)
     calendar = desktop.view.rootObject().findChild(QObject, "desktopCalendar")
     assert calendar and calendar.isVisible()
@@ -134,14 +128,14 @@ def test_real_widget_paths_lock_and_exit(tmp_path, monkeypatch):
     assert desktop.isFullScreen()
     desktop.exit_desktop()
     assert not desktop.isFullScreen()
-    desktop.lock_now()
+    desktop.suspend_workspace()
     assert desktop.host.paused and not any(p.isVisible() for p in desktop.panels.values())
     assert desktop.open("Air Browser") is None
     desktop.close()
     app.processEvents()
 
 
-def test_normal_entry_point_reaches_locked_window(tmp_path):
+def test_normal_entry_point_opens_without_an_aircursor_password(tmp_path):
     import subprocess
     import sys
     from pathlib import Path
@@ -151,80 +145,68 @@ from PySide6.QtCore import QTimer
 from aircursor_desktop.ui import Desktop, main
 show = Desktop.show
 def opened(window):
-    assert window.locked and window.view.rootObject() is not None
     show(window)
+    assert not window.locked and window.view.rootObject() is not None
     QTimer.singleShot(50, window.close)
 Desktop.show = opened
 raise SystemExit(main())
 """
-    env = {**os.environ, "AIRCURSOR_HOME": str(tmp_path), "QT_QPA_PLATFORM": "offscreen", "QT_QUICK_BACKEND": "software"}
-    result = subprocess.run([sys.executable,"-c",probe],cwd=Path(__file__).resolve().parents[1],
-                            env=env,capture_output=True,text=True,timeout=30)
-    assert result.returncode==0, result.stderr
+    env = {
+        **os.environ,
+        "AIRCURSOR_HOME": str(tmp_path),
+        "QT_QPA_PLATFORM": "offscreen",
+        "QT_QUICK_BACKEND": "software",
+    }
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
 
 
-def test_authenticator_lock_screen_recovery_and_idle_lock(tmp_path, monkeypatch):
-    import time
-    from PySide6.QtCore import Qt, QObject, QMetaObject
-    from PySide6.QtTest import QTest
+def test_windows_session_controls_workspace_and_phone_input(tmp_path, monkeypatch):
     from PySide6.QtWidgets import QApplication
-    from aircursor_desktop import second_factor, session, trust
-    from aircursor_desktop.auth_dialogs import qr_image
+    from aircursor_desktop import session
     from aircursor_desktop.ui import Desktop
 
     if os.name != "nt" and not os.getenv("DISPLAY"):
         monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     app = QApplication.instance() or QApplication([])
-    settings = Settings(str(tmp_path / "auth.json"))
-    settings.set(auto_switch=False, restore=False)
-    master = "private test master password"
-    from aircursor_desktop.lock import PasswordLock
-    PasswordLock(settings).set_password(master)
-    monkeypatch.setattr(trust, "protect", lambda data, decrypt=False: bytes(x ^ 42 for x in data))
-    secret, recovery = second_factor.enrollment()
-    uri = second_factor.enrollment_uri(secret, "Office / 東京")
-    from urllib.parse import parse_qs, urlsplit
-    assert parse_qs(urlsplit(uri).query) == {
-        "secret": [secret], "issuer": ["AirCursor"], "algorithm": ["SHA1"], "digits": ["6"], "period": ["30"],
-    }
-    qr = qr_image(uri)
-    assert qr.pixelColor(0, 0).name() == "#ffffff"
-    assert qr.pixelColor(20, 20).name() == "#000000"
-    assert qr.pixelColor(25, 25).name() == "#ffffff"
-    second_factor.enable(settings, secret, recovery, second_factor.code(secret, int(time.time()) // 30))
+    settings = Settings(str(tmp_path / "session.json"))
+    settings.set(
+        auto_switch=False, restore=False, password={"hash": "legacy-preview"}, phone_factor={"legacy": True}
+    )
+    monkeypatch.setattr(session, "interactive_desktop", lambda: True)
+    monkeypatch.setattr(session, "watch", lambda *_: True)
     window = Desktop(settings)
+    window.work.run = lambda *_: None
     window.show()
-    app.processEvents()
-    root = window.view.rootObject()
-    choice = root.findChild(QObject, "authMethod")
-    assert choice and choice.property("visible")
-    assert QMetaObject.invokeMethod(choice, "clicked", Qt.ConnectionType.DirectConnection)
-    entry = root.findChild(QObject, "password")
-    assert entry.property("placeholderText") == "Phone or recovery code"
-    entry.setProperty("text", recovery[0])
-    entry.forceActiveFocus()
-    QTest.keyClick(window.view, Qt.Key.Key_Return)
-    assert not window.locked
-    assert not window.host.paused
-    assert len(settings.get("phone_factor")["recovery_codes"]) == 7
-    monkeypatch.setattr(session, "idle_seconds", lambda: window.idle_timeout())
-    window.check_inactivity()
-    assert window.locked and window.host.paused
-    assert entry.property("text") == ""
-    window.unlock_with_code(recovery[0], False)
-    assert window.locked
-    window.unlock(master, "", False)
-    assert not window.locked
+    assert not window.locked and not window.host.paused
+    assert settings.get("password") == {"hash": "legacy-preview"}
     if os.name == "nt":
         import ctypes
         from ctypes import wintypes
-        ctypes.windll.user32.SendMessageW(wintypes.HWND(int(window.winId())), 0x02B1, 7, 0)
-        assert window.locked and window.host.paused
+
+        ctypes.windll.user32.SendMessageW(wintypes.HWND(int(window.winId())), session.SESSION_CHANGE, 7, 0)
+    else:
+        window.handle_session_message(session.SESSION_CHANGE, 7)
+    assert window.locked and window.host.paused
+    window.handle_session_message(session.POWER_CHANGE, 18)
+    assert window.locked and window.host.paused
+    window.handle_session_message(session.SESSION_CHANGE, 8)
+    assert not window.locked and not window.host.paused
+    monkeypatch.setattr(session, "interactive_desktop", lambda: False)
+    window.check_windows_session()
+    assert window.host.paused and not window.locked
     window.close()
     app.processEvents()
 
 
-def test_safe_mode_preserves_saved_layout_tabs_and_authentication(tmp_path, monkeypatch):
+def test_safe_mode_preserves_saved_layout_and_tabs(tmp_path, monkeypatch):
     from PySide6.QtWidgets import QApplication
     from aircursor_desktop.ui import Desktop
 
@@ -242,13 +224,8 @@ def test_safe_mode_preserves_saved_layout_tabs_and_authentication(tmp_path, monk
     }
     settings.set(**saved)
     desk = Desktop(settings, safe_mode=True)
-    desk.auth.set_password("safe mode test password")
     desk.work.run = lambda *_: None
     desk.show()
-    assert desk.locked
-    desk.unlock("wrong password", "", False)
-    assert desk.locked
-    desk.unlock("safe mode test password", "", False)
     assert not desk.locked and not desk.panels and not desk.host.running
     assert desk.space == 1 and not desk.effects()
     browser = desk.open("Air Browser")
@@ -271,7 +248,6 @@ def test_unreadable_saved_layout_does_not_prevent_unlock(tmp_path, monkeypatch):
     desk = Desktop(settings)
     desk.work.run = lambda *_: None
     desk.show()
-    desk.unlock("workspace test password", "workspace test password", False)
     assert not desk.locked
     assert desk.open("Files") is not None
     desk.close()
@@ -290,7 +266,6 @@ def test_a_failed_save_does_not_interrupt_workspace_shutdown(tmp_path, monkeypat
     desk = Desktop(settings)
     desk.work.run = lambda *_: None
     desk.show()
-    desk.unlock("workspace test password", "workspace test password", False)
 
     def fail():
         raise OSError("fixture write failure")

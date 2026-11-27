@@ -44,3 +44,8 @@ This report covers the Windows installer, sign-in, workspace, browser, Store, Fi
 - Include the release version, Windows build, GPU model, steps to reproduce, expected behavior, and what happened. A screenshot or a self-test result helps isolate the issue. Keep passwords, pairing codes, recovery codes and private URLs out of the report.
 
 [Windows setup guide](../README.md) · [Functional audit](FUNCTIONAL-AUDIT.md) · [Performance and compatibility report](VERIFICATION.md)
+
+
+## Windows 2.0 update
+
+Windows 2.0 uses the signed-in Windows session for workspace access. The PIN and password controls described in the preview history above applied to the preview builds. Current session tests verify opening directly, pausing on Windows lock and suspend, and resuming after Windows becomes interactive.
