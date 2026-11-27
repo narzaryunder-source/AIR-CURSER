@@ -4,7 +4,7 @@ AirCursor opens a workspace alongside Windows Explorer in your signed-in Windows
 
 ## Install AirCursor for Windows
 
-1. Download `AirCursor-Windows.exe` and `SHA256SUMS.txt` from the [AirCursor 2.0 Windows release](https://github.com/narzaryunder-source/AIR-CURSER/releases/tag/windows-v2.0.0).
+1. Download `AirCursor-Windows.exe` and `SHA256SUMS.txt` from the [latest stable release](https://github.com/narzaryunder-source/AIR-CURSER/releases/latest).
 2. In PowerShell, run `Get-FileHash .\AirCursor-Windows.exe -Algorithm SHA256` and compare the digest. The installer is unsigned.
 3. Close any running AirCursor instance. Run the installer in your normal Windows account. It installs the x64 application under `%LOCALAPPDATA%\Programs\AirCursor` and adds **AirCursor** to Start. It includes Python, Qt Quick, Qt WebEngine, the Chromium helper, mDNS discovery and the Windows receiver. Allow approximately 800 MiB of free space for the installed application, plus space for browser data and downloads.
 4. Open **AirCursor** from Start to go directly to the workspace. Upgrades keep the settings in `%APPDATA%\AirCursor\settings.json`.
