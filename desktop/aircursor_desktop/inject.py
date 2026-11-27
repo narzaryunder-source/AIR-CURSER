@@ -37,7 +37,9 @@ class Controller:
         k = span * self.speed / PAD_ACROSS
         self._fx = min(max(self._fx + dx * k, left), left + w - 1)
         self._fy = min(max(self._fy + dy * k, top), top + h - 1)
-        self.b.move_to(int(self._fx), int(self._fy))
+        destination = int(self._fx), int(self._fy)
+        if destination != (x, y):
+            self.b.move_to(*destination)
 
     def button(self, b, down):
         if down:
@@ -162,6 +164,11 @@ class Controller:
         return getattr(self.b, "rejected_inputs", 0) == before
 
 
+def absolute_pixel(pixel, origin, span):
+    """Target the center of the pixel in the 16-bit Windows virtual desktop coordinate space."""
+    return ((2 * (pixel - origin) + 1) * 32768) // max(1, span)
+
+
 class WinBackend:
     """Windows' SendInput: the same input path as a real mouse and keyboard."""
 
@@ -226,8 +233,8 @@ class WinBackend:
 
     def move_to(self, x, y):
         w, h, left, top = self.screen()
-        nx = int((x - left) * 65535 / max(1, w - 1))
-        ny = int((y - top) * 65535 / max(1, h - 1))
+        nx = absolute_pixel(x, left, w)
+        ny = absolute_pixel(y, top, h)
         inp = self.INPUT(type=0)
         inp.mi = self.MOUSEINPUT(nx, ny, 0, 0x0001 | 0x8000 | 0x4000, 0, 0)   # MOVE | ABSOLUTE | VIRTUALDESK
         self._send(inp)

@@ -44,7 +44,7 @@ def test_phone_pairs_and_drives_the_computer():
         s.sendall(b"M 10 5\nC l\nP\nbad line\n")
         assert wait(lambda: len(ctl.cmds) == 2)
         assert ctl.cmds == [("move", 10.0, 5.0), ("click", "l")]
-        h.paused = True                       # AirCursor locked: the phone does nothing
+        h.paused = True  # AirCursor locked: the phone does nothing
         s.sendall(b"C r\n")
         time.sleep(0.3)
         assert ("click", "r") not in ctl.cmds
@@ -55,7 +55,7 @@ def test_phone_pairs_and_drives_the_computer():
         assert f.readline().strip() == "BYE"
         s2.sendall(b"C m\n")
         assert wait(lambda: ("click", "m") in ctl.cmds)
-        f2.close()   # a socket only really closes once its file object is closed too
+        f2.close()  # a socket only really closes once its file object is closed too
         s2.close()
         assert wait(lambda: h.client is None)
         assert ctl.released >= 1
@@ -66,7 +66,7 @@ def test_phone_pairs_and_drives_the_computer():
 def test_pending_connection_cannot_pair_after_stop(monkeypatch):
     ctl = Ctl()
     host = RemoteHost(ctl, port=0)
-    monkeypatch.setattr(host, "_advertise", lambda _: None)
+    monkeypatch.setattr(host, "_advertise", lambda *_: None)
     host.start()
     with socket.create_connection(("127.0.0.1", host.port), timeout=3) as phone:
         assert wait(lambda: host._handshakes == 1)
@@ -79,7 +79,7 @@ def test_pending_connection_cannot_pair_after_stop(monkeypatch):
 def test_lock_releases_held_input_and_rejects_new_session(monkeypatch):
     ctl = Ctl()
     host = RemoteHost(ctl, port=0)
-    monkeypatch.setattr(host, "_advertise", lambda _: None)
+    monkeypatch.setattr(host, "_advertise", lambda *_: None)
     host.start()
     try:
         s, f, ok = connect(host, host.code)
@@ -115,3 +115,68 @@ def test_blocked_windows_input_is_reported_separately(monkeypatch):
         sock.close()
     finally:
         host.stop()
+
+
+def test_connected_addresses_include_lan_hotspot_and_usb_without_hostname_lookup(monkeypatch):
+    from types import SimpleNamespace as Row
+    from aircursor_desktop import server
+
+    ips = {
+        "Wi-Fi": "192.168.1.20",
+        "USB": "192.168.42.100",
+        "Hotspot": "192.168.43.8",
+        "Loopback": "127.0.0.1",
+        "Disconnected": "10.7.0.1",
+    }
+    monkeypatch.setattr(
+        server.psutil,
+        "net_if_addrs",
+        lambda: {interface: [Row(family=socket.AF_INET, address=ip)] for interface, ip in ips.items()},
+    )
+    monkeypatch.setattr(
+        server.psutil,
+        "net_if_stats",
+        lambda: {interface: Row(isup=interface != "Disconnected") for interface in ips},
+    )
+    assert server.local_addresses() == ["192.168.1.20", "192.168.42.100", "192.168.43.8"]
+
+
+def test_discovery_reannounces_when_pc_switches_network(monkeypatch):
+    import zeroconf
+    from aircursor_desktop import server
+
+    events = []
+    change = [0]
+    networks = [["192.168.1.8"], ["192.168.43.10"], [], ["192.168.42.11"]]
+    monkeypatch.setattr(server, "local_addresses", lambda: networks[change[0]])
+
+    class Discovery:
+        def __init__(self, interfaces, ip_version):
+            self.interfaces = interfaces
+
+        def register_service(self, info, allow_name_change):
+            events.append(("register", self.interfaces, info.port))
+
+        def close(self):
+            events.append(("close", self.interfaces))
+
+    class Stopped:
+        def is_set(self):
+            return change[0] == len(networks)
+
+        def wait(self, timeout):
+            change[0] += 1
+
+    monkeypatch.setattr(zeroconf, "Zeroconf", Discovery)
+    host = RemoteHost(Ctl(), name="Switch test")
+    listener = host.server = object()
+    host._advertise(listener, Stopped(), 47821)
+    assert host.addresses == ("192.168.42.11",)
+    assert events == [
+        ("register", ["192.168.1.8"], 47821),
+        ("close", ["192.168.1.8"]),
+        ("register", ["192.168.43.10"], 47821),
+        ("close", ["192.168.43.10"]),
+        ("register", ["192.168.42.11"], 47821),
+        ("close", ["192.168.42.11"]),
+    ]

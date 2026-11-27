@@ -21,23 +21,18 @@ MAX_HANDSHAKES = 3
 
 def local_addresses():
     """This computer's network addresses (IPv4, not 127.x) – the phone connects to one of them."""
-    found = []
-    try:
-        for a in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
-            ip = a[4][0]
-            if not ip.startswith("127.") and ip not in found:
-                found.append(ip)
-    except OSError:
-        pass
-    try:  # the address of the way out (no packet is sent)
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect(("10.255.255.255", 1))
-            ip = s.getsockname()[0]
-            if not ip.startswith("127.") and ip not in found:
-                found.insert(0, ip)
-    except OSError:
-        pass
-    return found
+    connected = psutil.net_if_stats()
+    found = set()
+    for name, entries in psutil.net_if_addrs().items():
+        if name in connected and not connected[name].isup:
+            continue
+        for entry in entries:
+            if entry.family != socket.AF_INET:
+                continue
+            address = ipaddress.IPv4Address(entry.address)
+            if not (address.is_loopback or address.is_unspecified or address.is_multicast):
+                found.add(str(address))
+    return sorted(found)
 
 
 def on_local_link(address):
@@ -71,7 +66,8 @@ class RemoteHost:
         self.server = None
         self._handshakes = 0
         self._lock = threading.RLock()
-        self._zc = None
+        self.addresses = ()
+        self._discovery = None
 
     @property
     def running(self):
@@ -106,7 +102,10 @@ class RemoteHost:
         self.server = s
         self.port = s.getsockname()[1]
         threading.Thread(target=self._accept_loop, args=(s,), name="remote-accept", daemon=True).start()
-        threading.Thread(target=self._advertise, args=(s,), name="remote-discovery", daemon=True).start()
+        self._discovery = threading.Event()
+        threading.Thread(
+            target=self._advertise, args=(s, self._discovery, self.port), name="remote-discovery", daemon=True
+        ).start()
         self.on_change()
 
     def stop(self):
@@ -119,36 +118,57 @@ class RemoteHost:
                     pass
                 s.close()
             self._close_client(bye=True)
-            zc, self._zc = self._zc, None
-        if zc:
-            threading.Thread(target=zc.close, daemon=True).start()
+            if self._discovery:
+                self._discovery.set()
+                self._discovery = None
+            self.addresses = ()
         self.on_change()
 
-    def _advertise(self, server):
-        """Lets the phone find this computer by itself. Without it, the phone connects by address."""
+    def _advertise(self, server, stopped, port):
+        """Refresh discovery when the PC moves between a hotspot, a LAN or USB tethering."""
         try:
-            from zeroconf import ServiceInfo, Zeroconf
+            from zeroconf import IPVersion, ServiceInfo, Zeroconf
         except ImportError:
-            return
+            Zeroconf = None
+
+        announced = ()
         zc = None
         try:
-            ips = [socket.inet_aton(ip) for ip in local_addresses()]
-            info = ServiceInfo(
-                protocol.SERVICE_TYPE,
-                "AirCursor – %s.%s" % (self.name, protocol.SERVICE_TYPE),
-                addresses=ips,
-                port=self.port,
-                properties={"v": "1"},
-            )
-            zc = Zeroconf()
-            zc.register_service(info)
-            with self._lock:
-                if self.server is server:
-                    self._zc, zc = zc, None
-        except (OSError, RuntimeError, ValueError):
-            pass
+            while not stopped.is_set():
+                try:
+                    addresses = tuple(local_addresses())
+                except (OSError, ValueError):
+                    addresses = ()
+                with self._lock:
+                    if self.server is not server:
+                        return
+                    changed = addresses != self.addresses
+                    self.addresses = addresses
+                if changed:
+                    self.on_change()
+                if addresses != announced:
+                    if zc is not None:
+                        zc.close()
+                        zc = None
+                    if addresses and Zeroconf is not None:
+                        try:
+                            zc = Zeroconf(interfaces=list(addresses), ip_version=IPVersion.V4Only)
+                            info = ServiceInfo(
+                                protocol.SERVICE_TYPE,
+                                "AirCursor – %s.%s" % (self.name, protocol.SERVICE_TYPE),
+                                parsed_addresses=list(addresses),
+                                port=port,
+                                properties={"v": "1"},
+                            )
+                            zc.register_service(info, allow_name_change=True)
+                        except (OSError, RuntimeError, ValueError):
+                            if zc is not None:
+                                zc.close()
+                                zc = None
+                    announced = addresses if zc is not None else ()
+                stopped.wait(10)
         finally:
-            if zc:
+            if zc is not None:
                 zc.close()
 
     def _accept_loop(self, s):

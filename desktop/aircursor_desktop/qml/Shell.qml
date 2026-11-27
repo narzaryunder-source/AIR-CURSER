@@ -336,10 +336,11 @@ Item {
 
         Item {
             id: dock
+            objectName: "workspaceDock"
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 9
-            property real mouseX: -999
+            property real mouseX: dockHover.point.position.x
             property bool active: dockHover.hovered && root.overlay === ""
             width: dockRow.width + 22
             height: root.dockSize + 19
@@ -352,7 +353,6 @@ Item {
             }
             HoverHandler {
                 id: dockHover
-                onPointChanged: dock.mouseX = point.position.x
             }
             Row {
                 id: dockRow
@@ -366,7 +366,7 @@ Item {
                         id: slot
                         required property var modelData
                         required property int index
-                        property real near: dock.active ? Math.max(0, 1 - Math.abs(dock.mouseX - (11 + index * (root.dockSize + 4) + root.dockSize / 2)) / (root.dockSize * 1.75)) : 0
+                        property real near: dock.active ? Math.max(0, 1 - Math.abs(dock.mouseX - (11 + x + width / 2)) / (root.dockSize * 1.75)) : 0
                         property real grow: shell.motion ? near * 18 : 0
                         Behavior on grow {
                             SpringAnimation {
@@ -375,7 +375,8 @@ Item {
                                 epsilon: .2
                             }
                         }
-                        width: root.dockSize + grow * .55 + (modelData.separator ? 8 : 0)
+                        width: root.dockSize + (modelData.separator ? 8 : 0)
+                        z: near
                         height: root.dockSize + 8
                         Rectangle {
                             visible: modelData.separator
@@ -391,8 +392,14 @@ Item {
                             anchors.bottomMargin: 4
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.horizontalCenterOffset: modelData.separator ? 4 : 0
-                            width: root.dockSize + slot.grow
+                            width: root.dockSize
                             height: width
+                            transform: Scale {
+                                origin.x: art.width / 2
+                                origin.y: art.height
+                                xScale: (art.width + slot.grow) / art.width
+                                yScale: xScale
+                            }
                             source: modelData.art
                             sourceSize: Qt.size(155, 155)
                             smooth: true
@@ -410,7 +417,7 @@ Item {
                             visible: hover.hovered
                             anchors.horizontalCenter: art.horizontalCenter
                             anchors.bottom: art.top
-                            anchors.bottomMargin: 9
+                            anchors.bottomMargin: 9 + slot.grow
                             width: tip.implicitWidth + 20
                             height: 28
                             radius: 9

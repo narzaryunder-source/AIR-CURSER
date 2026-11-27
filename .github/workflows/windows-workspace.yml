@@ -51,7 +51,7 @@ jobs:
       - name: Record Windows responsiveness and receiver measurements
         shell: pwsh
         run: |
-          foreach ($mode in @('startup', 'receiver', 'policy')) {
+          foreach ($mode in @('startup', 'receiver', 'policy', 'dock')) {
             python desktop/tools/benchmark.py $mode | Tee-Object -FilePath desktop/dist/benchmarks.jsonl -Append
             if ($LASTEXITCODE) { throw "Benchmark failed for $mode" }
           }

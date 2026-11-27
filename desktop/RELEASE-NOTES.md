@@ -24,3 +24,10 @@ See the verification report for measurements, platform coverage and outstanding 
 - New and changed master passwords require 15 characters and use 900,000 PBKDF2-SHA256 iterations. Existing hashes migrate after a successful sign-in.
 - Google and Microsoft Authenticator enrollment uses a locally generated QR code and confirmation. The lock screen accepts an authenticator code as an alternative, and enrollments can also require both credentials. Eight one-time recovery codes can be rotated.
 - Trusted Windows sign-in tickets expire after eight hours and use DPAPI. AirCursor locks and revokes trust on idle timeout, Windows session lock and sleep.
+
+## Windows responsiveness update
+
+- Dock icons animate over a stable glass background. Glass sampling runs asynchronously and reuses stable textures.
+- System telemetry runs off the UI thread. Layout saves are coalesced, and changing a Windows window title no longer rebuilds the Dock when its entries stay the same.
+- Phone discovery refreshes its address after Wi-Fi, hotspot and USB tethering changes. Pairing and remote input work over a reachable local network without internet access.
+- The Windows receiver keeps fractional motion and skips input for unchanged cursor positions. Virtual-screen coordinates target the center of each pixel.

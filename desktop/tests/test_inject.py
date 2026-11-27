@@ -106,3 +106,18 @@ def test_pointer_speed_uses_primary_display_on_negative_origin_desktop():
     ctl.natural_scroll = False
     ctl.scroll(0, 50)
     assert f.log[-1][1] < 0
+
+
+def test_subpixel_motion_does_not_submit_duplicate_cursor_positions():
+    f = Fake()
+    ctl = Controller(f)
+    for _ in range(8):
+        ctl.move(0.125, 0)
+    assert f.log == [("move", x, 300) for x in range(501, 505)]
+
+
+def test_windows_coordinates_target_the_inside_of_every_pixel():
+    from aircursor_desktop.inject import absolute_pixel
+
+    for width, origin in ((1920, 0), (5760, -1920), (15361, -5120)):
+        assert all(absolute_pixel(origin + i, origin, width) * width // 65536 == i for i in range(width))

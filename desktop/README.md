@@ -12,6 +12,16 @@ AirCursor opens a password-protected workspace alongside Windows Explorer. The D
 
 The project website’s Windows button resolves to the latest approved GitHub release asset. Development artifacts are separate from that production download.
 
+## Connect with or without a hotspot
+
+The Windows workspace runs on its own. For phone keyboard and touchpad controls, turn on the receiver in **Control Center → Connected phone** and open **Use as keyboard & touchpad** in the Android app. The phone needs a local network path to the PC, and pairing works without internet access.
+
+- **Regular Wi-Fi.** Connect the phone and PC to the same network. A PC connected by Ethernet to the same router can also work. Guest networks sometimes block device-to-device traffic.
+- **Phone hotspot.** Connect the PC to the hotspot. You can connect from Windows Wi-Fi settings or save it in AirCursor for automatic switching. The phone can also share its mobile internet over this connection.
+- **USB tethering.** Connect a data-capable USB cable and enable USB tethering on the phone. Use the tether adapter’s address from **Connected phone** if automatic discovery is unavailable.
+
+Select the PC in the phone app or enter the IPv4 address and port shown in **Connected phone**, then enter the displayed pairing code. Give discovery a few seconds after switching networks. Without a phone connection, use your Windows keyboard and mouse. Browsing and online services use the PC’s current internet connection.
+
 ## Pair the phone and test hotspot recovery
 
 1. On the phone, enable the hotspot in Android Quick Settings. Open **Control Center → All controls → Hotspot → Find hotspots**, select the phone, enter its Wi-Fi password, and choose **Save and connect**. The Windows WLAN service stores the key in a current-user Wi-Fi profile. The SSID and adapter identifier are saved in AirCursor.

@@ -21,7 +21,7 @@ from .design import ICONS, MaterialProvider
 from .hotspot import AutoSwitch, Hotspot
 from .inject import Controller, backend
 from .lock import PasswordLock
-from .server import RemoteHost, local_addresses
+from .server import RemoteHost
 from .settings import Settings
 from .surface import Shell
 from . import second_factor, session, trust
@@ -49,7 +49,7 @@ class Desktop(QMainWindow):
         self.saved_geometry = dict(self.s.get("panel_geometry", {})) if self.s.get("restore", True) else {}
         self.net_pending = False
         self.last_net = -1000
-        self.addresses = []
+        self.metrics_pending = False
         self.network_text = "Checking connectivity…"
         self.metrics_text = ""
         self.battery = ""
@@ -62,6 +62,8 @@ class Desktop(QMainWindow):
         self.hot.traffic_busy = lambda: time.monotonic() < self.busy_until
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
+        self.layout_save_timer = QTimer(self, interval=300, singleShot=True)
+        self.layout_save_timer.timeout.connect(self.save_layout)
         self.message.connect(self.notify)
         self.receiver_changed.connect(self.refresh_control)
         self.setWindowTitle("AirCursor")
@@ -204,6 +206,7 @@ class Desktop(QMainWindow):
         self.host.paused = True
         self.locked = True
         self.auto.stop()
+        self.layout_save_timer.stop()
         # Block local entry and phone input before running cleanup that can touch the disk.
         self.shell.lockedChanged.emit()
         self.dismiss_dialogs()
@@ -218,6 +221,7 @@ class Desktop(QMainWindow):
         self.material.previews.clear()
         self.external = []
         self.shell.previews.clear()
+        self.shell.appsChanged.emit()
         self.shell.file_timer.stop()
         self.shell.file_query, self.shell.file_results = None, []
         if "Air Browser" in self.panels:
@@ -262,6 +266,13 @@ class Desktop(QMainWindow):
         self.apply_style()
         self.shell.appsChanged.emit()
 
+    def save_layout(self):
+        if not self.locked:
+            try:
+                self.persist()
+            except OSError:
+                self.notify("AirCursor could not save the workspace layout.")
+
     def persist(self):
         for name, panel in self.panels.items():
             if name in self.opened:
@@ -269,7 +280,8 @@ class Desktop(QMainWindow):
         state = dict(session_panels=dict(self.opened), active_space=self.space, panel_geometry=self.saved_geometry)
         if "Files" in self.opened and "Files" in self.panels:
             state["files_session"] = self.panels["Files"].content.session()
-        self.s.set(**state)
+        if any(self.s.get(key) != value for key, value in state.items()):
+            self.s.set(**state)
 
     def notify(self, message):
         if not self.locked:
@@ -318,7 +330,7 @@ class Desktop(QMainWindow):
         for name, space in list(self.opened.items()):
             if space == n:
                 self.open(name)
-        self.persist()
+        self.layout_save_timer.start()
         self.shell.changed.emit()
 
     def list_dialog(self, title, values):
@@ -337,19 +349,23 @@ class Desktop(QMainWindow):
         self.auto.every = self.probe_interval()
         self.timer.start(PROFILES[value][0] * 1000)
 
-    def tick(self):
-        self.shell.changed.emit()
-        if self.locked:
-            return
+    @staticmethod
+    def sample_metrics():
         ram = psutil.virtual_memory()
-        cpu = psutil.cpu_percent()
+        cpu = psutil.cpu_percent(interval=0.15)
         io = psutil.net_io_counters()
-        t = time.monotonic()
         disk = shutil.disk_usage(Path.home())
         try:
             battery = psutil.sensors_battery()
         except (OSError, NotImplementedError):
             battery = None
+        return ram, cpu, io, disk, battery, time.monotonic()
+
+    def metrics_ready(self, data):
+        self.metrics_pending = False
+        if data is None or self.locked:
+            return
+        ram, cpu, io, disk, battery, t = data
         battery_text = f"{battery.percent:.0f}%" if battery else "Unavailable"
         self.battery = battery_text if battery else ""
         rates = ""
@@ -368,6 +384,16 @@ class Desktop(QMainWindow):
             f"CPU {cpu:.0f}% · RAM {ram.used / 2**30:.1f} / {ram.total / 2**30:.1f} GiB\n"
             f"Disk free {disk.free / 2**30:.1f} GiB · Battery {battery_text}" + rates
         )
+        self.refresh_control()
+
+    def tick(self):
+        self.shell.changed.emit()
+        if self.locked:
+            return
+        t = time.monotonic()
+        if not self.metrics_pending:
+            self.metrics_pending = True
+            self.work.run(self.sample_metrics, self.metrics_ready, lambda _: self.metrics_ready(None))
         if not self.net_pending and t - self.last_net >= self.probe_interval():
             self.net_pending = True
 
@@ -381,17 +407,16 @@ class Desktop(QMainWindow):
                 latency = f" · {health.latency_ms} ms" if health and health.latency_ms is not None else ""
                 return (
                     f"{info['ssid']}  {info['signal']}\n" if info and info["ssid"] else ""
-                ) + state + latency, local_addresses()
+                ) + state + latency
 
             def done(result):
                 self.net_pending = False
                 self.last_net = time.monotonic()
-                self.network_text, self.addresses = result
+                self.network_text = result
                 if not self.locked:
-                    self.shell.changed.emit()
                     self.refresh_control()
 
-            self.work.run(check, done, lambda err: done((err, [])))
+            self.work.run(check, done, done)
         if (
             os.name == "nt"
             and not self.window_job
@@ -404,12 +429,14 @@ class Desktop(QMainWindow):
             def update(items):
                 self.window_job = False
                 self.last_windows = time.monotonic()
-                if self.external != items:
-                    self.external = items
+                if self.locked:
+                    return
+                previous = self.shell.dock_windows(self.external)
+                self.external = items
+                if previous != self.shell.dock_windows(items):
                     self.shell.appsChanged.emit()
 
             self.work.run(list_windows, update, lambda _: update([]))
-        self.refresh_control()
 
     def open(self, name):
         if self.locked or name not in self.names:
@@ -451,14 +478,16 @@ class Desktop(QMainWindow):
             if isinstance(geometry, str) and len(geometry) < 4096 and geometry.isascii():
                 panel.restoreGeometry(QByteArray.fromHex(geometry.encode("ascii")))
         panel = self.panels[name]
+        newly_open = name not in self.opened
         self.opened[name] = self.space
         if self.s.get("stage", False):
             for other in self.panels.values():
                 if other != panel:
                     other.hide()
         panel.present()
-        self.shell.appsChanged.emit()
-        self.persist()
+        if newly_open:
+            self.shell.appsChanged.emit()
+        self.layout_save_timer.start()
         return panel.content
 
     def panel_closed(self, name):
@@ -467,7 +496,7 @@ class Desktop(QMainWindow):
             self.panels[name].content.close_private()
         if not self.locked:
             self.shell.appsChanged.emit()
-            self.persist()
+            self.layout_save_timer.start()
 
     def browse(self, url):
         self.open("Air Browser").add(url)
@@ -522,6 +551,7 @@ class Desktop(QMainWindow):
                 self.panels["Air Browser"].content.save()
         self.locked = True
         self.timer.stop()
+        self.layout_save_timer.stop()
         self.security_timer.stop()
         if self.session_watching:
             session.watch(int(self.winId()), False)

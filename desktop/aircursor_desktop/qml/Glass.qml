@@ -19,9 +19,18 @@ Item {
         radius: layer.corner
         color: "#22071320"
     }
-    Image {
+    Rectangle {
         anchors.fill: parent
-        cache: false
+        radius: layer.corner
+        color: layer.dark ? "#99233343" : "#70eef5fa"
+        border.color: "#76eaf4ff"
+        visible: glass.status !== Image.Ready
+    }
+    Image {
+        id: glass
+        anchors.fill: parent
+        asynchronous: true
+        cache: true
         source: layer.visible && width > 1 && height > 1 ? "image://material/" + desktop.scene + "/" + (layer.dark ? "dark" : "light") + "/" + [layer.origin.x, layer.origin.y, width, height, desktop.width, desktop.height, layer.corner, layer.density].map(Math.round).join("/") : ""
     }
 }

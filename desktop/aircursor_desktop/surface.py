@@ -160,23 +160,23 @@ class Shell(QObject):
             for n in names + pins
         ]
 
-        processes = set()
-        for window in self.d.external:
-            if window["pid"] in processes:
-                continue
-            processes.add(window["pid"])
+        for process, handle, app, path in self.dock_windows(self.d.external):
             entries.append(
-                dict(
-                    target=f"external:{window['handle']}",
-                    label=window["app"],
-                    art=self.window_art(window),
-                    separator=len(processes) == 1,
-                    running=True,
-                )
+                dict(target=f"external:{handle}", label=app,
+                     art=self.window_art(dict(pid=process, path=path)), separator=len(entries) == len(names + pins),
+                     running=True)
             )
-            if len(processes) >= 3:
-                break
         return entries
+
+    @staticmethod
+    def dock_windows(windows):
+        visible = {}
+        for window in windows:
+            process = window["pid"]
+            visible.setdefault(process, (process, window["handle"], window["app"], window["path"]))
+            if len(visible) == 3:
+                break
+        return list(visible.values())
 
     def window_art(self, window):
         from PySide6.QtCore import QFileInfo

@@ -13,7 +13,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument("mode", choices=["policy", "receiver", "startup"])
+parser.add_argument("mode", choices=["policy", "receiver", "startup", "dock"])
 parser.add_argument("--source", type=Path, default=ROOT)
 parser.add_argument("--notification", action="store_true")
 args = parser.parse_args()
@@ -149,6 +149,75 @@ def startup():
             "workspace_rss_mib": round(workspace_rss, 1),
             "timer_interval_p95_ms": round(sorted(intervals)[94], 2),
         }
+
+
+def dock():
+    from PySide6.QtQuick import QQuickItem
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+    from aircursor_desktop.design import MaterialProvider
+    from aircursor_desktop.ui import Desktop
+
+    counts = []
+    old = MaterialProvider.requestImage
+
+    def measure(self, key, size, requested):
+        if not key.startswith("preview/"):
+            counts.append(key)
+        return old(self, key, size, requested)
+
+    MaterialProvider.requestImage = measure
+    with tempfile.TemporaryDirectory() as folder:
+        os.environ["AIRCURSOR_HOME"] = folder
+        app = QApplication([])
+        window = Desktop()
+        window.work.run = lambda *args: None
+        window.resize(1366, 768)
+        window.show()
+        window.s.set(auto_switch=False)
+        window.unlock("benchmark-session", "benchmark-session", False)
+        root = window.view.rootObject()
+        item = root.findChild(QQuickItem, "workspaceDock")
+        if item is None:
+            item = next(
+                child
+                for child in root.findChildren(QQuickItem)
+                if child.metaObject().indexOfProperty("active") >= 0
+                and child.metaObject().indexOfProperty("mouseX") >= 0
+            )
+        QTest.qWait(350)
+        counts.clear()
+        assert item.setProperty("active", True) and item.property("active")
+        width = item.property("width")
+        widths = set()
+
+        def animated(widgets):
+            for widget in widgets:
+                if widget.metaObject().indexOfProperty("grow") >= 0:
+                    yield widget
+                yield from animated(widget.childItems())
+
+        slots = list(animated(item.childItems()))
+        assert slots, "Dock items are unavailable"
+        motion = set()
+        started = time.process_time()
+        for step in range(72):
+            item.setProperty("mouseX", 25 + (width - 50) * (step % 36) / 35)
+            QTest.qWait(16)
+            widths.add(round(item.property("width")))
+            motion.update(round(child.property("grow"), 1) for child in slots)
+        elapsed = time.process_time() - started
+        QTest.qWait(150)
+        assert len(motion) > 1, "Dock scale did not animate"
+        result = {
+            "hover_steps": 72,
+            "glass_renders": len(counts),
+            "dock_widths": len(widths),
+            "process_cpu_seconds": round(elapsed, 3),
+        }
+        window.close()
+        app.processEvents()
+        return result
 
 
 if __name__ == "__main__":

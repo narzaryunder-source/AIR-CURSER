@@ -118,7 +118,7 @@ class Control(QTabWidget):
         )
         rl.addWidget(
             label(
-                "In AirCursor on the phone, open Use as keyboard & touchpad, select this computer and enter the six-digit code. Both devices must be on the same local network."
+                "Open Use as keyboard & touchpad on your phone. Use the same Wi-Fi, your phone hotspot, or compatible USB tethering. Select this computer or enter its address and pairing code."
             )
         )
         speed = QDoubleSpinBox()
@@ -250,7 +250,7 @@ class Control(QTabWidget):
             )
             self.remote.setText(
                 f"Pairing code   {host.code[:3]} {host.code[3:]}\n"
-                + "   ".join(f"{addr}:{host.port}" for addr in desk.addresses)
+                + "   ".join(f"{addr}:{host.port}" for addr in host.addresses)
                 + f"\n{host.client_addr or 'Waiting for phone'} · {host.events} input commands{age}"
                 + (f"\nWindows blocked input for {host.rejected} commands." if host.rejected else "")
             )
