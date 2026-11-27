@@ -43,4 +43,4 @@ Brand artwork from Simple Icons 16.38.1. Shapes are shown as locally bundled PNG
 | Vivaldi | [Artwork](https://cdn.jsdelivr.net/npm/simple-icons@16.38.1/icons/vivaldi.svg) |
 | VLC media player | [Artwork](https://cdn.jsdelivr.net/npm/simple-icons@16.38.1/icons/vlcmediaplayer.svg) |
 | Zoom | [Artwork](https://cdn.jsdelivr.net/npm/simple-icons@16.38.1/icons/zoom.svg) |
-| Visual Studio Code | [Microsoft’s product icon](https://github.com/microsoft/vscode/blob/main/resources/win32/code.ico) |
+| Visual Studio Code | [Microsoft’s product icon](https://code.visualstudio.com/assets/branding/code-stable.png) |
