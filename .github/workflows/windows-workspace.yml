@@ -5,6 +5,14 @@ on:
     paths: ['desktop/**', '.github/workflows/windows-workspace.yml', '.github/workflows/build.yml']
   workflow_dispatch:
     inputs:
+      draft_windows_tag:
+        description: 'Optional existing Windows draft release to stage from a successful build'
+        type: string
+        required: false
+      verified_run:
+        description: 'Original successful Windows workspace run ID when staging a draft'
+        type: string
+        required: false
       verify_package_lifecycle:
         description: 'Approve installing, launching, upgrading and removing fd on the disposable runner'
         type: boolean
@@ -16,6 +24,7 @@ permissions:
 
 jobs:
   windows:
+    if: github.event_name != 'workflow_dispatch' || inputs.draft_windows_tag == ''
     runs-on: windows-2025
     timeout-minutes: 35
     steps:
@@ -109,3 +118,48 @@ jobs:
           $report = Get-Content "$env:TEMP\aircursor-selftest.txt"
           $report
           if ($app.ExitCode -ne 0 -or $report[-1] -ne 'OK') { throw 'Installed runtime check failed' }
+
+  stage_windows_release:
+    if: github.event_name == 'workflow_dispatch' && inputs.draft_windows_tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUN_ID: ${{ inputs.verified_run }}
+      RELEASE_TAG: ${{ inputs.draft_windows_tag }}
+    steps:
+      - name: Match the draft to the verified build
+        id: verified
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ && "$RELEASE_TAG" =~ ^windows-[A-Za-z0-9.-]+$ ]]
+          workflow_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/windows-workspace.yml" --jq .id)
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/run.json"
+          sha=$(jq -er --argjson workflow "$workflow_id" 'select(.workflow_id == $workflow and .head_branch == "windows/aircursor-workspace" and .conclusion == "success") | .head_sha' "$RUNNER_TEMP/run.json")
+          gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --json isDraft,targetCommitish |
+            jq -e --arg sha "$sha" '.isDraft and .targetCommitish == $sha'
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.verified.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.verified_run }}
+          github-token: ${{ github.token }}
+          path: artifacts
+      - name: Verify installer and stage public downloads
+        run: |
+          set -euo pipefail
+          mkdir stage
+          cp artifacts/release-windows/AirCursor-Windows.exe artifacts/windows-verification/SHA256SUMS.txt stage/
+          cd stage
+          tr -d '\r' < SHA256SUMS.txt | sha256sum -c -
+          cd ..
+          git archive --format zip --output stage/AirCursor-Windows-source.zip HEAD desktop .github/workflows/build.yml .github/workflows/windows-workspace.yml
+          (cd artifacts/windows-rendering && zip -q -r ../../stage/AirCursor-Windows-screenshots.zip .)
+          (cd artifacts/windows-verification && zip -q -r ../../stage/windows-verification.zip .)
+          gh release upload "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" stage/*
