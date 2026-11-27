@@ -10,6 +10,7 @@ $Installer = (Resolve-Path $Installer).Path
 $PreviousInstaller = (Resolve-Path $PreviousInstaller).Path
 $program = Join-Path $env:LOCALAPPDATA 'Programs\AirCursor'
 $app = Join-Path $program 'AirCursor.exe'
+$runtimeVersion = Join-Path $program 'runtime\aircursor_desktop\__init__.py'
 $shortcutDir = [Environment]::GetFolderPath('Programs')
 $safeShortcut = Join-Path $shortcutDir 'AirCursor (Safe Mode).lnk'
 $settings = Join-Path $env:APPDATA 'AirCursor\settings.json'
@@ -42,18 +43,26 @@ While-WorkspaceReserved 'Local\AirCursor.Windows.Workspace' {
     if (Test-Path $app) { throw 'Setup touched files while the workspace was reserved.' }
 }
 Assert-ExitCode $PreviousInstaller '/S' 0
+if ((Get-Content $runtimeVersion -Raw) -notmatch '(?m)^VERSION = "2\.0\.0"\r?$') {
+    throw 'The baseline installer did not install the 2.0.0 runtime.'
+}
 
 New-Item -ItemType Directory -Path (Split-Path $settings) -Force | Out-Null
 Set-Content $settings '{"restore":true,"browser_tabs":["https://example.org/"],"install_test":true}'
 $profileHash = (Get-FileHash $settings).Hash
 $appHash = (Get-FileHash $app).Hash
+$runtimeHash = (Get-FileHash $runtimeVersion).Hash
 While-WorkspaceReserved 'Local\AirCursor.Windows.Runtime' {
     Assert-ExitCode $Installer '/S' 32
     if ((Get-FileHash $app).Hash -ne $appHash) { throw 'A blocked update changed the launcher.' }
+    if ((Get-FileHash $runtimeVersion).Hash -ne $runtimeHash) { throw 'A blocked update changed the runtime.' }
 }
 Assert-ExitCode $Installer '/S' 0
 if ((Get-FileHash $settings).Hash -ne $profileHash) { throw 'Upgrade changed the user profile.' }
-if ((Get-FileHash $app).Hash -eq $appHash) { throw 'Upgrade did not replace the previous launcher.' }
+# The same bootstrap can launch multiple releases. Check the installed Python version instead.
+if ((Get-Content $runtimeVersion -Raw) -notmatch '(?m)^VERSION = "2\.0\.1"\r?$') {
+    throw 'Upgrade did not replace the previous runtime.'
+}
 $registry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\AirCursor'
 if ((Get-ItemPropertyValue $registry -Name DisplayVersion) -ne '2.0.1') {
     throw 'Windows did not register the stable version.'
@@ -80,7 +89,9 @@ if ($log[-1] -ne 'OK') { throw 'Installed application self-test failed.' }
 
 Copy-Item (Join-Path $program 'Uninstall.exe') $uninstaller -Force
 Assert-ExitCode $uninstaller $removeArgs 0
-if ((Test-Path $app) -or (Test-Path $safeShortcut)) { throw 'Uninstall left the launcher or shortcut behind.' }
+if ((Test-Path $app) -or (Test-Path $runtimeVersion) -or (Test-Path $safeShortcut)) {
+    throw 'Uninstall left the launcher, runtime or shortcut behind.'
+}
 if ((Get-FileHash $settings).Hash -ne $profileHash) { throw 'Uninstall changed the user profile.' }
 
 Add-Content $report "`nWindows 2.0.0 upgrade, guarded update and removal, Safe Mode shortcut, and preserved user settings verified."
