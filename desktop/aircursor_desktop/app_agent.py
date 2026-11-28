@@ -9,20 +9,27 @@ def plan_launch(task):
     apps = registered_apps()
     if not apps:
         raise ValueError("Windows reported no Start menu apps.")
-    schema = {"type": "object", "properties": {"apps": {"type": "array", "maxItems": 3,
-              "items": {"type": "integer", "minimum": 0, "maximum": len(apps) - 1}}},
-              "required": ["apps"]}
+    from collections import Counter
+
+    counts = Counter(name for name, _ in apps)
+    choices = {(name if counts[name] == 1 else f"{name} ({target[9:]})"): (name, target)
+               for name, target in apps}
+    names = list(choices)
+    schema = {"type": "object", "properties": {"apps": {"type": "array", "minItems": 1, "maxItems": 3,
+              "items": {"type": "string", "enum": [*names, "No match"]}}}, "required": ["apps"]}
     result = ollama_call("/api/chat", {
         "model": LIGHT_MODEL, "stream": False, "think": False, "keep_alive": 0,
-        "format": schema, "options": {"num_predict": 96, "temperature": 0},
+        "format": schema, "options": {"num_ctx": 4096, "num_predict": 128, "temperature": 0},
         "messages": [
-            {"role": "system", "content": "Choose up to three matching installed apps to open for the task. "
-             "Use their integer indices. Return an empty array if none fit."},
-            {"role": "user", "content": json.dumps({"task": task, "installed": dict(enumerate(a[0] for a in apps))})},
+            {"role": "system", "content": "You are the Windows app picker. Return the names of installed "
+             "apps needed for the task. Pick No match if none are suitable. Available names: " + json.dumps(names)},
+            {"role": "user", "content": task},
         ],
     })
-    ids = json.loads(result["message"]["content"])["apps"]
-    if (not isinstance(ids, list) or len(ids) > 3
-            or any(type(i) is not int or not 0 <= i < len(apps) for i in ids)):
+    selected = json.loads(result["message"]["content"])["apps"]
+    if selected == ["No match"]:
+        return []
+    if (not isinstance(selected, list) or len(selected) > 3
+            or any(not isinstance(name, str) or name not in choices for name in selected)):
         raise ValueError("The model returned an invalid app selection.")
-    return [apps[i] for i in dict.fromkeys(ids)]
+    return [choices[name] for name in dict.fromkeys(selected)]

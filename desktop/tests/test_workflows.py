@@ -12,7 +12,8 @@ def test_local_app_selection_is_bounded(monkeypatch):
     def plan(ids):
         monkeypatch.setattr(app_agent, "ollama_call", lambda *args: {"message": {"content": json.dumps({"apps": ids})}})
         return app_agent.plan_launch("Edit code")
-    assert plan([0, 0]) == [("Editor", "startapp:editor")]
+    assert plan(["Editor", "Editor"]) == [("Editor", "startapp:editor")]
+    assert plan(["No match"]) == []
     for invalid in ([1], [-1], [False], ["cmd.exe"], [0]*4):
         with pytest.raises(ValueError):
             plan(invalid)

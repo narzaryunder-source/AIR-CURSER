@@ -1,3 +1,7 @@
+# Windows 2.3.0 release candidate
+
+Air Browser can now run from Windows Start alongside the desktop, with an independent user profile. Blank tabs reuse the same scaled wallpaper. Air AI adds local app-launch plans with approval, Word and PowerPoint text attachments, project-directory context, collapsible model controls and optional warm Qwen3 sessions. The Files video editor offers keyframe-based stream copy for compatible input codecs.
+
 # Windows 2.2.2
 
 - Air Browser groups writes when switching between loaded tabs. With Memory Saver enabled, eligible background pages can unload earlier when ten or more tabs are loaded. The browser keeps the current page, downloads and pages Chromium needs active.
