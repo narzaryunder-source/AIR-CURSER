@@ -162,7 +162,7 @@ jobs:
           git archive --format zip --output stage/AirCursor-Windows-source.zip HEAD desktop .github/workflows/build.yml .github/workflows/windows-workspace.yml
           (cd artifacts/windows-rendering && zip -q -r ../../stage/AirCursor-Windows-screenshots.zip .)
           (cd artifacts/windows-verification && zip -q -r ../../stage/windows-verification.zip .)
-          if [[ "$RELEASE_TAG" == windows-v2.0.0 || "$RELEASE_TAG" == windows-v2.0.1 || "$RELEASE_TAG" == windows-v2.1.0 || "$RELEASE_TAG" == windows-v2.2.0 ]]; then
+          if [[ "$RELEASE_TAG" == windows-v2.0.0 || "$RELEASE_TAG" == windows-v2.0.1 || "$RELEASE_TAG" == windows-v2.1.0 || "$RELEASE_TAG" == windows-v2.2.0 || "$RELEASE_TAG" == windows-v2.2.1 ]]; then
             curl --fail --location --retry 2 \
               "https://github.com/$GITHUB_REPOSITORY/releases/download/v101/AirCursor.apk" -o stage/AirCursor.apk
             echo 'a69fd2512dba31ac3b580cff3926100eeb442717a64761df96de24eb43c28566  stage/AirCursor.apk' | sha256sum -c -
