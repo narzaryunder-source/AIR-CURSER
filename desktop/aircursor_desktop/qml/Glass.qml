@@ -31,6 +31,6 @@ Item {
         anchors.fill: parent
         asynchronous: true
         cache: true
-        source: layer.visible && width > 1 && height > 1 ? "image://material/" + desktop.scene + "/" + (layer.dark ? "dark" : "light") + "/" + [layer.origin.x, layer.origin.y, width, height, desktop.width, desktop.height, layer.corner, layer.density].map(Math.round).join("/") : ""
+        source: desktop.materialEffects && layer.visible && width > 1 && height > 1 ? "image://material/" + desktop.scene + "/" + (layer.dark ? "dark" : "light") + "/" + [layer.origin.x, layer.origin.y, width, height, desktop.width, desktop.height, layer.corner, layer.density].map(Math.round).join("/") : ""
     }
 }

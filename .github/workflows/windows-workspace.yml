@@ -46,8 +46,8 @@ jobs:
         shell: pwsh
         run: |
           $previous = Join-Path $env:RUNNER_TEMP 'AirCursor-Windows-previous.exe'
-          curl.exe --fail --location --retry 3 --output $previous https://github.com/narzaryunder-source/AIR-CURSER/releases/download/windows-v2.1.0/AirCursor-Windows.exe
-          if ($LASTEXITCODE -or (Get-FileHash $previous -Algorithm SHA256).Hash -ne '8a230caf8f40cc6b70f618ceddb34dede7f9f72fdca9c6ed48ff97c73c399c32') { throw 'Previous installer verification failed' }
+          curl.exe --fail --location --retry 3 --output $previous https://github.com/narzaryunder-source/AIR-CURSER/releases/download/windows-v2.2.0/AirCursor-Windows.exe
+          if ($LASTEXITCODE -or (Get-FileHash $previous -Algorithm SHA256).Hash -ne '07c26b0ddb6224e183f1e8c17e644061282d54a4f6e49adb2615c18ff00502ea') { throw 'Previous installer verification failed' }
           if ((Get-Item desktop/dist/AirCursor-Windows.exe).Length -gt (Get-Item $previous).Length + 2MB) { throw 'The installer exceeds its size budget' }
           ./desktop/tools/verify_install.ps1 -Installer desktop/dist/AirCursor-Windows.exe -PreviousInstaller $previous
           Copy-Item "$env:TEMP/aircursor-selftest.txt" desktop/dist/aircursor-selftest.txt

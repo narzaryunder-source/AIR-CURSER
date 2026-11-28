@@ -105,7 +105,7 @@ See [the feature audit](report/FUNCTIONAL-AUDIT.md), [measurements and native ch
 
 ## Browser, downloads and Windows applications
 
-Air Browser creates saved tab entries immediately and loads each page when you select it. You can drag tabs to reorder them. Chromium can pause eligible background pages when they are idle. When switching to a game or editing project, minimizing Air Browser also makes its inactive pages eligible. Turn on **⋯ → Memory Saver** to let Chromium unload eligible tabs after about five minutes. They reload when selected.
+Air Browser restores saved tab entries when the workspace opens. Open the browser from the Dock, click a tab, or choose **Load saved page** to start Chromium. Minimizing the browser pauses eligible pages. Closing it releases eligible page renderers after a short idle period. Chrome and other Windows apps can continue using the computer while AirCursor pauses its desktop statistics and native window scans in the background. **Settings → Performance → Performance** reduces sampling and uses simpler glass. **Air Browser → ⋯ → Memory Saver** also lets Chromium unload eligible long-idle tabs while the browser remains open. Pages reload when selected.
 
 Click **Downloads** in Air Browser or press **Ctrl+Shift+J**. After a download completes, use **Open file** to launch or install it through Windows, or **Open folder** to access archives and companion files. EXE, MSI and MSP installers get an Authenticode and SHA-256 review. Windows App Installer handles APPX and MSIX packages, bundles and App Installer files where supported. A download needs to match your Windows version and architecture. Browser downloads retain Windows internet-zone handling.
 

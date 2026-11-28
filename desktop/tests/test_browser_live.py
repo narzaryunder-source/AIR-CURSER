@@ -101,9 +101,11 @@ def test_normal_and_private_storage_download_and_recovery(tmp_path, monkeypatch)
 
         def open_download():
             dialog = app.activeModalWidget()
-            action = next(b for b in dialog.findChildren(QPushButton) if b.text() == "Open file…")
-            action.click()
-            dialog.accept()
+            try:
+                action = next(b for b in dialog.findChildren(QPushButton) if b.text() == "Open file…")
+                action.click()
+            finally:
+                dialog.accept()
 
         until(lambda: browser.downloads and browser.downloads[-1].isFinished())
         assert settings.get("browser_downloads") == [str(dest)]
@@ -114,14 +116,23 @@ def test_normal_and_private_storage_download_and_recovery(tmp_path, monkeypatch)
         monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(unfinished), ""))
         normal.page().download(QUrl(origin + "/large.bin"), "large.bin")
         until(lambda: len(browser.downloads) == 2 and browser.downloads[-1].receivedBytes() > 0)
+        browser.close_panel()
+        browser.hide()
+        transfer_state = normal.page().lifecycleState()
+        browser.freeze_idle_tabs()
+        assert normal.page().lifecycleState() == transfer_state
+        assert not browser.downloads[-1].isFinished()
+        browser.show()
 
         def cancel_download():
             from PySide6.QtWidgets import QListWidget
 
             dialog = app.activeModalWidget()
-            dialog.findChild(QListWidget).setCurrentRow(1)
-            next(b for b in dialog.findChildren(QPushButton) if b.text() == "Cancel download").click()
-            dialog.accept()
+            try:
+                dialog.findChild(QListWidget).setCurrentRow(1)
+                next(b for b in dialog.findChildren(QPushButton) if b.text() == "Cancel download").click()
+            finally:
+                dialog.accept()
 
         QTimer.singleShot(0, cancel_download)
         browser.show_downloads()
@@ -225,6 +236,76 @@ def test_fifteen_restored_tabs_load_on_selection(tmp_path, monkeypatch):
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         app.processEvents()
         server.shutdown()
+
+
+def test_restored_browser_waits_for_focus_and_releases_closed_idle_page(tmp_path, monkeypatch):
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+    from aircursor_desktop import browser as module
+    from aircursor_desktop.settings import Settings
+    from aircursor_desktop.ui import Desktop
+
+    monkeypatch.setenv("AIRCURSOR_HOME", str(tmp_path))
+    monkeypatch.setattr(module, "DISCARD_AFTER_WINDOW_CLOSE", 0.05)
+    app = QApplication.instance() or QApplication([])
+    calls = []
+
+    class Page(BaseHTTPRequestHandler):
+        def do_GET(self):
+            calls.append(self.path)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(b"<title>Idle fixture</title><p>Save this tab</p>")
+
+        def log_message(self, *_):
+            pass
+
+    def until(condition):
+        for _ in range(300):
+            if condition():
+                return
+            QTest.qWait(20)
+        assert condition()
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), Page) as server:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        settings = Settings()
+        url = f"http://127.0.0.1:{server.server_port}/test"
+        settings.set(auto_switch=False, browser_tabs=[url], session_panels={"Air Browser": 1})
+        desktop = Desktop(settings)
+        desktop.work.run = lambda *_: None
+        desktop.show()
+        try:
+            until(lambda: "Air Browser" in desktop.panels)
+            panel = desktop.panels["Air Browser"]
+            browser = panel.content
+            QTest.qWait(350)
+            assert not calls and browser.normal is None
+            desktop.open("Air Browser")
+            until(lambda: not isinstance(browser.current(), module.RestoredTab)
+                  and browser.current().title() == "Idle fixture" and not browser.current().page().isLoading())
+            page = browser.current().page()
+            panel.showMinimized()
+            until(lambda: page.lifecycleState() == page.LifecycleState.Frozen)
+            panel.showNormal()
+            until(lambda: page.lifecycleState() == page.LifecycleState.Active)
+            panel.close()
+            until(lambda: page.lifecycleState() == page.LifecycleState.Discarded)
+            assert settings.get("browser_tabs") == [url]
+            loaded = []
+            page.loadFinished.connect(loaded.append)
+            desktop.open("Air Browser")
+            until(lambda: page.lifecycleState() == page.LifecycleState.Active and any(loaded))
+            assert browser.current().title() == "Idle fixture"
+        finally:
+            desktop.close()
+            desktop.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            app.processEvents()
+            server.shutdown()
 
 
 @pytest.mark.skipif(os.name != "nt", reason="uses Windows NTFS alternate data streams")

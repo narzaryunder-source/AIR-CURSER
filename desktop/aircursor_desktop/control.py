@@ -19,7 +19,7 @@ from . import VERSION
 from .widgets import asset, Workers, button, confirm, label, password, row, system_link
 
 PROFILES = {
-    "Performance": (2, False),
+    "Performance": (8, False),
     "Balanced": (4, True),
     "Quality": (2, True),
     "Battery Saver": (15, False),

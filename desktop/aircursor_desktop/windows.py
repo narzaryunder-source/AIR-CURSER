@@ -20,6 +20,7 @@ def list_windows():
     get_long = user.GetWindowLongW
     get_long.argtypes = [w.HWND, c.c_int]
     items = []
+    paths = {}
     callback = c.WINFUNCTYPE(w.BOOL, w.HWND, w.LPARAM)
 
     def inspect(handle, unused):
@@ -36,10 +37,12 @@ def list_windows():
         c.windll.dwmapi.DwmGetWindowAttribute(w.HWND(handle), 14, c.byref(cloaked), c.sizeof(cloaked))
         if cloaked.value:
             return True
-        try:
-            path = psutil.Process(pid.value).exe()
-        except psutil.Error:
-            path = ""
+        if pid.value not in paths:
+            try:
+                paths[pid.value] = psutil.Process(pid.value).exe()
+            except psutil.Error:
+                paths[pid.value] = ""
+        path = paths[pid.value]
         items.append(
             dict(
                 handle=int(handle),

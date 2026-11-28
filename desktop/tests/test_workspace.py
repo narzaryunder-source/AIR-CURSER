@@ -351,6 +351,40 @@ def test_spotlight_shows_shortcuts_while_start_catalog_is_pending(tmp_path, monk
         app.processEvents()
 
 
+def test_inactive_workspace_only_samples_hotspot_traffic(tmp_path, monkeypatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+    from aircursor_desktop.ui import Desktop
+
+    if os.name != "nt" and not os.getenv("DISPLAY"):
+        monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    app = QApplication.instance() or QApplication([])
+    settings = Settings(str(tmp_path / "performance.json"))
+    settings.set(auto_switch=False, restore=False)
+    desk = Desktop(settings)
+    jobs = []
+    desk.work.run = lambda task, done, failed: jobs.append(task)
+    try:
+        desk.show()
+        desk.application_state(Qt.ApplicationState.ApplicationInactive)
+        jobs.clear()
+        desk.metrics_pending = False
+        desk.net_pending = False
+        desk.tick()
+        assert jobs == [] and desk.timer.interval() == 30_000
+        settings.set(auto_switch=True, phone_ssid="Saved phone")
+        desk.profile("Balanced", save=False)
+        desk.tick()
+        assert len(jobs) == 1 and desk.timer.interval() <= 8000
+        desk.metrics_pending = False
+        jobs.clear()
+        desk.application_state(Qt.ApplicationState.ApplicationActive)
+        assert desk.sample_metrics in jobs and not desk.background
+    finally:
+        desk.close()
+        app.processEvents()
+
+
 def test_a_failed_save_does_not_interrupt_workspace_shutdown(tmp_path, monkeypatch):
     from PySide6.QtWidgets import QApplication
     from aircursor_desktop.ui import Desktop

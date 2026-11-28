@@ -1,3 +1,10 @@
+# Windows 2.2.1
+
+- Restoring the workspace keeps saved browser tabs available and defers Chromium startup until you open the browser or ask to load a page.
+- Browser lifecycle checks react to tab and window changes. Eligible tabs pause when minimized and release their renderer resources after closing the browser.
+- AirCursor pauses desktop statistics and native window scans when another app is active. Hotspot traffic checks and the phone receiver continue working according to their settings.
+- The Performance profile uses simpler glass and samples telemetry less frequently.
+
 # Windows 2.2.0
 
 - Opens in full-screen mode with a visible **Exit desktop** action, F11, and a windowed startup preference.

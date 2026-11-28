@@ -48,6 +48,7 @@ class Desktop(QMainWindow):
         self.windows_away = False
         self.windows_suspended = False
         self.startup_pending = True
+        self.background = False
         self.host = RemoteHost(Controller(backend()), self.receiver_changed.emit)
         self.host.ctl.speed = self.s.get("pointer_speed", 1.0)
         self.host.ctl.natural_scroll = self.s.get("natural_scroll", True)
@@ -270,11 +271,11 @@ class Desktop(QMainWindow):
         self.resume_panel_restore()
 
     def resume_panel_restore(self):
-        if not self.locked and self.panel_restore_queue and not self.view.rootObject().property("overlay"):
+        if not self.locked and not self.background and self.panel_restore_queue and not self.view.rootObject().property("overlay"):
             self.panel_restore_timer.start(32)
 
     def restore_next_panel(self):
-        if self.locked or self.view.rootObject().property("overlay") or not self.panel_restore_queue:
+        if self.locked or self.background or self.view.rootObject().property("overlay") or not self.panel_restore_queue:
             return
         name = self.panel_restore_queue.pop(0)
         if self.opened.get(name) == self.space:
@@ -335,7 +336,7 @@ class Desktop(QMainWindow):
             self.shell.changed.emit()
 
     def refresh_control(self):
-        if not self.locked:
+        if not self.locked and not self.background:
             self.shell.changed.emit()
             panel = self.panels.get("Settings")
             if panel and panel.isVisible() and not panel.isMinimized():
@@ -395,11 +396,34 @@ class Desktop(QMainWindow):
         if save:
             self.s.set(profile=value)
         self.auto.every = self.probe_interval()
-        self.timer.start(PROFILES[value][0] * 1000)
+        self.timer.start(self.refresh_interval())
         if save:
             for panel in self.panels.values():
                 panel.update_effects()
             self.shell.changed.emit()
+
+    def has_hotspot_policy(self):
+        return bool(self.hot.phone_ssid and self.s.get("auto_switch", True) and not self.safe_mode)
+
+    def refresh_interval(self):
+        seconds = PROFILES.get(self.s.get("profile"), PROFILES["Balanced"])[0]
+        if self.background:
+            seconds = min(seconds, 8) if self.has_hotspot_policy() else 30
+        return seconds * 1000
+
+    def application_state(self, state):
+        background = state != Qt.ApplicationState.ApplicationActive
+        if self.background == background:
+            return
+        self.background = background
+        if self.locked:
+            return
+        self.timer.start(self.refresh_interval())
+        if background:
+            self.panel_restore_timer.stop()
+        else:
+            self.resume_panel_restore()
+            self.tick()
 
     @staticmethod
     def sample_metrics():
@@ -429,6 +453,14 @@ class Desktop(QMainWindow):
         self.cpu_sample = current_cpu
         battery_text = f"{battery.percent:.0f}%" if battery else "Unavailable"
         self.battery = battery_text if battery else ""
+        rates = self.observe_traffic(io, t)
+        self.metrics_text = (
+            f"CPU {cpu_text} · RAM {ram.used / 2**30:.1f} / {ram.total / 2**30:.1f} GiB\n"
+            f"Disk free {disk.free / 2**30:.1f} GiB · Battery {battery_text}" + rates
+        )
+        self.refresh_control()
+
+    def observe_traffic(self, io, t):
         rates = ""
         if self.usage and self.usage[0] and io:
             old, stamp = self.usage
@@ -441,11 +473,7 @@ class Desktop(QMainWindow):
             self.network_start = io
         if io and self.network_start:
             rates += f"\nThis session · received {max(0, io.bytes_recv - self.network_start.bytes_recv) / 2**20:.1f} MiB · sent {max(0, io.bytes_sent - self.network_start.bytes_sent) / 2**20:.1f} MiB"
-        self.metrics_text = (
-            f"CPU {cpu_text} · RAM {ram.used / 2**30:.1f} / {ram.total / 2**30:.1f} GiB\n"
-            f"Disk free {disk.free / 2**30:.1f} GiB · Battery {battery_text}" + rates
-        )
-        self.refresh_control()
+        return rates
 
     def sample_network_status(self):
         wifi = ""
@@ -469,8 +497,21 @@ class Desktop(QMainWindow):
         return wifi + state + latency
 
     def tick(self):
-        self.shell.changed.emit()
+        if not self.background:
+            self.shell.changed.emit()
         if self.locked:
+            return
+        if self.background:
+            if self.has_hotspot_policy() and not self.metrics_pending:
+                self.metrics_pending = True
+
+                def traffic_ready(data):
+                    self.metrics_pending = False
+                    if data is not None and not self.locked:
+                        self.observe_traffic(*data)
+
+                self.work.run(lambda: (psutil.net_io_counters(), time.monotonic()),
+                              traffic_ready, lambda _: traffic_ready(None))
             return
         t = time.monotonic()
         if not self.metrics_pending:
@@ -524,7 +565,7 @@ class Desktop(QMainWindow):
             if name == "Air Browser":
                 from .browser import Browser
 
-                content = Browser(self.s, recovery_mode=self.safe_mode)
+                content = Browser(self.s, recovery_mode=self.safe_mode, defer_restore=not activate)
             elif name == "Files":
                 from .files import Files
 
@@ -552,6 +593,8 @@ class Desktop(QMainWindow):
             if isinstance(geometry, str) and len(geometry) < 4096 and geometry.isascii():
                 panel.restoreGeometry(QByteArray.fromHex(geometry.encode("ascii")))
         panel = self.panels[name]
+        if name == "Air Browser" and activate:
+            panel.content.user_opened()
         newly_open = name not in self.opened
         self.opened[name] = self.space
         if self.s.get("stage", False):
@@ -574,7 +617,7 @@ class Desktop(QMainWindow):
         if name in self.panel_restore_queue:
             self.panel_restore_queue.remove(name)
         if name == "Air Browser":
-            self.panels[name].content.close_private()
+            self.panels[name].content.close_panel()
         if not self.locked:
             self.shell.appsChanged.emit()
             self.layout_save_timer.start()
@@ -684,5 +727,9 @@ def main(*, safe_mode=False):
         return 1
     app.clipboard().dataChanged.connect(window.remember_clip)
     app.styleHints().colorSchemeChanged.connect(lambda _: window.apply_style())
+    if os.name == "nt":
+        app.applicationStateChanged.connect(window.application_state)
     window.start()
+    if os.name == "nt":
+        window.application_state(app.applicationState())
     return app.exec()

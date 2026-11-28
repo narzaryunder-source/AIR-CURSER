@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 from urllib.parse import quote_plus, urlsplit
 
-from PySide6.QtCore import QStandardPaths, Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, QStandardPaths, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QShortcut, QKeySequence
 from PySide6.QtWidgets import (
     QDialog,
@@ -48,6 +48,7 @@ def web_url(text):
 MAX_SAVED_TABS = 100
 MAX_HISTORY = 300
 DISCARD_AFTER_SECONDS = 300
+DISCARD_AFTER_WINDOW_CLOSE = 10
 
 
 class RestoredTab(QWidget):
@@ -59,10 +60,13 @@ class RestoredTab(QWidget):
 
 
 class Browser(QWidget):
-    def __init__(self, settings, parent=None, *, recovery_mode=False):
+    def __init__(self, settings, parent=None, *, recovery_mode=False, defer_restore=False):
         super().__init__(parent)
         self.s = settings
         self.recovery_mode = recovery_mode
+        self.defer_restore = defer_restore
+        self.window_closed = False
+        self.monitored_window = None
         self.normal = None
         self.private = None
         self.downloads = []
@@ -105,6 +109,7 @@ class Browser(QWidget):
         self.tabs.setDocumentMode(True)
         self.tabs.tabCloseRequested.connect(self.close_tab)
         self.tabs.currentChanged.connect(self.select_tab)
+        self.tabs.tabBarClicked.connect(lambda _: self.user_opened())
         self.tabs.setMovable(True)
         self.tabs.tabBar().tabMoved.connect(lambda *_: self.saver.start())
         layout.addWidget(self.tabs)
@@ -112,7 +117,7 @@ class Browser(QWidget):
         self.saver.timeout.connect(self.save)
         self.restore_timer = QTimer(self, interval=0, singleShot=True)
         self.restore_timer.timeout.connect(self.restore_selected)
-        self.sleeper = QTimer(self, interval=15000)
+        self.sleeper = QTimer(self, singleShot=True)
         self.sleeper.timeout.connect(self.freeze_idle_tabs)
         self._changing_tabs = True
         urls = self.s.get("browser_tabs", []) if not recovery_mode and self.s.get("restore", True) else []
@@ -120,7 +125,11 @@ class Browser(QWidget):
             urls = []
         for url in urls[:MAX_SAVED_TABS]:
             if isinstance(url, str) and url.startswith(("https://", "http://")):
-                self.tabs.addTab(RestoredTab(url), (QUrl(url).host() or "Restored tab")[:32])
+                tab = RestoredTab(url)
+                if self.defer_restore:
+                    load = button("Load saved page", lambda tab=tab: self.navigate(tab, tab.target))
+                    tab.layout().addWidget(load, alignment=Qt.AlignmentFlag.AlignCenter)
+                self.tabs.addTab(tab, (QUrl(url).host() or "Restored tab")[:32])
         if self.tabs.count():
             active = self.s.get("browser_active", 0)
             self.tabs.setCurrentIndex(
@@ -148,20 +157,48 @@ class Browser(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        if isinstance(self.current(), RestoredTab):
+        self.window_closed = False
+        window = self.window()
+        if window is not self.monitored_window:
+            if self.monitored_window is not None:
+                self.monitored_window.removeEventFilter(self)
+            self.monitored_window = window
+            window.installEventFilter(self)
+        self.resume_visible_page()
+
+    def resume_visible_page(self):
+        if self.window().isMinimized() or not self.isVisible():
+            return
+        current = self.current()
+        if isinstance(current, self._view_type):
+            current.idle_since = None
+            current.page().setVisible(True)
+        elif not self.defer_restore and isinstance(current, RestoredTab):
             self.restore_timer.start()
+
+    def user_opened(self):
+        self.defer_restore = False
+        self.resume_visible_page()
+
+    def eventFilter(self, watched, event):
+        if watched is self.monitored_window and event.type() == QEvent.Type.WindowStateChange:
+            self.resume_visible_page()
+            self.queue_idle_check()
+        return super().eventFilter(watched, event)
 
     def hideEvent(self, event):
         super().hideEvent(event)
         self.restore_timer.stop()
-        if self._view_type:
-            self.sleeper.start()
+        self.queue_idle_check()
+
+    def queue_idle_check(self, delay=2000):
+        if self._view_type and (not self.sleeper.isActive() or self.sleeper.remainingTime() > delay):
+            self.sleeper.start(delay)
 
     def select_tab(self, *_):
         if self._changing_tabs:
             return
-        if self._view_type:
-            self.sleeper.start()
+        self.queue_idle_check()
         current = self.current()
         if isinstance(current, self._view_type):
             current.idle_since = None
@@ -171,47 +208,52 @@ class Browser(QWidget):
         self.address.setModified(False)
         self.sync()
         self.update_crash_banner()
-        if self.isVisible() and isinstance(current, RestoredTab):
-            self.restore_timer.start()
+        self.resume_visible_page()
 
     def restore_selected(self):
         current = self.current()
-        if self.isVisible() and isinstance(current, RestoredTab):
+        if (
+            not self.defer_restore and not self.window().isMinimized()
+            and self.isVisible() and isinstance(current, RestoredTab)
+        ):
             self.navigate(current, current.target)
 
     def freeze_idle_tabs(self):
         now = time.monotonic()
-        memory_saver = self.s.get("browser_memory_saver", False)
+        discard_delay = (
+            DISCARD_AFTER_WINDOW_CLOSE if self.window_closed else
+            DISCARD_AFTER_SECONDS if self.s.get("browser_memory_saver", False) else None
+        )
         downloading = {request.page() for request in self.downloads if not request.isFinished()}
-        hidden = False
+        minimized = self.window().isMinimized()
         for index in range(self.tabs.count()):
             view = self.tabs.widget(index)
-            if not isinstance(view, self._view_type) or view.isVisible():
+            if not isinstance(view, self._view_type) or view.renderer_error:
                 continue
-            hidden = True
-            if view.idle_since is None:
-                view.idle_since = now
             page = view.page()
+            if minimized and page.isVisible():
+                page.setVisible(False)
             state = page.LifecycleState
             recommended = page.recommendedState()
-            if recommended == state.Active or page in downloading:
+            if page.isVisible() or page.isLoading() or recommended == state.Active or page in downloading:
+                view.idle_since = None
                 continue
-            if (
-                memory_saver
-                and now - view.idle_since >= DISCARD_AFTER_SECONDS
-                and page.lifecycleState() != state.Discarded
-                and recommended == state.Discarded
-            ):
-                page.setLifecycleState(state.Discarded)
-            elif page.lifecycleState() == state.Active:
+            if view.idle_since is None:
+                view.idle_since = now
+            if page.lifecycleState() == state.Active:
                 page.setLifecycleState(state.Frozen)
-        if not hidden:
-            self.sleeper.stop()
+            if discard_delay is not None and recommended == state.Discarded and page.lifecycleState() != state.Discarded:
+                remaining = discard_delay - (now - view.idle_since)
+                if remaining <= 0:
+                    page.setLifecycleState(state.Discarded)
+                else:
+                    self.queue_idle_check(max(1, int(remaining * 1000) + 1))
 
     def navigate(self, view, text):
         if not text.strip() or view is None:
             return
         url = web_url(text)
+        self.defer_restore = False
         self.address.setModified(False)
         if isinstance(view, self._view_type):
             view.renderer_error = None
@@ -269,6 +311,8 @@ class Browser(QWidget):
         engine.renderProcessTerminated.connect(
             lambda status, code: self.renderer_terminated(view, status, code)
         )
+        engine.recommendedStateChanged.connect(lambda *_: self.queue_idle_check())
+        engine.visibleChanged.connect(lambda *_: self.queue_idle_check())
         engine.settings().setAttribute(QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True)
         engine.permissionRequested.connect(
             lambda perm: (
@@ -300,7 +344,7 @@ class Browser(QWidget):
         if url is not None:
             view.setUrl(url)
         if view is not self.current():
-            self.sleeper.start()
+            self.queue_idle_check()
         return view
 
     def renderer_terminated(self, view, status, code):
@@ -379,6 +423,7 @@ class Browser(QWidget):
             self.layout().itemAt(0).layout().itemAt(i).widget().setVisible(not request.toggleOn())
 
     def loaded(self, view, private, ok):
+        self.queue_idle_check()
         url = view.url().toString()
         if (
             ok
@@ -426,6 +471,11 @@ class Browser(QWidget):
             ):
                 self.close_tab(index)
         self.save()
+
+    def close_panel(self):
+        self.window_closed = True
+        self.close_private()
+        self.queue_idle_check()
 
     def url_changed(self, view, address):
         view.target = address
@@ -487,6 +537,7 @@ class Browser(QWidget):
         memory_saver.setCheckable(True)
         memory_saver.setChecked(self.s.get("browser_memory_saver", False))
         memory_saver.toggled.connect(lambda enabled: self.s.set(browser_memory_saver=enabled))
+        memory_saver.toggled.connect(lambda _: self.queue_idle_check())
         m.addAction(
             "Open in default browser", lambda: QDesktopServices.openUrl(self.current().url())
         ).setEnabled(active)
@@ -544,6 +595,7 @@ class Browser(QWidget):
         request.accept()
 
     def download_finished(self, request, path, private):
+        self.queue_idle_check()
         if request.state().name == "DownloadCompleted":
             if os.name == "nt" and path.suffix.lower() in WINDOWS_INSTALLERS:
                 try:

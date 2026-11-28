@@ -7,6 +7,7 @@ Item {
     focus: true
     property bool locked: shell.locked
     property bool dark: shell.dark
+    property bool materialEffects: shell.motion
     property string scene: shell.scene
     property color ink: dark ? "#f4f7fa" : "#1a2836"
     property color sub: dark ? "#c1d0d7" : "#495969"
