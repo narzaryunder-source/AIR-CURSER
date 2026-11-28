@@ -44,8 +44,8 @@ While-WorkspaceReserved 'Local\AirCursor.Windows.Workspace' {
 }
 Assert-ExitCode $PreviousInstaller '/S' 0
 $retired = Join-Path $program 'runtime\PySide6\Qt6Quick3D.dll'
-if ((Get-Content $runtimeVersion -Raw) -notmatch '(?m)^VERSION = "2\.0\.1"\r?$' -or !(Test-Path $retired)) {
-    throw 'The baseline installer did not install the complete 2.0.1 runtime.'
+if ((Get-Content $runtimeVersion -Raw) -notmatch '(?m)^VERSION = "2\.1\.0"\r?$' -or (Test-Path $retired)) {
+    throw 'The baseline installer did not install the slim 2.1.0 runtime.'
 }
 $oldBytes = (Get-ChildItem -LiteralPath $program -File -Recurse | Measure-Object -Property Length -Sum).Sum
 
@@ -62,14 +62,14 @@ While-WorkspaceReserved 'Local\AirCursor.Windows.Runtime' {
 Assert-ExitCode $Installer '/S' 0
 if ((Get-FileHash $settings).Hash -ne $profileHash) { throw 'Upgrade changed the user profile.' }
 # The same bootstrap can launch multiple releases. Check the installed Python version instead.
-if ((Get-Content $runtimeVersion -Raw) -notmatch '(?m)^VERSION = "2\.1\.0"\r?$') {
+if ((Get-Content $runtimeVersion -Raw) -notmatch '(?m)^VERSION = "2\.2\.0"\r?$') {
     throw 'Upgrade did not replace the previous runtime.'
 }
 if (Test-Path $retired) { throw 'Upgrade left an unused Qt library behind.' }
 $newBytes = (Get-ChildItem -LiteralPath $program -File -Recurse | Measure-Object -Property Length -Sum).Sum
-if ($newBytes -ge $oldBytes) { throw 'The installed runtime did not get smaller.' }
+if ($newBytes -gt $oldBytes + 2MB) { throw 'The installed runtime exceeds its size budget.' }
 $registry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\AirCursor'
-if ((Get-ItemPropertyValue $registry -Name DisplayVersion) -ne '2.1.0') {
+if ((Get-ItemPropertyValue $registry -Name DisplayVersion) -ne '2.2.0') {
     throw 'Windows did not register the stable version.'
 }
 if (-not (Test-Path $safeShortcut)) { throw 'Safe Mode shortcut is missing.' }
@@ -104,5 +104,5 @@ if ((Test-Path $app) -or (Test-Path $runtimeVersion) -or (Test-Path $safeShortcu
 }
 if ((Get-FileHash $settings).Hash -ne $profileHash) { throw 'Uninstall changed the user profile.' }
 
-Add-Content $report "`nWindows 2.0.1 upgrade, guarded update and removal, Safe Mode shortcut, and preserved user settings verified."
+Add-Content $report "`nWindows 2.1.0 upgrade, guarded update and removal, Safe Mode shortcut, and preserved user settings verified."
 Add-Content $report "Installed bytes before: $oldBytes. Installed bytes after: $newBytes."

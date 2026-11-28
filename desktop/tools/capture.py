@@ -65,6 +65,9 @@ def main():
             if name == "Air Store":
                 pane.nav.setCurrentRow(1)
                 grab("pc-games.jpg")
+            if name == "Settings":
+                pane.select_page("Hotspot")
+                grab("hotspot-settings.jpg")
             d.panels[name].close()
             QTest.qWait(240)
         for mode, file in [("quick", "control-center"), ("spotlight", "spotlight")]:

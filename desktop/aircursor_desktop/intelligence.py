@@ -8,13 +8,16 @@ import ipaddress
 import os
 from urllib.parse import urlsplit
 from urllib import error, request
+from uuid import uuid4
 
 from PySide6.QtCore import Qt
 from .design import icon
 from .navigation import sidebar, item, heading
 from PySide6.QtWidgets import (
     QCheckBox,
+    QApplication,
     QComboBox,
+    QFileDialog,
     QFrame,
     QLabel,
     QStackedWidget,
@@ -26,6 +29,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from .widgets import Workers, confirm, button, label, row
+from .ai_context import checked_context, computer_context, read_text_context
+from .scheduled import show_schedules
 
 SITES = {
     "ChatGPT": "https://chatgpt.com/",
@@ -214,33 +219,42 @@ def free_model(model):
 
 
 class Intelligence(QWidget):
-    def __init__(self, settings, browse, terminal):
+    def __init__(self, settings, browse, terminal, *, scheduler=None):
         super().__init__()
         self.s, self.work = settings, Workers(self)
         self.models = []
         self.pending = False
         self.downloading = False
-        left, self.web, layout = sidebar(self, "Official services", 173)
+        self.scheduler = scheduler
+        self.attachment = None
+        self.attachment_read = 0
+        left, self.web, layout = sidebar(self, "Air AI", 192)
+        self.project = QComboBox()
+        self.projects = list(self.s.get("ai_projects", []))
+        left.insertWidget(1, self.project)
+        left.insertWidget(2, button("Projects…", self.manage_projects))
+        if scheduler is not None:
+            left.insertWidget(3, button("Scheduled…", self.schedules))
+            scheduler.result_ready.connect(self.scheduled_result)
+            scheduler.busy = lambda: self.pending or self.downloading
         for name, url in SITES.items():
             item(self.web, name, url)
         self.web.itemClicked.connect(lambda entry: browse(entry.data(Qt.ItemDataRole.UserRole)))
-        left.addWidget(button("Configure endpoint…", self.configure))
+        left.addWidget(button("Connectors…", self.connectors))
         left.addWidget(button("Provider key…", self.key))
         left.addWidget(button("Open terminal", terminal))
         section = label("Conversations")
         section.setObjectName("section")
-        left.insertWidget(2, section)
+        left.addWidget(section)
         self.sessions = QComboBox()
-        self.conversations = self.s.get("conversations", [])
-        for c in self.conversations:
-            self.sessions.addItem(c["title"])
-        left.insertWidget(3, self.sessions)
-        left.insertWidget(4, button("New conversation", self.new))
+        self.conversations = list(self.s.get("conversations", []))
+        left.addWidget(self.sessions)
+        left.addWidget(button("New conversation", self.new))
         self.provider, self.model = QComboBox(), QComboBox()
         self.provider.addItems(ENDPOINTS)
         if self.s.get("custom_ai_url"):
             self.provider.addItem("Custom")
-        left.insertWidget(5, button("Manage conversation…", self.manage))
+        left.addWidget(button("Manage conversation…", self.manage))
         self.model.setPlaceholderText("Select model")
         self.free = QCheckBox("Zero token price")
         bar = row(layout, self.provider, button("Find models", self.discover), self.model, self.free)
@@ -286,6 +300,14 @@ class Intelligence(QWidget):
         self.prompt.setPlaceholderText("Write a message…")
         self.prompt.setMaximumHeight(76)
         layout.addWidget(self.prompt)
+        self.attachment_row = QWidget()
+        attachment_layout = QHBoxLayout(self.attachment_row)
+        attachment_layout.setContentsMargins(0, 0, 0, 0)
+        self.attachment_label = label("")
+        attachment_layout.addWidget(self.attachment_label, 1)
+        attachment_layout.addWidget(button("Remove", self.clear_attachment))
+        self.attachment_row.hide()
+        layout.addWidget(self.attachment_row)
         self.status = label("")
         self.status.setObjectName("secondary")
         send = button("Send  ↑", self.send)
@@ -294,6 +316,8 @@ class Intelligence(QWidget):
         row(layout, self.status, send)
         self.lightweight.toggled.connect(self.set_lightweight)
         self.sessions.currentIndexChanged.connect(self.render)
+        self.populate_projects(self.s.get("ai_project_filter"))
+        self.project.currentIndexChanged.connect(self.project_changed)
         if not self.conversations:
             self.new()
         self.render()
@@ -329,6 +353,9 @@ class Intelligence(QWidget):
 
     def download_lightweight(self):
         if self.pending or self.downloading or not self.lightweight_enabled():
+            return
+        if self.scheduler and self.scheduler.running:
+            self.status.setText("Wait for the scheduled Ollama prompt to finish.")
             return
         if not confirm(self, "Download Qwen3 0.6B", "Let the local Ollama app download about 523 MB?"):
             return
@@ -468,20 +495,136 @@ class Intelligence(QWidget):
             except (AttributeError, OSError) as exc:
                 self.status.setText(str(exc))
 
+    def populate_projects(self, selected):
+        self.project.blockSignals(True)
+        self.project.clear()
+        self.project.addItem("All chats", None)
+        self.project.addItem("Unassigned", "")
+        for project in self.projects:
+            self.project.addItem(project["name"], project["id"])
+        self.project.setCurrentIndex(max(0, self.project.findData(selected)))
+        self.project.blockSignals(False)
+        self.populate_chats()
+
+    def project_changed(self):
+        self.s.set(ai_project_filter=self.project.currentData())
+        self.populate_chats()
+
+    def selected_chat(self):
+        index = self.sessions.currentData()
+        return self.conversations[index] if index is not None else None
+
+    def populate_chats(self, selected=None):
+        project = self.project.currentData()
+        self.sessions.blockSignals(True)
+        self.sessions.clear()
+        for index, chat in enumerate(self.conversations):
+            if project is None or chat.get("project", "") == project:
+                self.sessions.addItem(chat["title"], index)
+                if chat is selected:
+                    self.sessions.setCurrentIndex(self.sessions.count() - 1)
+        self.sessions.blockSignals(False)
+        self.render()
+
+    def manage_projects(self):
+        if self.pending:
+            self.status.setText("Wait for the current reply before editing projects.")
+            return
+        identifier = self.project.currentData()
+        project = next((p for p in self.projects if p["id"] == identifier), None)
+        actions = ["New project"]
+        if project:
+            actions += ["Rename project", "Remove project"]
+        action, ok = QInputDialog.getItem(self, "Projects", "Action", actions, editable=False)
+        if not ok:
+            return
+        if action == "Remove project":
+            if not confirm(self, "Remove project", "Remove this project and put its chats in Unassigned?"):
+                return
+            self.projects.remove(project)
+            for chat in self.conversations:
+                if chat.get("project") == identifier:
+                    chat["project"] = ""
+            identifier = ""
+        else:
+            name, ok = QInputDialog.getText(self, "Projects", "Name", text=project["name"] if action == "Rename project" else "")
+            name = name.strip()[:80]
+            if not ok or not name:
+                return
+            if any(p["name"].casefold() == name.casefold() and (action != "Rename project" or p is not project) for p in self.projects):
+                self.status.setText("A project with this name already exists.")
+                return
+            if action == "New project":
+                identifier = uuid4().hex
+                self.projects.append(dict(id=identifier, name=name))
+            else:
+                project["name"] = name
+        self.s.set(ai_projects=self.projects, ai_project_filter=identifier, conversations=self.conversations)
+        self.populate_projects(identifier)
+
+    def schedules(self):
+        show_schedules(self, self.scheduler, self.prompt.toPlainText(), self.project.currentData() or "")
+
+    def scheduled_result(self, chat):
+        selected = self.selected_chat()
+        self.conversations = [*self.conversations, chat]
+        self.populate_chats(selected)
+
+    def clear_attachment(self):
+        self.attachment_read += 1
+        self.attachment = None
+        self.attachment_row.hide()
+
+    def attach(self, name, text):
+        self.attachment = (name, checked_context(text))
+        self.attachment_label.setText(f"Attached for next message · {name}")
+        self.attachment_row.show()
+
+    def connectors(self):
+        choices = ["Attach a text file", "Attach clipboard text", "Attach computer information", "Configure an API endpoint"]
+        action, ok = QInputDialog.getItem(self, "Connectors", "Include context or connect a provider", choices, editable=False)
+        if not ok:
+            return
+        if action == choices[3]:
+            self.configure()
+        elif action == choices[0]:
+            path, _ = QFileDialog.getOpenFileName(self, "Select a UTF-8 text file")
+            if not path:
+                return
+            self.attachment_read += 1
+            generation = self.attachment_read
+
+            def loaded(result):
+                if self.attachment_read == generation:
+                    self.attach(*result)
+
+            self.work.run(lambda: read_text_context(path), loaded, self.status.setText)
+        else:
+            self.attachment_read += 1
+            try:
+                if action == choices[1]:
+                    self.attach("Clipboard", QApplication.clipboard().text())
+                else:
+                    self.attach("Computer information", computer_context())
+            except ValueError as exc:
+                self.status.setText(str(exc))
+
     def new(self):
-        self.conversations.append({"title": "New conversation", "messages": []})
-        self.sessions.addItem("New conversation")
-        self.sessions.setCurrentIndex(self.sessions.count() - 1)
+        chat = {"title": "New conversation", "messages": [], "project": self.project.currentData() or ""}
+        self.conversations.append(chat)
+        self.populate_chats(chat)
 
     def manage(self):
         if self.pending:
             self.status.setText("Wait for the current response before editing conversations.")
             return
-        index = self.sessions.currentIndex()
+        chat = self.selected_chat()
+        if chat is None:
+            return
         action, ok = QInputDialog.getItem(
-            self, "Conversation", self.sessions.currentText(), ["Rename", "Delete"], editable=False
+            self, "Conversation", self.sessions.currentText(), ["Rename", "Move to project", "Delete"], editable=False
         )
-        if not ok or index < 0:
+        if not ok:
             return
         if action == "Rename":
             title, ok = QInputDialog.getText(
@@ -489,25 +632,23 @@ class Intelligence(QWidget):
             )
             if not ok or not title.strip():
                 return
-            self.conversations[index].update(title=title.strip()[:100], named=True)
-            self.sessions.setItemText(index, self.conversations[index]["title"])
+            chat.update(title=title.strip()[:100], named=True)
+        elif action == "Move to project":
+            names = ["— Unassigned —", *[p["name"] for p in self.projects]]
+            target, ok = QInputDialog.getItem(self, "Move conversation", "Project", names, editable=False)
+            if not ok:
+                return
+            chat["project"] = "" if target == names[0] else self.projects[names.index(target) - 1]["id"]
         elif confirm(self, "Delete conversation", "Permanently delete this conversation from AirCursor?"):
-            self.conversations.pop(index)
-            self.sessions.removeItem(index)
-            if not self.conversations:
-                self.new()
+            self.conversations.pop(self.sessions.currentData())
         self.s.set(conversations=self.conversations)
-        self.render()
+        self.populate_chats(chat)
 
     def render(self, *_):
-        i = self.sessions.currentIndex()
-        if i >= 0:
-            self.transcript.setCurrentIndex(1 if self.conversations[i]["messages"] else 0)
-            self.log.setPlainText(
-                "\n\n".join(
-                    m["role"].capitalize() + "\n" + m["content"] for m in self.conversations[i]["messages"]
-                )
-            )
+        chat = self.selected_chat()
+        messages = chat.get("messages", []) if chat else []
+        self.transcript.setCurrentIndex(1 if messages else 0)
+        self.log.setPlainText("\n\n".join(m["role"].capitalize() + "\n" + m["content"] for m in messages))
 
     def send(self):
         text, model = self.prompt.toPlainText().strip(), self.model.currentText()
@@ -516,18 +657,32 @@ class Intelligence(QWidget):
                 "Choose a discovered model, enter a message, and wait for any active request."
             )
             return
-        i = self.sessions.currentIndex()
-        conv = self.conversations[i]
+        if self.provider.currentText() == "Ollama" and self.scheduler and self.scheduler.running:
+            self.status.setText("Wait for the scheduled Ollama prompt to finish.")
+            return
+        if self.selected_chat() is None:
+            self.new()
+        conv = self.selected_chat()
         provider = self.provider.currentText()
         messages = conv["messages"] + [{"role": "user", "content": text}]
+        attachment = self.attachment
+        sent = messages
+        if attachment:
+            name, context = attachment
+            sent = [*messages[:-1], {"role": "user", "content": f"{text}\n\nContext from {name}:\n{context}"}]
         lightweight = self.lightweight_enabled()
         try:
-            sent = lightweight_messages(messages) if lightweight else messages
+            if lightweight:
+                sent = lightweight_messages(sent)
         except ValueError as exc:
             self.status.setText(str(exc))
             return
         endpoint = self.s.get("custom_ai_url")
         recipient = endpoint if provider == "Custom" else ENDPOINTS[provider]
+        if attachment and not local_url(recipient) and not confirm(
+            self, "Share attached text", f"Send the attachment {attachment[0]} to {recipient}?"
+        ):
+            return
         if (
             conv["messages"]
             and conv.get("endpoint") != recipient
@@ -548,9 +703,10 @@ class Intelligence(QWidget):
                 title=conv["title"] if conv.get("named") else messages[0]["content"][:45],
                 messages=messages + [{"role": "assistant", "content": answer}],
             )
-            self.sessions.setItemText(i, conv["title"])
+            if attachment is not None and self.attachment is attachment:
+                self.clear_attachment()
             self.s.set(conversations=self.conversations)
-            self.render()
+            self.populate_chats(self.selected_chat())
             self.status.setText(f"{model} · {count} tokens")
 
         def failed(message):

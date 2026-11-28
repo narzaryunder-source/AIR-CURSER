@@ -347,7 +347,7 @@ def workspace():
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
         os.environ["AIRCURSOR_HOME"] = folder
         settings = Settings()
-        names = ("Files", "Air Store", "Air AI", "Settings", "Control Center", "Air Browser")
+        names = ("Files", "Air Store", "Air AI", "Settings", "Air Browser")
         settings.set(auto_switch=False, session_panels=dict.fromkeys(names, 1))
         started = time.perf_counter()
         window = Desktop(settings)

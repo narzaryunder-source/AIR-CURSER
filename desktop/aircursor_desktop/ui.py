@@ -22,12 +22,13 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 from .chrome import Panel, stylesheet
-from .control import Control, Preferences, PROFILES
+from .control import Preferences, PROFILES
 from .design import ICONS, MaterialProvider
 from .hotspot import AutoSwitch, Hotspot
 from .inject import Controller, backend
 from .server import RemoteHost
 from .settings import Settings
+from .scheduled import Scheduler
 from .surface import Shell
 from . import session
 from .widgets import Workers, asset
@@ -36,7 +37,7 @@ from .widgets import Workers, asset
 class Desktop(QMainWindow):
     message = Signal(str)
     receiver_changed = Signal()
-    names = [n for n in ICONS if n not in ("Terminal", "Downloads")]
+    names = [n for n in ICONS if n not in ("Terminal", "Downloads", "Control Center")]
 
     def __init__(self, settings=None, *, safe_mode=False):
         super().__init__()
@@ -53,6 +54,9 @@ class Desktop(QMainWindow):
         self.host.paused = True
         self.auto = AutoSwitch(self.hot, self.message.emit, every=self.probe_interval())
         self.work = Workers(self)
+        self.ai_tasks = Scheduler(self.s, self)
+        self.ai_tasks.error.connect(self.notify)
+        self.ai_tasks.result_ready.connect(lambda chat: self.notify(f"Scheduled prompt completed · {chat['title']}"))
         self.panels, self.opened, self.clipboard, self.messages = {}, {}, [], []
         self.locked = True
         self.space = 2 if self.restore_enabled and self.s.get("active_space") == 2 else 1
@@ -61,6 +65,7 @@ class Desktop(QMainWindow):
         self.net_pending = False
         self.last_net = -1000
         self.metrics_pending = False
+        self.cpu_sample = None
         self.network_text = "Checking connectivity…"
         self.metrics_text = ""
         self.battery = ""
@@ -118,6 +123,12 @@ class Desktop(QMainWindow):
             self.startup_pending = False
             self.check_windows_session()
 
+    def start(self):
+        if not self.safe_mode and self.s.get("start_fullscreen", True):
+            self.showFullScreen()
+        else:
+            self.show()
+
     def check_windows_session(self):
         if self.startup_pending:
             return
@@ -131,6 +142,8 @@ class Desktop(QMainWindow):
             paused = not interactive or (os.name == "nt" and not self.session_watching)
             if paused != self.host.paused:
                 self.host.paused = paused
+            if self.ai_tasks.active != (interactive and not self.safe_mode):
+                self.ai_tasks.activate(interactive and not self.safe_mode)
 
     def handle_session_message(self, message, event):
         if message == session.SESSION_CHANGE:
@@ -181,6 +194,8 @@ class Desktop(QMainWindow):
             return
         self.host.paused = True
         self.locked = True
+        self.cpu_sample = None
+        self.ai_tasks.activate(False)
         self.auto.stop()
         self.layout_save_timer.stop()
         self.panel_restore_timer.stop()
@@ -203,11 +218,14 @@ class Desktop(QMainWindow):
         self.shell.file_query, self.shell.file_results = None, []
         if "Air Browser" in self.panels:
             self.panels["Air Browser"].content.close_private()
+        if "Air AI" in self.panels:
+            self.panels["Air AI"].content.clear_attachment()
 
     def workspace(self):
         self.locked = False
         self.host.paused = not self.session_watching and os.name == "nt"
         self.shell.lockedChanged.emit()
+        self.ai_tasks.activate(not self.safe_mode)
         if (
             not self.safe_mode
             and sys.platform == "win32"
@@ -237,6 +255,8 @@ class Desktop(QMainWindow):
         self.opened = {
             name: space for name, space in saved.items() if name in self.names and space in (1, 2)
         }
+        if saved.get("Control Center") in (1, 2):
+            self.opened.setdefault("Settings", saved["Control Center"])
         self.queue_panel_restore()
 
     def queue_panel_restore(self):
@@ -317,8 +337,13 @@ class Desktop(QMainWindow):
     def refresh_control(self):
         if not self.locked:
             self.shell.changed.emit()
-            if "Control Center" in self.panels:
-                self.panels["Control Center"].content.refresh()
+            panel = self.panels.get("Settings")
+            if panel and panel.isVisible() and not panel.isMinimized():
+                panel.content.controls.refresh()
+
+    def open_settings(self, page):
+        if settings := self.open("Settings"):
+            settings.select_page(page)
 
     def show_overlay(self, name):
         if self.locked:
@@ -379,7 +404,7 @@ class Desktop(QMainWindow):
     @staticmethod
     def sample_metrics():
         ram = psutil.virtual_memory()
-        cpu = psutil.cpu_percent(interval=0.15)
+        cpu = psutil.cpu_times()
         io = psutil.net_io_counters()
         disk = shutil.disk_usage(Path.home())
         try:
@@ -393,6 +418,15 @@ class Desktop(QMainWindow):
         if data is None or self.locked:
             return
         ram, cpu, io, disk, battery, t = data
+        current_cpu = (sum(cpu) - getattr(cpu, "guest", 0) - getattr(cpu, "guest_nice", 0),
+                       cpu.idle + getattr(cpu, "iowait", 0))
+        cpu_text = "Sampling…"
+        if self.cpu_sample:
+            elapsed_cpu = current_cpu[0] - self.cpu_sample[0]
+            idle_cpu = current_cpu[1] - self.cpu_sample[1]
+            if elapsed_cpu > 0:
+                cpu_text = f"{max(0, min(1, 1 - idle_cpu / elapsed_cpu)):.0%}"
+        self.cpu_sample = current_cpu
         battery_text = f"{battery.percent:.0f}%" if battery else "Unavailable"
         self.battery = battery_text if battery else ""
         rates = ""
@@ -408,7 +442,7 @@ class Desktop(QMainWindow):
         if io and self.network_start:
             rates += f"\nThis session · received {max(0, io.bytes_recv - self.network_start.bytes_recv) / 2**20:.1f} MiB · sent {max(0, io.bytes_sent - self.network_start.bytes_sent) / 2**20:.1f} MiB"
         self.metrics_text = (
-            f"CPU {cpu:.0f}% · RAM {ram.used / 2**30:.1f} / {ram.total / 2**30:.1f} GiB\n"
+            f"CPU {cpu_text} · RAM {ram.used / 2**30:.1f} / {ram.total / 2**30:.1f} GiB\n"
             f"Disk free {disk.free / 2**30:.1f} GiB · Battery {battery_text}" + rates
         )
         self.refresh_control()
@@ -469,6 +503,9 @@ class Desktop(QMainWindow):
             self.work.run(list_windows, update, lambda _: update([]))
 
     def open(self, name, *, activate=True):
+        if name == "Control Center":
+            self.show_overlay("quick")
+            return
         if self.locked or name not in self.names:
             return
         if name in ("Overview", "Launcher"):
@@ -494,11 +531,9 @@ class Desktop(QMainWindow):
             elif name == "Air AI":
                 from .intelligence import Intelligence
 
-                content = Intelligence(self.s, self.browse, self.terminal)
-            elif name == "Settings":
-                content = Preferences(self)
+                content = Intelligence(self.s, self.browse, self.terminal, scheduler=self.ai_tasks)
             else:
-                content = Control(self)
+                content = Preferences(self)
             panel = self.panels[name] = Panel(self, name, content)
             area = self.screen().availableGeometry()
             nominal = (1040, 690) if name in ("Files", "Air Browser", "Air Store", "Air AI") else (810, 590)
@@ -520,6 +555,8 @@ class Desktop(QMainWindow):
                 if other != panel:
                     other.hide()
         panel.present(activate=activate)
+        if name == "Settings":
+            panel.content.controls.refresh()
         if newly_open:
             self.shell.appsChanged.emit()
         self.layout_save_timer.start()
@@ -593,6 +630,7 @@ class Desktop(QMainWindow):
                 if sys.stderr is not None:
                     sys.stderr.write("AirCursor could not save the session before closing.\n")
         self.locked = True
+        self.ai_tasks.activate(False)
         self.timer.stop()
         self.layout_save_timer.stop()
         self.panel_restore_timer.stop()
@@ -639,5 +677,5 @@ def main(*, safe_mode=False):
         return 1
     app.clipboard().dataChanged.connect(window.remember_clip)
     app.styleHints().colorSchemeChanged.connect(lambda _: window.apply_style())
-    window.show()
+    window.start()
     return app.exec()

@@ -1,6 +1,6 @@
 # AirCursor for Windows
 
-AirCursor opens a workspace alongside Windows Explorer in your signed-in Windows session. The Dock opens Files, Air Browser, Air Store, Air AI, Spotlight, the Windows command prompt, Settings, window overview and Downloads. Open **AirCursor → Enter desktop mode** or press **F11**. The menu bar offers **Exit desktop** in full screen. **Esc** dismisses a panel overlay or exits desktop mode when the workspace has focus.
+AirCursor opens full screen in your signed-in Windows session. Choose **Exit desktop** in the menu bar or press **F11** to switch to a window. **Alt+Tab** switches to Windows apps. To start in a window on future launches, clear **Settings → Workspace → Open AirCursor full screen**. The Dock opens Files, Air Browser, Air Store, Air AI, Spotlight, Terminal, Settings, Overview and Downloads.
 
 ## Install AirCursor for Windows
 
@@ -12,7 +12,7 @@ AirCursor opens a workspace alongside Windows Explorer in your signed-in Windows
 
 ## Connect with or without a hotspot
 
-The Windows workspace runs on its own. For phone keyboard and touchpad controls, turn on the receiver in **Control Center → Connected phone** and open **Use as keyboard & touchpad** in the Android app. The phone needs a local network path to the PC, and pairing works without internet access.
+The Windows workspace runs on its own. For phone keyboard and touchpad controls, turn on the receiver in **Settings → Connected phone** and open **Use as keyboard & touchpad** in the Android app. The phone needs a local network path to the PC, and pairing works without internet access.
 
 - **Regular Wi-Fi.** Connect the phone and PC to the same network. A PC connected by Ethernet to the same router can also work. Guest networks sometimes block device-to-device traffic.
 - **Phone hotspot.** Connect the PC to the hotspot. You can connect from Windows Wi-Fi settings or save it in AirCursor for automatic switching. The phone can also share its mobile internet over this connection.
@@ -22,8 +22,8 @@ Select the PC in the phone app or enter the IPv4 address and port shown in **Con
 
 ## Pair the phone and test hotspot recovery
 
-1. On the phone, enable the hotspot in Android Quick Settings. Open **Control Center → All controls → Hotspot → Find hotspots**, select the phone, enter its Wi-Fi password, and choose **Save and connect**. The Windows WLAN service stores the key in a current-user Wi-Fi profile. The SSID and adapter identifier are saved in AirCursor.
-2. Wait for association with the specified SSID and an internet check. On native WLAN the content check sends traffic over the selected adapter. Control Center also reports whole-computer reachability; proxy-only Wi-Fi can remain unverified. Adapter diagnostics shows gateways, DNS servers and possible USB tether adapters. Newer Windows builds can require location access for Wi-Fi discovery.
+1. On the phone, enable the hotspot in Android Quick Settings. Open **Settings → Hotspot → Find hotspots**, select the phone, enter its Wi-Fi password, and choose **Save and connect**. The Windows WLAN service stores the key in a current-user Wi-Fi profile. The SSID and adapter identifier are saved in AirCursor.
+2. Wait for association with the specified SSID and an internet check. On native WLAN the content check sends traffic over the selected adapter. Settings reports whole-computer reachability. Proxy-only Wi-Fi can remain unverified. Adapter diagnostics shows gateways, DNS servers and possible USB tether adapters. Newer Windows builds can require location access for Wi-Fi discovery.
 3. Under **Connected phone**, turn the receiver on. On the existing Android app, select **Use as keyboard & touchpad**, choose the computer or enter its displayed IPv4 address and port, then enter the six-digit code displayed on Windows. Choose an appropriate local-network firewall permission if Windows prompts.
 4. Test pointer movement, left/right clicks, two-finger scrolling and typing. Hold a modifier and lock Windows with **Windows + L**. The receiver should release held inputs immediately. Unlock Windows to resume AirCursor.
 5. For failover, return to regular Wi-Fi, leave the configured phone hotspot available, and enable automatic switching. Disconnect regular internet and watch the status. Repeat with the phone out of range. Optional return to the previous Wi-Fi waits for two stable sightings and idle transfer activity. This applies to Wi-Fi that AirCursor itself displaced.
@@ -43,7 +43,7 @@ Select the PC in the phone app or enter the IPv4 address and port shown in **Con
 | Show open windows | Overview in the Dock. Native window activation follows Windows foreground rules. |
 | View notifications and clipboard | Menu-bar clock or AirCursor menu. Clipboard history is opt-in and clears on lock. |
 | Change theme, wallpaper or privacy | Settings in the Dock |
-| Adjust effects, polling and telemetry cadence | Control Center → All controls → AirBoost |
+| Adjust effects, polling and telemetry cadence | Settings → Performance |
 
 ### Browser, files, store and AI
 
@@ -61,6 +61,12 @@ Select the PC in the phone app or enter the IPv4 address and port shown in **Con
 The lightweight mode sends up to four previous turns with the new message, with a combined 8 KiB ceiling for message text. It requests a 2,048-token context, up to 256 output tokens and up to four CPU inference threads. Ollama handles final context fitting and unloads the model after replying. That frees model memory between tasks and adds a reload delay to the next message. Full conversations remain available in Air AI, and other models and providers are available with the setting off. The installer and model ship separately. [Ollama chat parameters](https://docs.ollama.com/api/chat)
 
 This design uses the small-model and bounded-memory ideas from the supplied guide to Alexey Fateev’s `llm.asm`. AirCursor uses native Windows Ollama for inference and retains its regular Windows workspace. [llm.asm](https://github.com/alesha-pro/llm.asm)
+
+### Organize and schedule Air AI work
+
+- **Projects** groups chats in the Air AI sidebar. Create a project, select it before starting a conversation, or use **Manage conversation → Move to project** to organize an existing chat.
+- **Connectors** attaches a chosen UTF-8 file, clipboard text or basic computer information to the next message. Air AI asks before including attachment text in a request to a remote endpoint. The attachment itself is separate from the saved chat transcript. A model may quote it in a reply. The same menu configures compatible API providers.
+- **Scheduled** saves a one-time or daily prompt for local Qwen3 in Ollama. Results appear as chats in the chosen project. AirCursor and Ollama need to be running and Windows needs to be unlocked. An overdue prompt can run when the workspace resumes. The scheduler skips duplicate catch-up runs for a daily prompt.
 
 ## Run, test or reproduce the installer
 
@@ -90,7 +96,7 @@ The branch workflow builds on a Windows Server runner, installs the generated fi
 - **Open a downloaded installer.** Choose Air Browser → ⋯ → Downloads → Open file. Review its Windows signature and SHA-256. You can paste the publisher's digest before choosing Run installer.
 - **Edit media.** Right-click a picture in Files and choose Edit photo to rotate or resize to a new PNG. For a video, install FFmpeg, then choose Trim video, specify start/end seconds, and choose a new MP4 name. Existing output files are protected.
 - **Connect an AI service.** Start your local model server or enter an HTTPS provider URL under Configure endpoint. Choose Provider key if the endpoint requires credentials, Find models, select a model and Send. Windows Credential Manager stores API keys. Separate conversations can be renamed or deleted.
-- **Lock the workspace.** Use **Windows + L**. AirCursor follows the Windows session and pauses phone controls when the session closes, locks or suspends. The six-digit pairing code in Control Center is for connecting a phone.
+- **Lock the workspace.** Use **Windows + L**. AirCursor follows the Windows session and pauses phone controls when the session closes, locks or suspends. The six-digit pairing code in **Settings → Connected phone** is for connecting a phone.
 - **Find a PC game.** Open **Air Store → PC Games** for supported game listings on Steam or Epic Games. Select **Get launcher** to find the Windows launcher package, and use the publisher listing to check requirements, purchase and install the game.
 - **Restore your work.** Enable Restore open panels at startup. AirCursor remembers your active workspace, managed window geometry, file tabs and views, and regular browser URLs. The calendar widget can be enabled from Settings → Workspace or the desktop context menu.
 

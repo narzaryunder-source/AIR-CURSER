@@ -50,9 +50,15 @@ def self_test():
             settings = Settings(str(Path(folder) / "test.json"))
             settings.set(auto_switch=False, restore=False, password={"hash": "legacy-preview-fixture"})
             window = Desktop(settings)
-            window.show()
+            window.start()
             app.processEvents()
-            assert not window.locked and not window.host.running
+            assert window.isFullScreen() and not window.locked and not window.host.running
+            window.open_settings("Hotspot")
+            assert window.panels["Settings"].content.nav.currentItem().text() == "Hotspot"
+            window.panels["Settings"].close()
+            window.exit_desktop()
+            assert not window.isFullScreen()
+            lines.append("Full-screen startup, desktop exit and integrated Hotspot settings verified.")
             lines.append(f"AirCursor {VERSION}, workspace opened in {time.perf_counter() - start:.3f}s")
             if sys.platform == "win32":
                 from aircursor_desktop import session

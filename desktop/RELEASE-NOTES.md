@@ -1,3 +1,10 @@
+# Windows 2.2.0
+
+- Opens in full-screen mode with a visible **Exit desktop** action, F11, and a windowed startup preference.
+- Hotspot, Connected phone, and Performance share the Settings sidebar. Quick controls open the relevant Settings page.
+- Air AI adds projects, selected-text connectors and persistent one-time or daily local Ollama prompts. Scheduled results appear in the selected project’s chats while AirCursor and Ollama are running and Windows is unlocked.
+- AirBoost samples CPU counters without a blocking sampling sleep and refreshes Settings controls when the window is visible.
+
 # Windows 2.1.0
 
 - The installer ships the Qt runtime that AirCursor uses. It removes Qt development tools, unused optional modules and Chromium debug resources. Upgrades remove those known obsolete files from the installed runtime and retain the user profile.

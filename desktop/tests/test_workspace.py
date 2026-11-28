@@ -117,9 +117,15 @@ def test_real_widget_paths_lock_and_exit(tmp_path, monkeypatch):
     calendar.shift(1)
     assert calendar.property("month") != original_month
     desktop.preference("calendar_widget", False)
-    for name in ["Files", "Air Store", "Air AI", "Air Browser", "Settings", "Control Center"]:
+    for name in ["Files", "Air Store", "Air AI", "Air Browser", "Settings"]:
         assert desktop.open(name) is not None
         assert desktop.panels[name].isVisible()
+    desktop.shell.action("hotspot")
+    settings = desktop.panels["Settings"].content
+    assert settings.nav.currentItem().text() == "Hotspot"
+    desktop.shell.action("remote")
+    assert settings.nav.currentItem().text() == "Connected phone"
+    assert "Control Center" not in desktop.panels
     desktop.show_overlay("spotlight")
     assert desktop.view.rootObject().property("overlay") == "spotlight"
     assert desktop.shell.results
@@ -135,20 +141,24 @@ def test_real_widget_paths_lock_and_exit(tmp_path, monkeypatch):
     app.processEvents()
 
 
-def test_normal_entry_point_opens_without_an_aircursor_password(tmp_path):
+@pytest.mark.parametrize("fullscreen", [True, False])
+def test_normal_entry_point_opens_without_an_aircursor_password(tmp_path, fullscreen):
     import subprocess
     import sys
     from pathlib import Path
 
-    probe = """
+    Settings(str(tmp_path / "settings.json")).set(start_fullscreen=fullscreen)
+    probe = f"""
 from PySide6.QtCore import QTimer
 from aircursor_desktop.ui import Desktop, main
-show = Desktop.show
+start = Desktop.start
 def opened(window):
-    show(window)
-    assert not window.locked and window.view.rootObject() is not None
+    start(window)
+    assert not window.locked and window.isFullScreen() is {fullscreen} and window.view.rootObject() is not None
+    window.exit_desktop()
+    assert not window.isFullScreen()
     QTimer.singleShot(50, window.close)
-Desktop.show = opened
+Desktop.start = opened
 raise SystemExit(main())
 """
     env = {

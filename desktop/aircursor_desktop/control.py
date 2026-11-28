@@ -3,7 +3,7 @@ import time
 from functools import lru_cache
 
 import psutil
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QObject, QSize, Qt
 from PySide6.QtGui import QImageReader, QPixmap, QIcon
 from .navigation import sidebar, item, heading
 from PySide6.QtWidgets import (
@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QDoubleSpinBox,
     QPlainTextEdit,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -65,10 +64,11 @@ def diagnostics():
     ).strip() or "No adapters reported."
 
 
-class Control(QTabWidget):
-    def __init__(self, desk):
-        super().__init__()
+class Controls(QObject):
+    def __init__(self, desk, parent):
+        super().__init__(parent)
         self.desk, self.work = desk, Workers(self)
+        self.pages = {}
         self.status = label("")
         net, nl = self.tab("Hotspot")
         self.net = label("")
@@ -99,7 +99,7 @@ class Control(QTabWidget):
         row(
             nl,
             button("Adapter diagnostics", self.inspect),
-            button("Metered connection…", lambda: system_link(self, "ms-settings:network-wifi")),
+            button("Metered connection…", lambda: system_link(self.parent(), "ms-settings:network-wifi")),
             button("Forget phone…", self.forget),
         )
         self.details = QPlainTextEdit()
@@ -143,7 +143,7 @@ class Control(QTabWidget):
         scrolling.toggled.connect(scroll)
         rl.addWidget(scrolling)
         rl.addStretch()
-        boost, bl = self.tab("AirBoost")
+        boost, bl = self.tab("Performance")
         self.profile = QComboBox()
         self.profile.addItems(PROFILES)
         self.profile.setCurrentText(desk.s.get("profile", "Balanced"))
@@ -161,7 +161,8 @@ class Control(QTabWidget):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(22, 20, 22, 20)
-        self.addTab(widget, title)
+        heading(layout, title)
+        self.pages[title] = widget
         return widget, layout
 
     def scan(self):
@@ -210,7 +211,7 @@ class Control(QTabWidget):
 
     def forget(self):
         if not self.desk.hot.phone_ssid or not confirm(
-            self, "Forget hotspot", "Remove the saved phone Wi-Fi profile from Windows?"
+            self.parent(), "Forget hotspot", "Remove the saved phone Wi-Fi profile from Windows?"
         ):
             return
         self.work.run(
@@ -316,37 +317,32 @@ class Preferences(QWidget):
     def __init__(self, desk):
         super().__init__()
         self.desk = desk
-        rail, nav, layout = sidebar(self, "Settings", 169)
+        rail, self.nav, layout = sidebar(self, "Settings", 182)
         stack = QStackedWidget()
         layout.addWidget(stack)
-        for idx, (name, art) in enumerate(
-            [
-                ("Appearance", "Settings"),
-                ("Workspace", "Overview"),
-                ("Privacy", "Control Center"),
-                ("Windows", "Launcher"),
-            ]
-        ):
-            item(nav, name, idx, art)
-        nav.currentRowChanged.connect(stack.setCurrentIndex)
-        nav.setCurrentRow(0)
+        self.sections = {}
 
-        def section(name):
-            pane = QWidget()
-            content = QVBoxLayout(pane)
-            content.setContentsMargins(0, 0, 0, 0)
-            content.setSpacing(13)
-            heading(content, name)
+        def add_section(name, art, pane):
             from PySide6.QtWidgets import QScrollArea
 
             area = QScrollArea()
             area.setFrameShape(area.Shape.NoFrame)
             area.setWidgetResizable(True)
             area.setWidget(pane)
-            stack.addWidget(area)
+            index = stack.addWidget(area)
+            self.sections[name] = index
+            item(self.nav, name, index, art)
+
+        def section(name, title, art):
+            pane = QWidget()
+            content = QVBoxLayout(pane)
+            content.setContentsMargins(0, 0, 0, 0)
+            content.setSpacing(13)
+            heading(content, title)
+            add_section(name, art, pane)
             return content
 
-        appearance = section("Appearance")
+        appearance = section("Appearance", "Appearance", "Settings")
         appearance.addWidget(label("Color mode"))
         self.mode = QComboBox()
         self.mode.addItems(["Automatic", "Light", "Dark"])
@@ -371,12 +367,16 @@ class Preferences(QWidget):
         wallpaper()
         appearance.addWidget(preview)
         appearance.addStretch()
-        workspace = section("Workspace")
-        privacy = section("Privacy and security")
+        workspace = section("Workspace", "Workspace", "Overview")
+        self.controls = Controls(desk, self)
+        for name, art in (("Hotspot", "Control Center"), ("Connected phone", "Control Center"), ("Performance", "Settings")):
+            add_section(name, art, self.controls.pages[name])
+        privacy = section("Privacy", "Privacy and security", "Control Center")
         for pane, title, key, default in [
             (privacy, "Remember visited pages for search", "browser_history_enabled", False),
             (privacy, "Keep recent clipboard text until lock", "clipboard", False),
             (workspace, "Restore open panels at startup", "restore", True),
+            (workspace, "Open AirCursor full screen", "start_fullscreen", True),
             (workspace, "Show desktop calendar widget", "calendar_widget", False),
             (workspace, "Show one panel at a time", "stage", False),
         ]:
@@ -390,12 +390,10 @@ class Preferences(QWidget):
             )
         )
         privacy.addStretch()
-        workspace.addWidget(
-            button("Open AirBoost profiles", lambda: desk.open("Control Center").setCurrentIndex(2))
-        )
+        workspace.addWidget(label("Press F11 to switch between full screen and a window."))
         workspace.addWidget(label(f"AirCursor for Windows · {VERSION}"))
         workspace.addStretch()
-        windows = section("Windows settings")
+        windows = section("Windows", "Windows settings", "Launcher")
         for name, page in SYSTEM.items():
             windows.addWidget(button(name, lambda page=page: system_link(self, "ms-settings:" + page)))
         from PySide6.QtCore import QUrl
@@ -410,3 +408,9 @@ class Preferences(QWidget):
             )
         )
         windows.addStretch()
+        self.nav.currentRowChanged.connect(stack.setCurrentIndex)
+        self.nav.setCurrentRow(0)
+
+    def select_page(self, name):
+        self.nav.setCurrentRow(self.sections[name])
+        self.controls.refresh()

@@ -617,7 +617,7 @@ Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Repeater {
-                        model: [["wireless", "Hotspot", shell.network, "Control Center"], ["phone", "Phone input", shell.receiver, "remote"], ["sun", "Appearance", root.dark ? "Dark" : "Light", "toggle-appearance"], ["grid", "Workspace", shell.spaceName, "next-space"]]
+                        model: [["wireless", "Hotspot", shell.network, "hotspot"], ["phone", "Phone input", shell.receiver, "remote"], ["sun", "Appearance", root.dark ? "Dark" : "Light", "toggle-appearance"], ["grid", "Workspace", shell.spaceName, "next-space"]]
                         delegate: Rectangle {
                             required property var modelData
                             Layout.fillWidth: true
@@ -687,10 +687,10 @@ Item {
                         Layout.fillWidth: true
                     }
                     Button {
-                        text: root.overlay === "quick" ? "All controls  ›" : "Done"
+                        text: root.overlay === "quick" ? "Open Settings  ›" : "Done"
                         palette.buttonText: root.ink
                         flat: true
-                        onClicked: root.overlay === "quick" ? root.run("Control Center") : root.overlay = ""
+                        onClicked: root.overlay === "quick" ? root.run("Settings") : root.overlay = ""
                     }
                 }
             }

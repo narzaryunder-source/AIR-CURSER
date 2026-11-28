@@ -342,6 +342,8 @@ class Shell(QObject):
             return
         if cmd in ("Launcher", "Overview"):
             self.d.show_overlay("spotlight" if cmd == "Launcher" else "overview")
+        elif cmd == "Control Center":
+            self.d.show_overlay("quick")
         elif cmd == "Downloads":
             self.d.open("Files").downloads()
         elif cmd == "Terminal":
@@ -349,7 +351,9 @@ class Shell(QObject):
         elif cmd in self.d.names:
             self.d.open(cmd)
         elif cmd == "remote":
-            self.d.open("Control Center").setCurrentIndex(1)
+            self.d.open_settings("Connected phone")
+        elif cmd == "hotspot":
+            self.d.open_settings("Hotspot")
         elif cmd in ("next-space", "space:1", "space:2"):
             self.d.switch_space((3 - self.d.space) if cmd == "next-space" else int(cmd[-1]))
         elif cmd == "exit-full":

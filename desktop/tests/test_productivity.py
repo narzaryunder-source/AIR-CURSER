@@ -257,6 +257,84 @@ def test_lightweight_chat_bounds_input_without_trimming_saved_history():
         read_model_download(BytesIO(b'{"status":"pulling"}\n'))
 
 
+def test_scheduled_chat_runs_once_and_keeps_project_when_air_ai_is_closed(app, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from PySide6.QtTest import QTest
+    from aircursor_desktop import intelligence, scheduled
+
+    now = 1_780_000_000
+    monkeypatch.setattr(scheduled, "time", SimpleNamespace(time=lambda: now))
+    calls = []
+
+    def chat(messages):
+        calls.append(messages)
+        return "A real client would render this response.", 8
+
+    monkeypatch.setattr(intelligence, "lightweight_chat", chat)
+    settings = Settings(str(tmp_path / "schedule.json"))
+    settings.set(ai_projects=[{"id": "home", "name": "Home"}])
+    tasks = scheduled.Scheduler(settings)
+    tasks.add("One-time task", "Summarize these notes", now - 5, False, "home")
+    tasks.run_due()
+    assert calls == []
+    tasks.activate(True)
+    for _ in range(100):
+        if settings.get("conversations"):
+            break
+        QTest.qWait(10)
+    tasks.run_due()
+    assert len(calls) == 1
+    assert tasks.tasks()[0]["status"] == "Completed"
+    assert not tasks.tasks()[0]["enabled"] and not tasks.timer.isActive()
+    saved = Settings(str(tmp_path / "schedule.json")).get("conversations")
+    assert saved[0]["project"] == "home"
+    assert saved[0]["messages"][-1]["content"] == "A real client would render this response."
+    air_ai = intelligence.Intelligence(settings, lambda _: None, lambda: None, scheduler=tasks)
+    air_ai.project.setCurrentIndex(air_ai.project.findData("home"))
+    assert air_ai.sessions.currentText() == "One-time task"
+    air_ai.new()
+    assert air_ai.selected_chat()["project"] == "home"
+    air_ai.close()
+    tasks.activate(False)
+
+
+def test_ai_connector_requires_remote_approval_and_excludes_attachment_from_saved_chat(app, tmp_path, monkeypatch):
+    from aircursor_desktop import intelligence as ai
+    from aircursor_desktop.ai_context import MAX_CONTEXT_BYTES, read_text_context
+
+    path = tmp_path / "note.txt"
+    path.write_text("Selected source text", encoding="utf-8")
+    huge = tmp_path / "huge.txt"
+    huge.write_bytes(b"x" * (MAX_CONTEXT_BYTES + 1))
+    with pytest.raises(ValueError, match="24 KiB"):
+        read_text_context(huge)
+
+    settings = Settings(str(tmp_path / "connectors.json"))
+    panel = ai.Intelligence(settings, lambda _: None, lambda: None)
+    panel.attach(*read_text_context(path))
+    panel.provider.setCurrentText("OpenRouter")
+    panel.model.addItem("fixture-model")
+    panel.model.setCurrentIndex(0)
+    panel.prompt.setPlainText("Summarize the attachment")
+    recorded = []
+
+    def api_call(provider, path, payload, **kwargs):
+        recorded.append(payload)
+        return {"choices": [{"message": {"content": "Summary"}}]}
+
+    monkeypatch.setattr(ai, "api_call", api_call)
+    monkeypatch.setattr(panel.work, "run", lambda fetch, done, fail: done(fetch()))
+    monkeypatch.setattr(ai, "confirm", lambda *_: False)
+    panel.send()
+    assert not recorded and panel.attachment
+    monkeypatch.setattr(ai, "confirm", lambda *_: True)
+    panel.send()
+    assert "Selected source text" in recorded[0]["messages"][-1]["content"]
+    assert settings.get("conversations")[0]["messages"][0]["content"] == "Summarize the attachment"
+    assert panel.attachment is None
+    panel.close()
+
+
 def test_hotspot_requires_selected_interface_even_when_host_is_online(tmp_path, monkeypatch):
     settings = Settings(str(tmp_path / "s.json"))
     settings.set(phone_ssid="Phone")
