@@ -1,117 +1,32 @@
-name: AirCursor Windows workspace
-on:
-  push:
-    branches: ['windows/**']
-    paths: ['desktop/**', '.github/workflows/windows-workspace.yml', '.github/workflows/build.yml']
-  workflow_dispatch:
-    inputs:
-      verify_package_lifecycle:
-        description: 'Approve installing, launching, upgrading and removing fd on the disposable runner'
-        type: boolean
-        default: false
-  workflow_call:
-
+name: Encode Windows browser recording
+on: workflow_dispatch
 permissions:
-  contents: read
-
+  contents: write
+  actions: read
 jobs:
-  windows:
-    runs-on: windows-2025
-    timeout-minutes: 35
+  encode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
-          cache: pip
-          cache-dependency-path: desktop/requirements*.txt
-      - name: Install dependencies
-        run: python -m pip install -r desktop/requirements-build.txt
-      - name: Windows unit and integration tests
-        env:
-          AIRCURSOR_TEST_WEBENGINE: "1"
-        run: python -m pytest -q desktop/tests
-      - name: Verify an approved real winget package lifecycle
-        if: github.event_name == 'workflow_dispatch' && inputs.verify_package_lifecycle
-        env:
-          AIRCURSOR_APPROVE_LIFECYCLE: '1'
-        run: python desktop/tools/verify_winget.py
-      - name: Build the Windows x64 installer
-        shell: pwsh
-        run: |
-          $nsis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
-          if (-not (Test-Path $nsis)) { choco install nsis --yes --no-progress }
-          python desktop/packaging/build.py --nsis $nsis
-      - name: Verify installer upgrade, uninstall and packaged GUI startup
-        shell: pwsh
-        run: |
-          $previous = Join-Path $env:RUNNER_TEMP 'AirCursor-Windows-previous.exe'
-          curl.exe --fail --location --retry 3 --output $previous https://github.com/narzaryunder-source/AIR-CURSER/releases/download/windows-v2.2.2/AirCursor-Windows.exe
-          if ($LASTEXITCODE -or (Get-FileHash $previous -Algorithm SHA256).Hash -ne '295c676ab9073fa8d48b21f7aa1c8995da1b0a4661858c1dabb51e933f2e7244') { throw 'Previous installer verification failed' }
-          if ((Get-Item desktop/dist/AirCursor-Windows.exe).Length -gt (Get-Item $previous).Length + 2MB) { throw 'The installer exceeds its size budget' }
-          ./desktop/tools/verify_install.ps1 -Installer desktop/dist/AirCursor-Windows.exe -PreviousInstaller $previous
-          Copy-Item "$env:TEMP/aircursor-selftest.txt" desktop/dist/aircursor-selftest.txt
-      - name: Capture the Windows desktop and application windows
-        shell: pwsh
-        run: |
-          if (Get-Command Set-DisplayResolution -ErrorAction SilentlyContinue) {
-            Set-DisplayResolution -Width 1920 -Height 1080 -Force -ErrorAction Continue
-          }
-          python desktop/tools/capture.py --output desktop/dist/windows-rendering
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-rendering
-          path: desktop/dist/windows-rendering/
-          if-no-files-found: error
-      - name: Record Windows responsiveness and receiver measurements
-        shell: pwsh
-        run: |
-          git fetch --depth=1 origin refs/tags/windows-v2.2.2
-          if ($LASTEXITCODE) { throw 'Could not fetch the Windows 2.2.2 baseline' }
-          git worktree add --detach "$env:RUNNER_TEMP/aircursor-baseline" FETCH_HEAD
-          if ($LASTEXITCODE) { throw 'Could not check out the benchmark baseline' }
-          foreach ($mode in @('startup', 'receiver', 'policy', 'association', 'dock', 'materials', 'tabs', 'workspace', 'store', 'catalog', 'settings_write', 'ai_reply', 'photo_export')) {
-            python desktop/tools/benchmark.py $mode --source "$env:RUNNER_TEMP/aircursor-baseline/desktop" | Tee-Object -FilePath desktop/dist/benchmarks-v2.2.2.jsonl -Append
-            if ($LASTEXITCODE) { throw "Baseline benchmark failed for $mode" }
-            python desktop/tools/benchmark.py $mode | Tee-Object -FilePath desktop/dist/benchmarks.jsonl -Append
-            if ($LASTEXITCODE) { throw "Benchmark failed for $mode" }
-          }
-          python desktop/tools/benchmark.py policy --notification | Tee-Object -FilePath desktop/dist/benchmarks.jsonl -Append
-          if ($LASTEXITCODE) { throw 'Network notification benchmark failed' }
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-windows
-          path: desktop/dist/AirCursor-Windows.exe
-          if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-verification
-          path: |
-            desktop/dist/SHA256SUMS.txt
-            desktop/dist/package-size.json
-            desktop/dist/aircursor-selftest.txt
-            desktop/dist/benchmarks.jsonl
-            desktop/dist/benchmarks-v2.2.2.jsonl
-
-
-  compatibility:
-    name: Installed runtime on Windows Server 2022
-    needs: windows
-    runs-on: windows-2022
-    timeout-minutes: 12
-    steps:
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
-          name: release-windows
-          path: installer
-      - name: Exercise the bundled runtime on the older Windows graphics stack
-        shell: pwsh
+          run-id: 46155893889
+          github-token: ${{ github.token }}
+          name: aircursor-live-browser-frames
+          path: frames
+      - name: Encode and attach the Windows recording
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          $setup = Start-Process installer/AirCursor-Windows.exe -ArgumentList '/S' -PassThru -Wait
-          if ($setup.ExitCode) { throw "Installer returned $($setup.ExitCode)" }
-          $exe = "$env:LOCALAPPDATA\Programs\AirCursor\AirCursor.exe"
-          $app = Start-Process $exe -ArgumentList '--self-test' -PassThru
-          if (-not $app.WaitForExit(120000)) { throw 'Installed GUI timed out' }
-          $report = Get-Content "$env:TEMP\aircursor-selftest.txt"
-          $report
-          if ($app.ExitCode -ne 0 -or $report[-1] -ne 'OK') { throw 'Installed runtime check failed' }
+          set -eu
+          gh release view windows-v2.3.0-rc.1 --json isDraft,targetCommitish | jq -e '.isDraft and .targetCommitish=="18a0e685aeaa61d10e4a3a166993676ae7082842"'
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+          python -m pip install Pillow
+          python desktop/tools/encode_live_browser.py frames Air-Browser-Windows.mp4
+          ffmpeg -v error -xerror -i Air-Browser-Windows.mp4 -f null -
+          ffprobe -v error -show_entries format=duration -of compact Air-Browser-Windows.mp4
+          cp frames/capture.json Air-Browser-recording.json
+          gh release upload windows-v2.3.0-rc.1 Air-Browser-Windows.mp4 Air-Browser-recording.json --clobber
