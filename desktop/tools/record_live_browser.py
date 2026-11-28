@@ -23,7 +23,7 @@ from aircursor_desktop.ui import Desktop
 
 SITES = [
     ("GitHub", "https://github.com/narzaryunder-source/AIR-CURSER"),
-    ("Pixabay", "https://pixabay.com/"),
+    ("Pixabay", "https://pixabay.com/photos/"),
     ("NASA", "https://www.nasa.gov/"),
 ]
 BLOCKING = ("just a moment", "verify you are human", "checking your browser", "attention required",
@@ -91,7 +91,7 @@ def main():
             ]))
             painter.end()
             frame = f"{len(meta['frames']):05d}.jpg"
-            if image.save(str(output / frame), "JPG", 60):
+            if image.save(str(output / frame), "JPG", 57):
                 meta["frames"].append(dict(file=frame, at=at))
 
         def click(widget, pos=None):
@@ -110,36 +110,41 @@ def main():
         def load(browser, name, url):
             click(browser.address)
             QTest.keyClick(browser.address, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
-            QTest.keyClicks(browser.address, url, delay=3)
+            app.clipboard().setText(url)
+            QTest.keyClick(browser.address, Qt.Key.Key_V, Qt.KeyboardModifier.ControlModifier)
+            QTest.qWait(380)
             started = event("navigation", site=name, url=url)
             QTest.keyClick(browser.address, Qt.Key.Key_Return)
             view = browser.current()
             assert hasattr(view, "page"), "The URL stayed on a new tab"
             finished = []
             view.page().loadFinished.connect(
-                lambda ok: finished.append((bool(ok), elapsed())) if not finished else None
+                lambda ok: finished.append((bool(ok), elapsed())) if not finished or ok else None
             )
             until(lambda: bool(finished), 6.8)
+            if any(marker in view.title().lower() for marker in BLOCKING):
+                # Give the site's ordinary automatic security check time to finish.
+                until(lambda: not any(marker in view.title().lower() for marker in BLOCKING), 4)
             result = []
 
             def received(data):
-                if isinstance(data, dict):
-                    result.append(data)
+                if isinstance(data, str):
+                    result.append(json.loads(data))
 
             view.page().runJavaScript(
-                "({title:document.title, text:(document.body?.innerText||'').slice(0,320),"
-                " height:document.documentElement.scrollHeight, y:scrollY})", received
+                "JSON.stringify({title:document.title, text:(document.body?.innerText||'').slice(0,320),"
+                " height:document.documentElement.scrollHeight, y:scrollY, resources:performance.getEntriesByType('resource').length})", received
             )
             until(lambda: bool(result), 0.65)
             visible = result[0] if result else {}
-            text = (visible.get("title", "") + " " + visible.get("text", "")).lower()
+            text = (view.title() + " " + visible.get("title", "") + " " + visible.get("text", "")).lower()
             block = next((marker for marker in BLOCKING if marker in text), None)
             status = (
                 "Security check" if block else
-                "Loaded" if finished and finished[0][0] else
+                "Loaded" if finished and finished[-1][0] else
                 "Load failed" if finished else "Still loading"
             )
-            stamp = finished[0][1] if finished else elapsed()
+            stamp = finished[-1][1] if finished else elapsed()
             record = dict(name=name, requested=url, actual=view.url().toString(), title=view.title(),
                           status=status, navigation_at=started, reported_at=elapsed(),
                           seconds=round(stamp - started, 3), viewport=visible)
