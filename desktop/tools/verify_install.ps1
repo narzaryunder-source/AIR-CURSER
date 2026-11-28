@@ -2,7 +2,9 @@ param(
     [Parameter(Mandatory)]
     [string] $Installer,
     [Parameter(Mandatory)]
-    [string] $PreviousInstaller
+    [string] $PreviousInstaller,
+    [Parameter(Mandatory)]
+    [string] $PreviousVersion
 )
 
 $ErrorActionPreference = 'Stop'
@@ -15,6 +17,13 @@ $shortcutDir = [Environment]::GetFolderPath('Programs')
 $safeShortcut = Join-Path $shortcutDir 'AirCursor (Safe Mode).lnk'
 $settings = Join-Path $env:APPDATA 'AirCursor\settings.json'
 $report = Join-Path $env:TEMP 'aircursor-selftest.txt'
+$versionFile = Join-Path $PSScriptRoot '..\aircursor_desktop\__init__.py'
+$expectedVersion = [regex]::Match((Get-Content $versionFile -Raw), '(?m)^VERSION = "([^"]+)"').Groups[1].Value
+if (-not $expectedVersion) { throw 'The source version could not be read.' }
+
+function Get-InstalledVersion {
+    [regex]::Match((Get-Content $runtimeVersion -Raw), '(?m)^VERSION = "([^"]+)"').Groups[1].Value
+}
 
 function Assert-ExitCode($programPath, $options, $expected) {
     $process = Start-Process $programPath -ArgumentList $options -PassThru
@@ -44,8 +53,8 @@ While-WorkspaceReserved 'Local\AirCursor.Windows.Workspace' {
 }
 Assert-ExitCode $PreviousInstaller '/S' 0
 $retired = Join-Path $program 'runtime\PySide6\Qt6Quick3D.dll'
-if ((Get-Content $runtimeVersion -Raw) -notmatch '(?m)^VERSION = "2\.2\.2"\r?$' -or (Test-Path $retired)) {
-    throw 'The baseline installer did not install the slim 2.2.2 runtime.'
+if ((Get-InstalledVersion) -ne $PreviousVersion -or (Test-Path $retired)) {
+    throw "The baseline installer did not install the slim $PreviousVersion runtime."
 }
 $oldBytes = (Get-ChildItem -LiteralPath $program -File -Recurse | Measure-Object -Property Length -Sum).Sum
 
@@ -62,14 +71,14 @@ While-WorkspaceReserved 'Local\AirCursor.Windows.Runtime' {
 Assert-ExitCode $Installer '/S' 0
 if ((Get-FileHash $settings).Hash -ne $profileHash) { throw 'Upgrade changed the user profile.' }
 # The same bootstrap can launch multiple releases. Check the installed Python version instead.
-if ((Get-Content $runtimeVersion -Raw) -notmatch '(?m)^VERSION = "2\.3\.0"\r?$') {
+if ((Get-InstalledVersion) -ne $expectedVersion) {
     throw 'Upgrade did not replace the previous runtime.'
 }
 if (Test-Path $retired) { throw 'Upgrade left an unused Qt library behind.' }
 $newBytes = (Get-ChildItem -LiteralPath $program -File -Recurse | Measure-Object -Property Length -Sum).Sum
 if ($newBytes -gt $oldBytes + 2MB) { throw 'The installed runtime exceeds its size budget.' }
 $registry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\AirCursor'
-if ((Get-ItemPropertyValue $registry -Name DisplayVersion) -ne '2.3.0') {
+if ((Get-ItemPropertyValue $registry -Name DisplayVersion) -ne $expectedVersion) {
     throw 'Windows did not register the stable version.'
 }
 if (-not (Test-Path $safeShortcut)) { throw 'Safe Mode shortcut is missing.' }
@@ -114,5 +123,5 @@ if ((Test-Path $app) -or (Test-Path $runtimeVersion) -or (Test-Path $safeShortcu
 }
 if ((Get-FileHash $settings).Hash -ne $profileHash) { throw 'Uninstall changed the user profile.' }
 
-Add-Content $report "`nWindows 2.2.2 upgrade, guarded update and removal, Safe Mode shortcut, and preserved user settings verified."
+Add-Content $report "`nWindows $PreviousVersion upgrade, guarded update and removal, Safe Mode shortcut, and preserved user settings verified."
 Add-Content $report "Installed bytes before: $oldBytes. Installed bytes after: $newBytes."

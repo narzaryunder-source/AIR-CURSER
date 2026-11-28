@@ -49,7 +49,7 @@ jobs:
           curl.exe --fail --location --retry 3 --output $previous https://github.com/narzaryunder-source/AIR-CURSER/releases/download/windows-v2.3.0-rc.1/AirCursor-Windows.exe
           if ($LASTEXITCODE -or (Get-FileHash $previous -Algorithm SHA256).Hash -ne '69abe34f0a052e589a209849c2b2bad02dc7f5f007ea4991f7b2dc302095b443') { throw 'Previous installer verification failed' }
           if ((Get-Item desktop/dist/AirCursor-Windows.exe).Length -gt (Get-Item $previous).Length + 2MB) { throw 'The installer exceeds its size budget' }
-          ./desktop/tools/verify_install.ps1 -Installer desktop/dist/AirCursor-Windows.exe -PreviousInstaller $previous
+          ./desktop/tools/verify_install.ps1 -Installer desktop/dist/AirCursor-Windows.exe -PreviousInstaller $previous -PreviousVersion 2.3.0
           Copy-Item "$env:TEMP/aircursor-selftest.txt" desktop/dist/aircursor-selftest.txt
       - name: Verify Windows full-screen taskbar behavior
         run: python desktop/tools/verify_fullscreen.py
