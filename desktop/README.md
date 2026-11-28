@@ -119,3 +119,11 @@ Air Store offers separate **Game Launchers** and **Games** categories, plus vide
 Close AirCursor before running an update or uninstall. If the workspace stalls while restoring a session, open **AirCursor (Safe Mode)** from Start. It skips automatic restoration and uses software graphics for the workspace. Start AirCursor normally to return to the saved layout. If an individual browser tab stops after its Chromium renderer fails, use **Reload tab** or **Open in default browser**.
 
 [Windows bug report](report/WINDOWS-BUG-REPORT.md)
+
+### Air Browser and local AI in 2.3
+
+Open **Air Browser** from Windows Start for a browser-only process. It can run alongside AirCursor. Its own per-user cookies, bookmarks and tab recovery live under the AirCursor data folder in StandaloneBrowser. The desktop browser retains its existing profile. The standalone window exits when it detects a locked Windows desktop.
+
+In **Air AI**, choose **Qwen3 0.6B** with Ollama running. **Keep model ready for 2 minutes** retains its weights between follow-ups at the cost of resident memory. Click **Plan app launches** and describe a task to have the local model choose up to three installed Start apps. Review the names and registered identities before opening them. Connectors can attach text from a selected Word or PowerPoint file, or up to 100 top-level names from a coding project.
+
+For MP4-compatible footage, **Files → Trim video → Fast copy** reuses the original audio and video streams. Its start point depends on source keyframes. Choose frame-accurate H.264 export when a precise cut matters.

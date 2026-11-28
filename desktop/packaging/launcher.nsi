@@ -13,7 +13,13 @@ Icon "${BRANDICON}"
 !include "runtime-lock.nsh"
 Var RuntimeHandle
 Section
-  !insertmacro RequireAirCursorMutex "${AIRCURSOR_RUNTIME_MUTEX}" $RuntimeHandle "AirCursor is already running or setup is in progress."
+  ${GetParameters} $2
+  ${If} $2 == "--browser"
+  ${OrIf} $2 == "--browser-smoke-test"
+    !insertmacro RequireAirCursorMutex "${AIRCURSOR_BROWSER_MUTEX}" $RuntimeHandle "Air Browser is already running or setup is in progress."
+  ${Else}
+    !insertmacro RequireAirCursorMutex "${AIRCURSOR_RUNTIME_MUTEX}" $RuntimeHandle "AirCursor is already running or setup is in progress."
+  ${EndIf}
   SetOutPath "$EXEDIR\runtime"
   ${GetParameters} $0
   ClearErrors

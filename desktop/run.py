@@ -115,6 +115,9 @@ def self_test():
 if __name__ == "__main__":
     if "--self-test" in sys.argv:
         sys.exit(self_test())
+    if "--browser" in sys.argv or "--browser-smoke-test" in sys.argv:
+        from aircursor_desktop.standalone import main as browser_main
+        sys.exit(browser_main())
     safe_mode = "--safe-mode" in sys.argv
     if safe_mode:
         os.environ["QT_QUICK_BACKEND"] = "software"

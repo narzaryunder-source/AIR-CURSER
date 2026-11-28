@@ -14,8 +14,10 @@ ShowInstDetails show
 !include "runtime-lock.nsh"
 Var RuntimeHandle
 Var WorkspaceHandle
+Var BrowserHandle
 
 !macro ReserveInstallation
+  !insertmacro RequireAirCursorMutex "${AIRCURSOR_BROWSER_MUTEX}" $BrowserHandle "Close Air Browser and retry setup."
   !insertmacro RequireAirCursorMutex "${AIRCURSOR_RUNTIME_MUTEX}" $RuntimeHandle "Close AirCursor and retry setup."
   !insertmacro RequireAirCursorMutex "${AIRCURSOR_WORKSPACE_MUTEX}" $WorkspaceHandle "Close AirCursor and retry setup."
 !macroend
@@ -42,12 +44,14 @@ Section "Install"
   File /r "${PAYLOAD_GLOB}"
   !include "${RETIRED_RUNTIME}"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
+  CreateShortcut "$SMPROGRAMS\Air Browser.lnk" "$INSTDIR\AirCursor.exe" "--browser"
   CreateShortcut "$SMPROGRAMS\AirCursor.lnk" "$INSTDIR\AirCursor.exe"
   CreateShortcut "$SMPROGRAMS\AirCursor (Safe Mode).lnk" "$INSTDIR\AirCursor.exe" "--safe-mode"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AirCursor" "DisplayName" "AirCursor for Windows"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AirCursor" "DisplayVersion" "${AIRCURSOR_VERSION}"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AirCursor" "DisplayIcon" "$INSTDIR\AirCursor.exe"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AirCursor" "UninstallString" '"$INSTDIR\Uninstall.exe"'
+  System::Call 'kernel32::CloseHandle(p $BrowserHandle)'
   System::Call 'kernel32::CloseHandle(p $WorkspaceHandle)'
   System::Call 'kernel32::CloseHandle(p $RuntimeHandle)'
 
@@ -55,6 +59,7 @@ SectionEnd
 Section "Uninstall"
   SetShellVarContext current
   SetRegView 64
+  Delete "$SMPROGRAMS\Air Browser.lnk"
   Delete "$SMPROGRAMS\AirCursor.lnk"
   Delete "$SMPROGRAMS\AirCursor (Safe Mode).lnk"
   !include "${UNINSTALL_FILES}"

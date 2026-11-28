@@ -46,8 +46,8 @@ jobs:
         shell: pwsh
         run: |
           $previous = Join-Path $env:RUNNER_TEMP 'AirCursor-Windows-previous.exe'
-          curl.exe --fail --location --retry 3 --output $previous https://github.com/narzaryunder-source/AIR-CURSER/releases/download/windows-v2.2.1/AirCursor-Windows.exe
-          if ($LASTEXITCODE -or (Get-FileHash $previous -Algorithm SHA256).Hash -ne '972575a3cfbd8e07dcbe7f2a626855a15b37c6575ea58af26014249d782a0479') { throw 'Previous installer verification failed' }
+          curl.exe --fail --location --retry 3 --output $previous https://github.com/narzaryunder-source/AIR-CURSER/releases/download/windows-v2.2.2/AirCursor-Windows.exe
+          if ($LASTEXITCODE -or (Get-FileHash $previous -Algorithm SHA256).Hash -ne '295c676ab9073fa8d48b21f7aa1c8995da1b0a4661858c1dabb51e933f2e7244') { throw 'Previous installer verification failed' }
           if ((Get-Item desktop/dist/AirCursor-Windows.exe).Length -gt (Get-Item $previous).Length + 2MB) { throw 'The installer exceeds its size budget' }
           ./desktop/tools/verify_install.ps1 -Installer desktop/dist/AirCursor-Windows.exe -PreviousInstaller $previous
           Copy-Item "$env:TEMP/aircursor-selftest.txt" desktop/dist/aircursor-selftest.txt
@@ -66,12 +66,12 @@ jobs:
       - name: Record Windows responsiveness and receiver measurements
         shell: pwsh
         run: |
-          git fetch --depth=1 origin refs/tags/windows-v2.2.1
-          if ($LASTEXITCODE) { throw 'Could not fetch the Windows 2.2.1 baseline' }
+          git fetch --depth=1 origin refs/tags/windows-v2.2.2
+          if ($LASTEXITCODE) { throw 'Could not fetch the Windows 2.2.2 baseline' }
           git worktree add --detach "$env:RUNNER_TEMP/aircursor-baseline" FETCH_HEAD
           if ($LASTEXITCODE) { throw 'Could not check out the benchmark baseline' }
           foreach ($mode in @('startup', 'receiver', 'policy', 'association', 'dock', 'materials', 'tabs', 'workspace', 'store', 'catalog', 'settings_write', 'ai_reply', 'photo_export')) {
-            python desktop/tools/benchmark.py $mode --source "$env:RUNNER_TEMP/aircursor-baseline/desktop" | Tee-Object -FilePath desktop/dist/benchmarks-v2.2.1.jsonl -Append
+            python desktop/tools/benchmark.py $mode --source "$env:RUNNER_TEMP/aircursor-baseline/desktop" | Tee-Object -FilePath desktop/dist/benchmarks-v2.2.2.jsonl -Append
             if ($LASTEXITCODE) { throw "Baseline benchmark failed for $mode" }
             python desktop/tools/benchmark.py $mode | Tee-Object -FilePath desktop/dist/benchmarks.jsonl -Append
             if ($LASTEXITCODE) { throw "Benchmark failed for $mode" }
@@ -91,7 +91,7 @@ jobs:
             desktop/dist/package-size.json
             desktop/dist/aircursor-selftest.txt
             desktop/dist/benchmarks.jsonl
-            desktop/dist/benchmarks-v2.2.1.jsonl
+            desktop/dist/benchmarks-v2.2.2.jsonl
 
 
   compatibility:

@@ -147,7 +147,7 @@ def test_video_trim_through_files_action(app, tmp_path, monkeypatch):
     )
     before = source.read_bytes()
     window = Files(Settings(str(tmp_path / "settings.json")))
-    monkeypatch.setattr(media, "parameters", lambda *args: [0.3, 1.1])
+    monkeypatch.setattr(media, "parameters", lambda *args: [0.3, 1.1, False])
     monkeypatch.setattr(media, "destination", lambda *args: str(dest))
     media.trim_video(window, source)
     assert dest.exists(), window.status.text()
@@ -158,7 +158,7 @@ def test_video_trim_through_files_action(app, tmp_path, monkeypatch):
     )
     assert float(result.strip()) == pytest.approx(0.8, abs=0.06)
     assert before == source.read_bytes()
-    monkeypatch.setattr(media, "parameters", lambda *args: [3.0, 4.0])
+    monkeypatch.setattr(media, "parameters", lambda *args: [3.0, 4.0, False])
     missing = tmp_path / "past-the-end.mp4"
     monkeypatch.setattr(media, "destination", lambda *args: str(missing))
     media.trim_video(window, source)

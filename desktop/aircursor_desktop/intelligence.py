@@ -192,13 +192,13 @@ def lightweight_messages(messages):
     return messages[start:]
 
 
-def lightweight_chat(messages):
+def lightweight_chat(messages, keep_warm=False):
     result = ollama_call("/api/chat", {
         "model": LIGHT_MODEL,
         "messages": messages,
         "stream": False,
         "think": False,
-        "keep_alive": 0,
+        "keep_alive": "2m" if keep_warm else 0,
         "options": {
             "num_ctx": LIGHT_CONTEXT,
             "num_predict": LIGHT_OUTPUT,
@@ -244,6 +244,7 @@ class Intelligence(QWidget):
         left.addWidget(button("Connectors…", self.connectors))
         left.addWidget(button("Provider key…", self.key))
         left.addWidget(button("Open terminal", terminal))
+        left.addWidget(button("Plan app launches…", self.plan_apps))
         section = label("Conversations")
         section.setObjectName("section")
         left.addWidget(section)
@@ -265,9 +266,12 @@ class Intelligence(QWidget):
         self.model.currentIndexChanged.connect(self.pricing)
         self.lightweight = QCheckBox("Lightweight local chat")
         self.lightweight.setChecked(self.s.get("ai_lightweight", False) is True)
-        self.lightweight.setToolTip("Use Qwen3 0.6B with short replies and release model memory after each reply.")
+        self.lightweight.setToolTip("Use Qwen3 0.6B with short replies and a 2,048-token context.")
         self.get_model = button("Get Qwen3 0.6B…", self.download_lightweight)
-        row(layout, self.lightweight, self.get_model).addStretch()
+        self.warm = QCheckBox("Keep model ready for 2 minutes")
+        self.warm.setChecked(bool(self.s.get("ai_keep_warm", False)))
+        self.warm.toggled.connect(lambda value: self.s.set(ai_keep_warm=value))
+        row(layout, self.lightweight, self.get_model, self.warm).addStretch()
         self.transcript = QStackedWidget()
         layout.addWidget(self.transcript, 1)
         welcome = QWidget()
@@ -300,7 +304,11 @@ class Intelligence(QWidget):
         self.transcript.addWidget(self.log)
         self.prompt = QPlainTextEdit()
         self.prompt.setPlaceholderText("Write a message…")
-        self.prompt.setMaximumHeight(76)
+        self.prompt.setMinimumHeight(70)
+        self.prompt.setMaximumHeight(98)
+        self.prompt.setStyleSheet("QPlainTextEdit { border: 1px solid #77838c; border-radius: 14px; padding: 8px; }")
+        self.log.setDocumentTitle("Air AI conversation")
+        self.log.document().setDocumentMargin(14)
         layout.addWidget(self.prompt)
         self.attachment_row = QWidget()
         attachment_layout = QHBoxLayout(self.attachment_row)
@@ -329,6 +337,7 @@ class Intelligence(QWidget):
         self.models = []
         provider = self.provider.currentText()
         self.lightweight.setVisible(provider == "Ollama")
+        self.warm.setVisible(self.lightweight_enabled())
         self.free.setVisible(provider == "OpenRouter")
         remote = provider == "OpenRouter" or (
             provider == "Custom" and not local_url(self.s.get("custom_ai_url"))
@@ -352,6 +361,7 @@ class Intelligence(QWidget):
 
     def set_lightweight(self, enabled):
         self.s.set(ai_lightweight=enabled)
+        self.warm.setVisible(self.lightweight_enabled())
         if enabled:
             self.filter()
             if not self.models and not self.downloading:
@@ -449,7 +459,7 @@ class Intelligence(QWidget):
             ram = psutil.virtual_memory()
             size = m.get("disk_bytes")
             size_text = f" · {size / 2**30:.1f} GiB model on disk" if isinstance(size, int) else ""
-            mode = "Lightweight · unloads after reply" if self.lightweight_enabled() else "Local model"
+            mode = "Qwen3 lightweight" if self.lightweight_enabled() else "Local model"
             self.status.setText(f"{mode} · {ram.available / 2**30:.1f} GiB RAM available{size_text}")
             return
         self.status.setText(
@@ -589,15 +599,63 @@ class Intelligence(QWidget):
         self.attachment_label.setText(f"Attached for next message · {name}")
         self.attachment_row.show()
 
+    def plan_apps(self):
+        from .app_agent import plan_launch
+        from .applications import launch_registered
+        from .session import interactive_desktop
+
+        if self.pending or self.downloading or (self.scheduler and self.scheduler.running):
+            self.status.setText("Wait for the active model operation.")
+            return
+        task, ok = QInputDialog.getText(self, "Local app assistant", "What would you like to work on?")
+        if not ok or not task.strip():
+            return
+        self.pending = True
+        self.status.setText("Qwen3 is choosing from your Windows Start apps…")
+
+        def done(apps):
+            self.pending = False
+            if not self.isVisible() or not interactive_desktop():
+                return
+            if not apps:
+                self.status.setText("No matching installed apps were selected.")
+                return
+            summary = "\n".join(f"{name}  ({identity[9:]})" for name, identity in apps)
+            if confirm(self, "Open these Windows apps?", summary) and interactive_desktop():
+                try:
+                    for _, identity in apps:
+                        launch_registered(identity)
+                    self.status.setText("Launch requests sent to Windows.")
+                except (OSError, ValueError) as exc:
+                    self.status.setText(str(exc))
+            else:
+                self.status.setText("App launch cancelled.")
+
+        def failed(reason):
+            self.pending = False
+            self.status.setText(f"Local app assistant: {reason}")
+
+        self.work.run(lambda: plan_launch(task), done, failed)
+
     def connectors(self):
-        choices = ["Attach a text file", "Attach clipboard text", "Attach computer information", "Configure an API endpoint"]
+        choices = ["Attach a text file", "Attach clipboard text", "Attach computer information", "Configure an API endpoint",
+                   "Attach Word or PowerPoint text", "Attach coding project file list"]
         action, ok = QInputDialog.getItem(self, "Connectors", "Include context or connect a provider", choices, editable=False)
         if not ok:
             return
         if action == choices[3]:
             self.configure()
-        elif action == choices[0]:
-            path, _ = QFileDialog.getOpenFileName(self, "Select a UTF-8 text file")
+        elif action in (choices[0], choices[4], choices[5]):
+            from .ai_context import office_context, project_context
+            reader = read_text_context
+            if action == choices[4]:
+                path, _ = QFileDialog.getOpenFileName(self, "Select a document", "", "Office (*.docx *.pptx)")
+                reader = office_context
+            elif action == choices[5]:
+                path = QFileDialog.getExistingDirectory(self, "Select a coding project")
+                reader = project_context
+            else:
+                path, _ = QFileDialog.getOpenFileName(self, "Select a UTF-8 text file")
             if not path:
                 return
             self.attachment_read += 1
@@ -607,7 +665,7 @@ class Intelligence(QWidget):
                 if self.attachment_read == generation:
                     self.attach(*result)
 
-            self.work.run(lambda: read_text_context(path), loaded, self.status.setText)
+            self.work.run(lambda: reader(path), loaded, self.status.setText)
         else:
             self.attachment_read += 1
             try:
@@ -698,6 +756,7 @@ class Intelligence(QWidget):
             name, context = attachment
             sent = [*messages[:-1], {"role": "user", "content": f"{text}\n\nContext from {name}:\n{context}"}]
         lightweight = self.lightweight_enabled()
+        keep_warm = self.warm.isChecked()
         try:
             if lightweight:
                 sent = lightweight_messages(sent)
@@ -744,7 +803,7 @@ class Intelligence(QWidget):
 
         def fetch():
             if lightweight:
-                answer, count = lightweight_chat(sent)
+                answer, count = lightweight_chat(sent, keep_warm=keep_warm)
             else:
                 result = api_call(provider, "/chat/completions", {"model": model, "messages": sent}, custom=endpoint)
                 answer = result["choices"][0]["message"]["content"]

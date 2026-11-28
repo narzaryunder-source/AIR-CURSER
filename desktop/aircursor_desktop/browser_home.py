@@ -16,13 +16,21 @@ def wallpaper():
     return QPixmap.fromImage(reader.read())
 
 
+@lru_cache(maxsize=1)
+def scaled_wallpaper(width, height):
+    return wallpaper().scaled(
+        QSize(width, height),
+        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+
+
 class NewTab(QWidget):
     navigate = Signal(str)
 
     def __init__(self, private, bookmarks):
         super().__init__()
         self.private = private
-        self.scaled = QPixmap()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 18, 30, 24)
         layout.addStretch(2)
@@ -66,16 +74,10 @@ class NewTab(QWidget):
 
     def paintEvent(self, event):
         p = QPainter(self)
-        if self.scaled.isNull() or self.last_size != self.size():
-            self.last_size = self.size()
-            self.scaled = wallpaper().scaled(
-                self.last_size,
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation,
-            )
+        background = scaled_wallpaper(self.width(), self.height())
         p.drawPixmap(
-            (self.width() - self.scaled.width()) // 2,
-            (self.height() - self.scaled.height()) // 2,
-            self.scaled,
+            (self.width() - background.width()) // 2,
+            (self.height() - background.height()) // 2,
+            background,
         )
         p.fillRect(self.rect(), QColor(15, 28, 49, 115 if self.private else 47))

@@ -1,6 +1,7 @@
 !ifndef AIRCURSOR_RUNTIME_LOCK
 !define AIRCURSOR_RUNTIME_LOCK
 !include LogicLib.nsh
+!define AIRCURSOR_BROWSER_MUTEX "Local\AirCursor.Windows.Browser"
 !define AIRCURSOR_RUNTIME_MUTEX "Local\AirCursor.Windows.Runtime"
 !define AIRCURSOR_WORKSPACE_MUTEX "Local\AirCursor.Windows.Workspace"
 

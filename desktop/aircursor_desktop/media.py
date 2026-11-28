@@ -62,9 +62,13 @@ def export_photo(source, destination, rotation, max_edge):
             raise OSError("Could not write the edited image.")
 
 
-def trim_args(source, start, end, output):
+def trim_args(source, start, end, output, stream_copy=False):
     if not (math.isfinite(start) and math.isfinite(end) and 0 <= start < end):
         raise ValueError("End time must be later than start time.")
+    codec = ["-c", "copy"] if stream_copy else [
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-vf",
+        "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-c:a", "aac",
+    ]
     return [
         "-hide_banner",
         "-abort_on",
@@ -83,14 +87,7 @@ def trim_args(source, start, end, output):
         "0:v:0",
         "-map",
         "0:a:0?",
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        "-vf",
-        "pad=ceil(iw/2)*2:ceil(ih/2)*2",
-        "-c:a",
-        "aac",
+        *codec,
         "-movflags",
         "+faststart",
         str(output),
@@ -158,10 +155,13 @@ def trim_video(files, path):
         box.setDecimals(3)
         box.setSuffix(" s")
     times[1].setValue(10)
-    values = parameters(files, "Trim video", list(zip(("Start", "End"), times)))
+    mode = QComboBox()
+    mode.addItem("Frame-accurate H.264 export", False)
+    mode.addItem("Fast copy · cut can begin at an earlier keyframe", True)
+    values = parameters(files, "Trim video", [("Start", times[0]), ("End", times[1]), ("Export", mode)])
     if not values:
         return
-    start, end = values
+    start, end, stream_copy = values
     if end <= start:
         files.status.setText("End time must be later than start time.")
         return
@@ -177,7 +177,7 @@ def trim_video(files, path):
     process.errorOccurred.connect(progress.reject)
     try:
         with new_export(name) as output:
-            process.start(exe, trim_args(path, start, end, output))
+            process.start(exe, trim_args(path, start, end, output, stream_copy))
             ok = progress.exec()
             if process.state() != QProcess.ProcessState.NotRunning:
                 process.kill()

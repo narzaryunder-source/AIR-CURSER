@@ -295,16 +295,22 @@ class Browser(QWidget):
             return home
         return self.add_web_view(private, focus, position, QUrl(web_url(url)))
 
-    def add_web_view(self, private, focus=True, position=-1, url=None):
-        from .browser_engine import Page, QWebEngineProfile, QWebEngineSettings, QWebEngineView
+    def prepare_normal_profile(self):
+        if self.normal is None:
+            from .browser_engine import QWebEngineProfile
 
-        self._view_type = QWebEngineView
-        if not private and self.normal is None:
             self.normal = QWebEngineProfile("AirBrowser", self)
             prefix = Path(data_dir()) / self.s.get("browser_profile", "")
             self.normal.setPersistentStoragePath(str(prefix / "WebProfile"))
             self.normal.setCachePath(str(prefix / "WebCache"))
             self.normal.downloadRequested.connect(self.download)
+
+    def add_web_view(self, private, focus=True, position=-1, url=None):
+        from .browser_engine import Page, QWebEngineProfile, QWebEngineSettings, QWebEngineView
+
+        self._view_type = QWebEngineView
+        if not private:
+            self.prepare_normal_profile()
 
         if private and self.private is None:
             self.private = QWebEngineProfile(self)
