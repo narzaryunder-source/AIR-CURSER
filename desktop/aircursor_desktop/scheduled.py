@@ -168,7 +168,7 @@ def new_schedule(parent, scheduler, text, project):
 
     def save():
         name, text = title.text().strip(), prompt.toPlainText().strip()
-        due = when.dateTime().toSecsSinceEpoch()
+        due = when.dateTime().toSecsSinceEpoch() // 60 * 60
         if not name or not text or due <= time.time():
             status.setText("Enter a name, a prompt, and a future time.")
             return

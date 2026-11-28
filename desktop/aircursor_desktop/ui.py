@@ -447,6 +447,27 @@ class Desktop(QMainWindow):
         )
         self.refresh_control()
 
+    def sample_network_status(self):
+        wifi = ""
+        try:
+            info = self.hot.wifi()
+            if info and info["ssid"]:
+                wifi = f"{info['ssid']}  {info['signal']}\n"
+        except OSError as exc:
+            wifi = (
+                "Windows Wi-Fi service is stopped.\n" if getattr(exc, "winerror", None) == 1062
+                else "Windows could not read Wi-Fi status.\n"
+            )
+            # A PC can still reach the internet over Ethernet or USB tethering.
+            self.hot.check_internet()
+        else:
+            if not (self.s.get("auto_switch", True) and self.hot.phone_ssid):
+                self.hot.check_internet()
+        health = self.hot.health
+        state = health.state if health else "Checking internet…"
+        latency = f" · {health.latency_ms} ms" if health and health.latency_ms is not None else ""
+        return wifi + state + latency
+
     def tick(self):
         self.shell.changed.emit()
         if self.locked:
@@ -458,20 +479,6 @@ class Desktop(QMainWindow):
         if not self.net_pending and t - self.last_net >= self.probe_interval():
             self.net_pending = True
 
-            def check():
-                info = self.hot.wifi()
-                health = self.hot.health
-                if not (self.s.get("auto_switch", True) and self.hot.phone_ssid):
-                    self.hot.check_internet()
-                    health = self.hot.health
-                state = health.state if health else "Checking internet…"
-                latency = f" · {health.latency_ms} ms" if health and health.latency_ms is not None else ""
-                return (
-                    (f"{info['ssid']}  {info['signal']}\n" if info and info["ssid"] else "")
-                    + state
-                    + latency
-                )
-
             def done(result):
                 self.net_pending = False
                 self.last_net = time.monotonic()
@@ -479,7 +486,7 @@ class Desktop(QMainWindow):
                 if not self.locked:
                     self.refresh_control()
 
-            self.work.run(check, done, done)
+            self.work.run(self.sample_network_status, done, done)
         if (
             os.name == "nt"
             and not self.window_job

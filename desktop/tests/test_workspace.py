@@ -126,6 +126,17 @@ def test_real_widget_paths_lock_and_exit(tmp_path, monkeypatch):
     desktop.shell.action("remote")
     assert settings.nav.currentItem().text() == "Connected phone"
     assert "Control Center" not in desktop.panels
+    from types import SimpleNamespace
+
+    def stopped():
+        error = OSError("The service has not been started")
+        error.winerror = 1062
+        raise error
+
+    monkeypatch.setattr(desktop.hot, "wifi", stopped)
+    monkeypatch.setattr(desktop.hot, "check_internet", lambda: setattr(
+        desktop.hot, "health", SimpleNamespace(state="Internet verified", latency_ms=9)))
+    assert desktop.sample_network_status() == "Windows Wi-Fi service is stopped.\nInternet verified · 9 ms"
     desktop.show_overlay("spotlight")
     assert desktop.view.rootObject().property("overlay") == "spotlight"
     assert desktop.shell.results
