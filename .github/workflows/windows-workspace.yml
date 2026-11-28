@@ -167,4 +167,4 @@ jobs:
               "https://github.com/$GITHUB_REPOSITORY/releases/download/v101/AirCursor.apk" -o stage/AirCursor.apk
             echo 'a69fd2512dba31ac3b580cff3926100eeb442717a64761df96de24eb43c28566  stage/AirCursor.apk' | sha256sum -c -
           fi
-          gh release upload "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" stage/*
+          gh release upload "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --clobber stage/*
