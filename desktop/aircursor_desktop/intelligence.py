@@ -259,7 +259,13 @@ class Intelligence(QWidget):
         left.addWidget(button("Manage conversation…", self.manage))
         self.model.setPlaceholderText("Select model")
         self.free = QCheckBox("Zero token price")
-        bar = row(layout, self.provider, button("Find models", self.discover), self.model, self.free)
+        self.model_controls = QWidget()
+        controls = QVBoxLayout(self.model_controls)
+        controls.setContentsMargins(0, 0, 0, 0)
+        settings_button = button("Model settings", lambda: self.model_controls.setVisible(self.model_controls.isHidden()))
+        left.addWidget(settings_button)
+        layout.addWidget(self.model_controls)
+        bar = row(controls, self.provider, button("Find models", self.discover), self.model, self.free)
         bar.addStretch()
         self.free.toggled.connect(self.filter)
         self.provider.currentTextChanged.connect(self.changed)
@@ -271,7 +277,7 @@ class Intelligence(QWidget):
         self.warm = QCheckBox("Keep model ready for 2 minutes")
         self.warm.setChecked(bool(self.s.get("ai_keep_warm", False)))
         self.warm.toggled.connect(lambda value: self.s.set(ai_keep_warm=value))
-        row(layout, self.lightweight, self.get_model, self.warm).addStretch()
+        row(controls, self.lightweight, self.get_model, self.warm).addStretch()
         self.transcript = QStackedWidget()
         layout.addWidget(self.transcript, 1)
         welcome = QWidget()
@@ -290,6 +296,7 @@ class Intelligence(QWidget):
         for provider in ENDPOINTS:
 
             def select(name=provider):
+                self.model_controls.show()
                 self.provider.setCurrentText(name)
                 self.discover()
 
@@ -332,6 +339,7 @@ class Intelligence(QWidget):
             self.new()
         self.render()
         self.changed()
+        self.model_controls.hide()
 
     def changed(self, *_):
         self.models = []
@@ -353,6 +361,7 @@ class Intelligence(QWidget):
         return self.provider.currentText() == "Ollama" and self.lightweight.isChecked()
 
     def select_qwen(self):
+        self.model_controls.show()
         self.provider.setCurrentText("Ollama")
         if self.lightweight.isChecked():
             self.discover()
