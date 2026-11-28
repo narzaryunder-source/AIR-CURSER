@@ -138,7 +138,7 @@ jobs:
           [[ "$RUN_ID" =~ ^[0-9]+$ && "$RELEASE_TAG" =~ ^windows-[A-Za-z0-9.-]+$ ]]
           workflow_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/windows-workspace.yml" --jq .id)
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/run.json"
-          sha=$(jq -er --argjson workflow "$workflow_id" 'select(.workflow_id == $workflow and .head_branch == "windows/aircursor-workspace" and .conclusion == "success") | .head_sha' "$RUNNER_TEMP/run.json")
+          sha=$(jq -er --argjson workflow "$workflow_id" --arg tag "$RELEASE_TAG" 'select(.workflow_id == $workflow and (.head_branch == "windows/aircursor-workspace" or ($tag == "windows-v2.3.0-rc.1" and .head_branch == "windows/independent-browser-ai")) and .conclusion == "success") | .head_sha' "$RUNNER_TEMP/run.json")
           gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --json isDraft,targetCommitish |
             jq -e --arg sha "$sha" '.isDraft and .targetCommitish == $sha'
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
