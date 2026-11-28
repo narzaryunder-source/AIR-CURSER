@@ -6,7 +6,7 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, Qt
+from PySide6.QtCore import QProcess, QSize, Qt
 from PySide6.QtGui import QImageReader, QTransform
 from PySide6.QtWidgets import (
     QComboBox,
@@ -39,10 +39,17 @@ def new_export(destination):
 def export_photo(source, destination, rotation, max_edge):
     reader = QImageReader(str(source))
     reader.setAutoTransform(True)
+    original = reader.size()
+    if (
+        max_edge and rotation % 90 == 0 and original.isValid()
+        and max(original.width(), original.height()) > max_edge
+    ):
+        reader.setScaledSize(original.scaled(QSize(max_edge, max_edge), Qt.AspectRatioMode.KeepAspectRatio))
     image = reader.read()
     if image.isNull():
         raise ValueError(reader.errorString())
-    image = image.transformed(QTransform().rotate(rotation), Qt.TransformationMode.SmoothTransformation)
+    if rotation % 360:
+        image = image.transformed(QTransform().rotate(rotation), Qt.TransformationMode.SmoothTransformation)
     if max_edge and max(image.width(), image.height()) > max_edge:
         image = image.scaled(
             max_edge,
@@ -166,11 +173,11 @@ def trim_video(files, path):
     progress.setMinimumDuration(0)
     process = QProcess(progress)
     progress.canceled.connect(process.kill)
+    process.finished.connect(progress.accept)
+    process.errorOccurred.connect(progress.reject)
     try:
         with new_export(name) as output:
             process.start(exe, trim_args(path, start, end, output))
-            process.finished.connect(progress.accept)
-            process.errorOccurred.connect(progress.reject)
             ok = progress.exec()
             if process.state() != QProcess.ProcessState.NotRunning:
                 process.kill()

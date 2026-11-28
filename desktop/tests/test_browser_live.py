@@ -215,6 +215,29 @@ def test_fifteen_restored_tabs_load_on_selection(tmp_path, monkeypatch):
         assert settings.get("browser_tabs") == urls
         assert settings.get("browser_active") == 7
         assert set(settings.get("browser_history")) == set(urls)
+        # Switching already-loaded pages should not rewrite the settings after 800 ms.
+        browser.saver.setInterval(800)
+        browser.tabs.setCurrentIndex(6)
+        QTest.qWait(950)
+        assert settings.get("browser_active") == 7
+        browser.save()
+        assert settings.get("browser_active") == 6
+        browser.tabs.setCurrentIndex(7)
+        settings.set(browser_memory_saver=True)
+        state = browser.current().page().LifecycleState
+
+        def eligible():
+            return [
+                browser.tabs.widget(i) for i in range(15) if i != 7
+                and browser.tabs.widget(i).page().recommendedState() == state.Discarded
+            ]
+
+        until(lambda: bool(eligible()))
+        background = eligible()[0]
+        background.idle_since = time.monotonic() - 50
+        browser.freeze_idle_tabs()
+        assert background.page().lifecycleState() == state.Discarded
+        assert browser.current().page().lifecycleState() == state.Active
         # Terminate only this test's Chromium renderer to exercise the actual recovery signal.
         import psutil
 

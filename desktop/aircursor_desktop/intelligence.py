@@ -11,6 +11,7 @@ from urllib import error, request
 from uuid import uuid4
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QTextCursor
 from .design import icon
 from .navigation import sidebar, item, heading
 from PySide6.QtWidgets import (
@@ -289,6 +290,7 @@ class Intelligence(QWidget):
                 self.discover()
 
             choices.addWidget(button(provider, select))
+        choices.addWidget(button("Qwen3 0.6B", self.select_qwen))
         center.addSpacing(10)
         center.addLayout(choices)
         self.transcript.addWidget(welcome)
@@ -340,6 +342,13 @@ class Intelligence(QWidget):
 
     def lightweight_enabled(self):
         return self.provider.currentText() == "Ollama" and self.lightweight.isChecked()
+
+    def select_qwen(self):
+        self.provider.setCurrentText("Ollama")
+        if self.lightweight.isChecked():
+            self.discover()
+        else:
+            self.lightweight.setChecked(True)
 
     def set_lightweight(self, enabled):
         self.s.set(ai_lightweight=enabled)
@@ -650,6 +659,24 @@ class Intelligence(QWidget):
         self.transcript.setCurrentIndex(1 if messages else 0)
         self.log.setPlainText("\n\n".join(m["role"].capitalize() + "\n" + m["content"] for m in messages))
 
+    def show_reply(self, conv, prompt, answer):
+        for index in range(self.sessions.count()):
+            if self.conversations[self.sessions.itemData(index)] is conv:
+                if self.sessions.itemText(index) != conv["title"]:
+                    self.sessions.setItemText(index, conv["title"])
+                break
+        if self.selected_chat() is not conv:
+            return
+        scroll = self.log.verticalScrollBar()
+        was_at_end = scroll.value() == scroll.maximum()
+        cursor = QTextCursor(self.log.document())
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        separator = "" if cursor.position() == 0 else "\n\n"
+        cursor.insertText(f"{separator}User\n{prompt}\n\nAssistant\n{answer}")
+        self.transcript.setCurrentIndex(1)
+        if was_at_end:
+            scroll.setValue(scroll.maximum())
+
     def send(self):
         text, model = self.prompt.toPlainText().strip(), self.model.currentText()
         if self.pending or not model or not text:
@@ -706,7 +733,7 @@ class Intelligence(QWidget):
             if attachment is not None and self.attachment is attachment:
                 self.clear_attachment()
             self.s.set(conversations=self.conversations)
-            self.populate_chats(self.selected_chat())
+            self.show_reply(conv, text, answer)
             self.status.setText(f"{model} · {count} tokens")
 
         def failed(message):

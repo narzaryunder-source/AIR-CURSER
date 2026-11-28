@@ -55,13 +55,18 @@ class MaterialProvider(QQuickImageProvider):
         path = QPainterPath()
         path.addRoundedRect(rect, radius, radius)
         p.setClipPath(path)
-        # The narrow rim samples progressively displaced pixels; the center stays optically stable.
-        for inset in range(min(6, w // 4, h // 4) + 1):
-            inner = rect.adjusted(inset, inset, -inset, -inset)
-            rounded = QPainterPath()
-            rounded.addRoundedRect(inner, max(1, radius - inset), max(1, radius - inset))
+        # Sample the center once. Only the thin outer bands need displaced wallpaper.
+        rim = min(6, w // 4, h // 4)
+        displacement = (6 - rim) ** 2 / (8 * zoom)
+        p.drawImage(rect, src, src_rect.adjusted(displacement, displacement, -displacement, -displacement))
+        for inset in range(rim):
+            band = QPainterPath()
+            for steps in (inset, inset + 1):
+                region = rect.adjusted(steps, steps, -steps, -steps)
+                r = max(1, radius - steps)
+                band.addRoundedRect(region, r, r)
             p.save()
-            p.setClipPath(rounded, Qt.ClipOperation.IntersectClip)
+            p.setClipPath(band, Qt.ClipOperation.IntersectClip)
             displacement = (6 - inset) ** 2 / (8 * zoom)
             p.drawImage(
                 rect, src, src_rect.adjusted(displacement, displacement, -displacement, -displacement)

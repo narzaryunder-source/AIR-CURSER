@@ -85,6 +85,43 @@ def test_photo_rotates_and_scales_without_overwriting(app, tmp_path):
     assert original == source.read_bytes()
 
 
+def test_image_preview_decodes_on_worker(app, tmp_path, monkeypatch):
+    import threading
+    from PySide6.QtCore import QTimer
+    from aircursor_desktop import files
+
+    image = QImage(1600, 900, QImage.Format.Format_RGB32)
+    image.fill(0xff123a53)
+    path = tmp_path / "preview.jpg"
+    assert image.save(str(path))
+    preview = files.read_preview(path)
+    assert (preview.width(), preview.height()) == (720, 405)
+
+    window = Files(Settings(str(tmp_path / "settings.json")))
+    result = []
+    read = files.read_preview
+
+    def record(path):
+        result.append(threading.get_ident())
+        return read(path)
+
+    monkeypatch.setattr(files, "read_preview", record)
+    timer = QTimer(window, interval=10)
+
+    def dismiss():
+        dialog = app.activeModalWidget()
+        if result and dialog:
+            dialog.reject()
+
+    timer.timeout.connect(dismiss)
+    timer.start()
+    QTimer.singleShot(3000, window, lambda: app.activeModalWidget() and app.activeModalWidget().reject())
+    window.preview(path)
+    timer.stop()
+    assert result and result[0] != threading.get_ident()
+    window.deleteLater()
+
+
 @pytest.mark.skipif(
     not shutil.which("ffmpeg") or not shutil.which("ffprobe"), reason="requires installed FFmpeg"
 )
@@ -333,6 +370,62 @@ def test_ai_connector_requires_remote_approval_and_excludes_attachment_from_save
     assert settings.get("conversations")[0]["messages"][0]["content"] == "Summarize the attachment"
     assert panel.attachment is None
     panel.close()
+
+
+def test_ai_replies_append_only_to_the_matching_conversation(app, tmp_path, monkeypatch):
+    from aircursor_desktop import intelligence as ai
+
+    settings = Settings(str(tmp_path / "ai.json"))
+    panel = ai.Intelligence(settings, lambda _: None, lambda: None)
+    panel.model.addItem("test-model")
+    panel.model.setCurrentIndex(0)
+    jobs = []
+    panel.work.run = lambda fetch, done, failed: jobs.append(done)
+    panel.prompt.setPlainText("First question")
+    panel.send()
+    panel.new()
+    jobs.pop()(("First answer", 5))
+    assert panel.log.toPlainText() == ""
+    panel.sessions.setCurrentIndex(0)
+    assert panel.log.toPlainText() == "User\nFirst question\n\nAssistant\nFirst answer"
+    assert panel.sessions.itemText(0) == "First question"
+    monkeypatch.setattr(panel.log, "setPlainText", lambda _: pytest.fail("replaced the entire transcript"))
+    panel.prompt.setPlainText("Second question")
+    panel.send()
+    jobs.pop()(("Second answer", 8))
+    assert panel.log.toPlainText().endswith("\n\nUser\nSecond question\n\nAssistant\nSecond answer")
+    assert len(settings.get("conversations")[0]["messages"]) == 4
+    panel.close()
+
+
+def test_windows_catalog_reuses_snapshot_until_expiry_or_package_change(monkeypatch):
+    from types import SimpleNamespace
+    from aircursor_desktop import powershell
+
+    monkeypatch.setattr(applications, "os", SimpleNamespace(name="nt"))
+    stamp = [0]
+    runs = []
+    monkeypatch.setattr(applications, "time", SimpleNamespace(monotonic=lambda: stamp[0]))
+
+    def start_apps(script, timeout):
+        runs.append(script)
+        return SimpleNamespace(
+            stdout=b'[{"Name":"Test","AppID":"test.id"}]', check_returncode=lambda: None
+        )
+
+    monkeypatch.setattr(powershell, "run", start_apps)
+    applications.invalidate_registered_apps()
+    try:
+        apps = [("Test", "startapp:test.id")]
+        assert applications.registered_apps() == apps
+        applications.registered_apps().clear()
+        assert applications.registered_apps() == apps and len(runs) == 1
+        stamp[0] = 31
+        assert applications.registered_apps() == apps and len(runs) == 2
+        applications.invalidate_registered_apps()
+        assert applications.registered_apps() == apps and len(runs) == 3
+    finally:
+        applications.invalidate_registered_apps()
 
 
 def test_hotspot_requires_selected_interface_even_when_host_is_online(tmp_path, monkeypatch):

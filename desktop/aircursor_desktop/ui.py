@@ -79,6 +79,8 @@ class Desktop(QMainWindow):
         self.hot.traffic_busy = lambda: time.monotonic() < self.busy_until
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
+        self.first_sample = QTimer(self, interval=150, singleShot=True)
+        self.first_sample.timeout.connect(self.tick)
         self.layout_save_timer = QTimer(self, interval=300, singleShot=True)
         self.layout_save_timer.timeout.connect(self.save_layout)
         self.panel_restore_timer = QTimer(self, singleShot=True)
@@ -198,6 +200,7 @@ class Desktop(QMainWindow):
         self.cpu_sample = None
         self.ai_tasks.activate(False)
         self.auto.stop()
+        self.first_sample.stop()
         self.layout_save_timer.stop()
         self.panel_restore_timer.stop()
         self.panel_restore_queue.clear()
@@ -238,10 +241,9 @@ class Desktop(QMainWindow):
                 self.host.start()
             except OSError as exc:
                 self.notify(str(exc))
-        if not self.safe_mode and self.s.get("auto_switch", True):
-            self.auto.start()
+        self.refresh_hotspot_policy()
         self.profile(self.s.get("profile", "Balanced"), save=False)
-        self.tick()
+        self.first_sample.start()
         if not self.safe_mode and self.s.get("restore", True):
             self.restore_panels()
         elif self.safe_mode:
@@ -404,6 +406,13 @@ class Desktop(QMainWindow):
 
     def has_hotspot_policy(self):
         return bool(self.hot.phone_ssid and self.s.get("auto_switch", True) and not self.safe_mode)
+
+    def refresh_hotspot_policy(self):
+        if not self.locked and self.has_hotspot_policy():
+            self.auto.start()
+        elif self.auto.thread:
+            self.auto.stop()
+        self.timer.start(self.refresh_interval())
 
     def refresh_interval(self):
         seconds = PROFILES.get(self.s.get("profile"), PROFILES["Balanced"])[0]
@@ -681,6 +690,7 @@ class Desktop(QMainWindow):
                     sys.stderr.write("AirCursor could not save the session before closing.\n")
         self.locked = True
         self.ai_tasks.activate(False)
+        self.first_sample.stop()
         self.timer.stop()
         self.layout_save_timer.stop()
         self.panel_restore_timer.stop()

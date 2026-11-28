@@ -46,7 +46,8 @@ class Settings:
             fd, tmp = tempfile.mkstemp(dir=folder, prefix=".settings-", suffix=".json")
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(updated, f, indent=1)
+                    # json.dumps uses the native encoder with indentation disabled.
+                    f.write(json.dumps(updated, separators=(",", ":")))
                 os.replace(tmp, self.path)
                 self.data = updated
             finally:

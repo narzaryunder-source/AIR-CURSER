@@ -49,6 +49,9 @@ MAX_SAVED_TABS = 100
 MAX_HISTORY = 300
 DISCARD_AFTER_SECONDS = 300
 DISCARD_AFTER_WINDOW_CLOSE = 10
+DISCARD_AFTER_MANY_TABS = 45
+MANY_LIVE_TABS = 10
+SAVE_AFTER_TAB_SWITCH_MS = 3500
 
 
 class RestoredTab(QWidget):
@@ -115,6 +118,8 @@ class Browser(QWidget):
         layout.addWidget(self.tabs)
         self.saver = QTimer(self, interval=800, singleShot=True)
         self.saver.timeout.connect(self.save)
+        self.selection_saver = QTimer(self, interval=SAVE_AFTER_TAB_SWITCH_MS, singleShot=True)
+        self.selection_saver.timeout.connect(self.save)
         self.restore_timer = QTimer(self, interval=0, singleShot=True)
         self.restore_timer.timeout.connect(self.restore_selected)
         self.sleeper = QTimer(self, singleShot=True)
@@ -206,7 +211,8 @@ class Browser(QWidget):
             if page.lifecycleState() != page.LifecycleState.Active:
                 page.setLifecycleState(page.LifecycleState.Active)
         self.address.setModified(False)
-        self.sync()
+        self.sync_address()
+        self.selection_saver.start()
         self.update_crash_banner()
         self.resume_visible_page()
 
@@ -220,17 +226,18 @@ class Browser(QWidget):
 
     def freeze_idle_tabs(self):
         now = time.monotonic()
-        discard_delay = (
-            DISCARD_AFTER_WINDOW_CLOSE if self.window_closed else
-            DISCARD_AFTER_SECONDS if self.s.get("browser_memory_saver", False) else None
-        )
-        downloading = {request.page() for request in self.downloads if not request.isFinished()}
-        minimized = self.window().isMinimized()
+        discard_delay = DISCARD_AFTER_WINDOW_CLOSE if self.window_closed else None
+        live = []
         for index in range(self.tabs.count()):
             view = self.tabs.widget(index)
-            if not isinstance(view, self._view_type) or view.renderer_error:
-                continue
-            page = view.page()
+            if isinstance(view, self._view_type) and not view.renderer_error:
+                live.append((view, view.page()))
+        if discard_delay is None and self.s.get("browser_memory_saver", False):
+            live_count = sum(page.lifecycleState() != page.LifecycleState.Discarded for _, page in live)
+            discard_delay = DISCARD_AFTER_MANY_TABS if live_count >= MANY_LIVE_TABS else DISCARD_AFTER_SECONDS
+        downloading = {request.page() for request in self.downloads if not request.isFinished()}
+        minimized = self.window().isMinimized()
+        for view, page in live:
             if minimized and page.isVisible():
                 page.setVisible(False)
             state = page.LifecycleState
@@ -480,7 +487,7 @@ class Browser(QWidget):
     def url_changed(self, view, address):
         view.target = address
         if view is self.current():
-            self.sync()
+            self.sync_address()
         self.saver.start()
 
     def tab_url(self, widget):
@@ -490,12 +497,13 @@ class Browser(QWidget):
             return widget.target.toString()
         return ""
 
-    def sync(self):
+    def sync_address(self):
         if not self.address.isModified():
             self.address.setText(self.tab_url(self.current()))
-        self.saver.start()
 
     def save(self):
+        self.saver.stop()
+        self.selection_saver.stop()
         updates = {}
         if self.pending_history and self.s.get("browser_history_enabled", False):
             history = self.history()

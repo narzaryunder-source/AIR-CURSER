@@ -1,4 +1,5 @@
 import os
+import pytest
 
 from aircursor_desktop import hotspot
 from aircursor_desktop.settings import Settings
@@ -139,6 +140,45 @@ def test_association_without_internet_is_reported(tmp_path):
     s.set(phone_ssid="Rahul's Phone")
     h = hotspot.Hotspot(s, runner=FakeNetsh(), online=lambda: False, sleep=lambda _: None)
     assert "Internet access could not be verified" in h.connect()
+
+
+@pytest.mark.parametrize(("associated_at", "route_at", "expected"), [
+    (0.2, 0.2, 0.25),
+    (2.2, 3.0, 3.0),
+])
+def test_native_association_and_late_route_are_separate(tmp_path, associated_at, route_at, expected):
+    settings = Settings(str(tmp_path / "settings.json"))
+    settings.set(phone_ssid="Phone", phone_adapter="61")
+    stamp = 0
+    requested = False
+
+    def advance(delay):
+        nonlocal stamp
+        stamp += delay
+
+    class Wlan:
+        def interfaces(self):
+            ssid = "Phone" if requested and stamp >= associated_at else "Home"
+            return [{"id": b"a", "ssid": ssid, "state": "connected"}]
+
+        def networks(self):
+            return [{"id": b"a", "ssid": "Phone"}]
+
+        def connect(self, ssid, adapter):
+            nonlocal requested
+            assert (ssid, adapter) == ("Phone", b"a")
+            requested = True
+
+    hot = hotspot.Hotspot(settings, runner=FakeNetsh(), sleep=advance)
+    hot.native = Wlan()
+    hot.verify_adapter = lambda _: stamp >= route_at
+    assert hot.connect() == ""
+    assert stamp == expected
+
+    settings.set(phone_ssid=None)
+    policy = hotspot.AutoSwitch(hot)
+    policy.start()
+    assert policy.thread is None
 
 
 def test_backoff_and_recovery(tmp_path):

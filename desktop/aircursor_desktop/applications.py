@@ -4,12 +4,30 @@ import json
 import os
 import shutil
 import subprocess
+import threading
+import time
 from pathlib import Path
+
+_catalog_lock = threading.Lock()
+_catalog = None
+_catalog_revision = 0
+
+
+def invalidate_registered_apps():
+    global _catalog, _catalog_revision
+    with _catalog_lock:
+        _catalog = None
+        _catalog_revision += 1
 
 
 def registered_apps():
+    global _catalog
     if os.name != "nt":
         return []
+    with _catalog_lock:
+        revision = _catalog_revision
+        if _catalog and time.monotonic() - _catalog[0] < 30:
+            return list(_catalog[1])
     from . import powershell
     script = (
         "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false); "
@@ -18,9 +36,13 @@ def registered_apps():
     result = powershell.run(script, timeout=15)
     result.check_returncode()
     rows = json.loads(result.stdout.decode("utf-8-sig"))
-    return [
+    apps = [
         (row["Name"], "startapp:" + row["AppID"]) for row in rows if row.get("AppID") and row.get("Name")
     ]
+    with _catalog_lock:
+        if revision == _catalog_revision:
+            _catalog = time.monotonic(), tuple(apps)
+    return apps
 
 
 def launch_registered(identity):

@@ -13,7 +13,10 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument("mode", choices=["policy", "receiver", "startup", "dock", "tabs", "workspace", "store"])
+parser.add_argument("mode", choices=[
+    "policy", "association", "receiver", "startup", "dock", "materials", "tabs",
+    "workspace", "store", "catalog", "settings_write", "ai_reply", "photo_export",
+])
 parser.add_argument("--source", type=Path, default=ROOT)
 parser.add_argument("--notification", action="store_true")
 args = parser.parse_args()
@@ -102,6 +105,48 @@ def receiver():
     }
 
 
+def association():
+    from aircursor_desktop.hotspot import Hotspot
+    from aircursor_desktop.settings import Settings
+
+    def run(association_at, route_at):
+        with tempfile.TemporaryDirectory() as folder:
+            clock = 0
+            requested = False
+            checks = 0
+
+            class Adapter:
+                def interfaces(self):
+                    ssid = "Phone" if requested and clock >= association_at else "Home"
+                    return [{"id": b"a", "ssid": ssid, "state": "connected"}]
+
+                def networks(self):
+                    return [{"id": b"a", "ssid": "Phone"}]
+
+                def connect(self, ssid, adapter):
+                    nonlocal requested
+                    requested = True
+
+            def sleep(delay):
+                nonlocal clock
+                clock += delay
+
+            def verify(_):
+                nonlocal checks
+                checks += 1
+                return clock >= route_at
+
+            settings = Settings(str(Path(folder) / "settings.json"))
+            settings.set(phone_ssid="Phone", phone_adapter="61")
+            link = Hotspot(settings, runner=lambda _: None, sleep=sleep)
+            link.native = Adapter()
+            link.verify_adapter = verify
+            error = link.connect()
+            return {"simulated_seconds": clock, "verification_checks": checks, "verified": not error}
+
+    return {"early_association": run(0.2, 0.2), "late_ip_route": run(2.2, 3.0)}
+
+
 def startup():
     start = time.perf_counter()
     from PySide6.QtCore import QEventLoop, QTimer
@@ -143,12 +188,14 @@ def startup():
         loop.exec()
         timer.stop()
         workspace_rss = process.memory_info().rss / 2**20
+        graphics = window.view.quickWindow().rendererInterface().graphicsApi().name
         window.close()
         return {
-            "lock_paint_seconds": round(elapsed, 3),
-            "lock_rss_mib": round(rss, 1),
+            "workspace_paint_seconds": round(elapsed, 3),
+            "first_frame_rss_mib": round(rss, 1),
             "workspace_rss_mib": round(workspace_rss, 1),
             "timer_interval_p95_ms": round(sorted(intervals)[94], 2),
+            "qt_graphics_api": graphics,
         }
 
 
@@ -260,6 +307,10 @@ def tabs():
         settings.set(
             browser_history_enabled=True,
             browser_tabs=[f"http://127.0.0.1:{http.server_port}/tab/{i}" for i in range(15)],
+            conversations=[{"title": "Saved chat", "messages": [
+                {"role": "assistant", "content": ("This entry models a saved conversation. " * 1000)}
+                for _ in range(25)
+            ]}],
         )
         writes = 0
         save_settings = settings.set
@@ -318,13 +369,22 @@ def tabs():
                 window.tabs.setCurrentIndex(index)
                 app.processEvents()
                 switches.append(1000 * (time.perf_counter() - start))
+            loaded_writes = writes
+            window.save()
+            writes = 0
+            for index in (1, 9, 2, 14, 3):
+                window.tabs.setCurrentIndex(index)
+                QTest.qWait(1050)
+            window.save()
+            assert settings.get("browser_active") == 3
             return {
                 "saved_tabs": window.tabs.count(),
                 "browser_window_ms": round(constructor_ms, 1),
                 "selected_page_title_ms": round(selected_ms, 1),
                 "page_requests_after_settle": cold_requests,
                 "tabs_loaded": len(visits),
-                "settings_writes_loading_remaining_tabs": writes,
+                "settings_writes_loading_remaining_tabs": loaded_writes,
+                "settings_writes_five_warm_switches": writes,
                 "warm_switch_median_ms": round(statistics.median(switches), 1),
                 "warm_switch_max_ms": round(max(switches), 1),
                 "process_tree_rss_mib": round(memory / 2**20, 1),
@@ -397,6 +457,146 @@ def store():
         "paint_median_ms": round(statistics.median(samples), 3),
         "paint_p95_ms": round(sorted(samples)[int(len(samples) * 0.95)], 3),
     }
+
+
+def materials():
+    from PySide6.QtCore import QSize
+    from PySide6.QtWidgets import QApplication
+    from aircursor_desktop.design import MaterialProvider
+
+    app = QApplication([])
+    provider = MaterialProvider()
+    sizes = [(600, 60), (650, 400), (1100, 580)]
+    result = {}
+    for width, height in sizes:
+        samples = []
+        for x in range(21):
+            start = time.process_time_ns()
+            frame = provider.requestImage(
+                f"fjord/dark/{x}/40/{width}/{height}/1920/1080/24/100", QSize(), QSize()
+            )
+            if x:
+                samples.append((time.process_time_ns() - start) / 1e6)
+            assert (frame.width(), frame.height()) == (width, height)
+        result[f"{width}x{height}_median_cpu_ms"] = round(statistics.median(samples), 2)
+    return result
+
+
+def catalog():
+    from aircursor_desktop.applications import registered_apps
+
+    if os.name != "nt":
+        return {"available": False}
+    samples = []
+    for _ in range(5):
+        start = time.perf_counter_ns()
+        apps = registered_apps()
+        samples.append((time.perf_counter_ns() - start) / 1e6)
+        assert apps
+    return {
+        "entries": len(apps), "first_lookup_ms": round(samples[0], 2),
+        "repeat_lookup_median_ms": round(statistics.median(samples[1:]), 3),
+    }
+
+
+def settings_write():
+    from aircursor_desktop.settings import Settings
+
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "settings.json"
+        settings = Settings(str(path))
+        messages = [{"role": "assistant", "content": ("Saved conversation — " * 300)} for _ in range(350)]
+        settings.set(conversations=[{"title": "Saved chat", "messages": messages}])
+        samples = []
+        for index in range(25):
+            start = time.perf_counter_ns()
+            settings.set(browser_active=index)
+            samples.append((time.perf_counter_ns() - start) / 1e6)
+        assert Settings(str(path)).get("conversations")[0]["messages"] == messages
+        return {"file_bytes": path.stat().st_size, "write_median_ms": round(statistics.median(samples), 2)}
+
+
+def ai_reply():
+    from PySide6.QtWidgets import QApplication
+    from aircursor_desktop import intelligence as ai
+    from aircursor_desktop.settings import Settings
+
+    app = QApplication([])
+    with tempfile.TemporaryDirectory() as folder:
+        settings = Settings(str(Path(folder) / "settings.json"))
+        saved = {"title": "Long chat", "named": True, "endpoint": ai.ENDPOINTS["Ollama"], "messages": [
+            {"role": "user" if index % 2 == 0 else "assistant", "content": "A saved line of text.\n" * 20}
+            for index in range(240)
+        ]}
+        settings.set(conversations=[saved])
+        panel = ai.Intelligence(settings, lambda _: None, lambda: None)
+        panel.resize(1100, 780)
+        panel.show()
+        app.processEvents()
+        # Isolate transcript updates from disk I/O and model inference.
+        panel.s.set = lambda **values: None
+        panel.model.addItem("fixture-model")
+        panel.model.setCurrentIndex(0)
+        jobs = []
+        panel.work.run = lambda fetch, done, failed: jobs.append(done)
+        samples = []
+        for _ in range(15):
+            panel.prompt.setPlainText("Summarize this note.")
+            panel.send()
+            start = time.perf_counter_ns()
+            jobs.pop()(("A short result.", 8))
+            app.processEvents()
+            samples.append((time.perf_counter_ns() - start) / 1e6)
+        assert panel.log.toPlainText().endswith("A short result.")
+        panel.close()
+        return {"starting_messages": 240, "reply_update_median_ms": round(statistics.median(samples), 2)}
+
+
+def photo_export():
+    from PySide6.QtGui import QImage, QPainter, QColor
+    from aircursor_desktop.media import export_photo
+
+    import psutil
+
+    with tempfile.TemporaryDirectory() as folder:
+        root = Path(folder)
+        source = root / "24mp.jpg"
+        image = QImage(6000, 4000, QImage.Format.Format_RGB32)
+        image.fill(QColor("#98afcf"))
+        painter = QPainter(image)
+        for x in range(0, 6000, 40):
+            painter.fillRect(x, 100, 20, 3800, QColor.fromHsv(x % 256, 200, 200))
+        painter.end()
+        assert image.save(str(source), quality=92)
+        del image
+        peak = []
+        stop = threading.Event()
+        process = psutil.Process()
+        before = process.memory_info().rss
+
+        def sample():
+            while not stop.wait(0.005):
+                peak.append(process.memory_info().rss)
+
+        thread = threading.Thread(target=sample)
+        thread.start()
+        samples = []
+        try:
+            for index in range(7):
+                destination = root / f"{index}.png"
+                start = time.perf_counter_ns()
+                export_photo(source, destination, 90, 1200)
+                samples.append((time.perf_counter_ns() - start) / 1e6)
+            result = QImage(str(destination))
+            assert (result.width(), result.height()) == (800, 1200)
+        finally:
+            stop.set()
+            thread.join()
+        return {
+            "input_megapixels": 24, "longest_output_edge": 1200,
+            "export_median_ms": round(statistics.median(samples), 2),
+            "sampled_peak_rss_delta_mib": round((max([before, *peak]) - before) / 2**20, 1),
+        }
 
 
 if __name__ == "__main__":

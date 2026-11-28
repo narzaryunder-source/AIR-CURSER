@@ -217,20 +217,44 @@ class Hotspot:
                     )
                     if code:
                         return "Windows could not request the connection: " + message.strip()[:200]
-            for attempt in range(13):
+
+            def association():
+                joined = (
+                    next((row for row in self.native.interfaces() if row["id"] == adapter), None)
+                    if self.native and adapter is not None else self.wifi()
+                )
+                if joined and joined["state"] == "connected" and joined["ssid"] == ssid:
+                    return joined
+                return None
+
+            # WLAN queries are cheap in process. Keep the slower netsh fallback
+            # at its existing cadence and reserve time for DHCP after association.
+            first_checks = (0, 0.125, 0.125, 0.25) if self.native else (0,)
+            delays = first_checks + (0.5,) * (11 if self.native else 12)
+            for delay in delays:
+                if delay:
+                    self.sleep(delay)
                 if cancelled():
                     return "Connection cancelled."
-                joined = (next((r for r in self.native.interfaces() if r["id"] == adapter), None)
-                          if self.native and adapter is not None else self.wifi())
-                if (joined and joined["state"] == "connected" and joined["ssid"] == ssid
-                        and (adapter is None or joined.get("id") == adapter)):
-                    if self.verify_adapter(joined):
-                        return ""
-                    if attempt >= 4:
+                joined = association()
+                if joined:
+                    for attempt in range(5):
+                        if attempt:
+                            self.sleep(0.5)
+                        if cancelled():
+                            return "Connection cancelled."
+                        if attempt:
+                            joined = association()
+                            if not joined:
+                                break
+                        verified = self.verify_adapter(joined)
+                        if cancelled():
+                            return "Connection cancelled."
+                        if verified and association():
+                            return ""
+                    else:
                         detail = f" {self.health.state}." if self.health else ""
                         return "Joined the phone hotspot. Internet access could not be verified." + detail
-                if attempt < 12:
-                    self.sleep(0.5)
             return "Windows accepted the request, but association with the phone was not confirmed."
         except OSError as exc:
             return f"Windows Wi-Fi: {exc}"
@@ -345,7 +369,7 @@ class AutoSwitch:
             return "failed" if err else "switched"
 
     def start(self):
-        if self.thread and self.thread.is_alive():
+        if not self.h.phone_ssid or (self.thread and self.thread.is_alive()):
             return
         self._generation += 1
         generation = self._generation

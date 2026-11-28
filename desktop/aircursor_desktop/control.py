@@ -203,10 +203,15 @@ class Controls(QObject):
 
     def join(self):
         self.status.setText("Waiting for Wi-Fi association and internet verification…")
+
+        def done(err):
+            self.desk.refresh_hotspot_policy()
+            self.status.setText(err or "Phone hotspot connected. Internet verified.")
+
         self.work.run(
             lambda: self.desk.hot.connect(lambda: self.desk.locked),
-            lambda err: self.status.setText(err or "Phone hotspot connected. Internet verified."),
-            self.status.setText,
+            done,
+            done,
         )
 
     def forget(self):
@@ -214,11 +219,11 @@ class Controls(QObject):
             self.parent(), "Forget hotspot", "Remove the saved phone Wi-Fi profile from Windows?"
         ):
             return
-        self.work.run(
-            self.desk.hot.forget_phone,
-            lambda _: self.status.setText("Phone hotspot forgotten."),
-            self.status.setText,
-        )
+        def done(_):
+            self.desk.refresh_hotspot_policy()
+            self.status.setText("Phone hotspot forgotten.")
+
+        self.work.run(self.desk.hot.forget_phone, done, self.status.setText)
 
     def inspect(self):
         self.details.setPlainText("Checking adapters and gateways…")
@@ -226,7 +231,7 @@ class Controls(QObject):
 
     def auto(self, enabled):
         self.desk.s.set(auto_switch=enabled)
-        (self.desk.auto.start if enabled else self.desk.auto.stop)()
+        self.desk.refresh_hotspot_policy()
 
     def toggle_remote(self):
         host = self.desk.host

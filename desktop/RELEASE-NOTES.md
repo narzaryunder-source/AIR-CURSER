@@ -1,3 +1,11 @@
+# Windows 2.2.2
+
+- Air Browser groups writes when switching between loaded tabs. With Memory Saver enabled, eligible background pages can unload earlier when ten or more tabs are loaded. The browser keeps the current page, downloads and pages Chromium needs active.
+- Air AI appends replies to the existing transcript. The Air AI start screen offers direct access to the existing lightweight Qwen3 0.6B setup through Ollama.
+- Files loads previews in the background. Photo exports with a smaller requested size can decode at the requested output scale before rotation.
+- AirCursor starts its first statistics sample after showing the workspace, draws glass with less wallpaper resampling, and briefly reuses the Windows Start catalog for repeat app lookups. Air Store invalidates the catalog after a package change.
+- Native Wi-Fi checks early hotspot association sooner and gives the connected adapter time to obtain a route before reporting the result. AirCursor starts automatic failover monitoring when a hotspot is saved and automatic switching is on.
+
 # Windows 2.2.1
 
 - Restoring the workspace keeps saved browser tabs available and defers Chromium startup until you open the browser or ask to load a page.

@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 from .navigation import sidebar, item, heading
 from .catalog import CATALOG, GAMES, LOGOS, STORE_IDS
 from .design import icon
-from .applications import launch_cli, launch_registered, match_apps, registered_apps
+from .applications import invalidate_registered_apps, launch_cli, launch_registered, match_apps, registered_apps
 from .widgets import WINDOWS_INSTALLERS, Workers, asset, button, confirm, label, open_path, row
 
 
@@ -358,6 +358,7 @@ class Store(QWidget):
                 self.apps.setCurrentRow(0)
             self.status.setText(f"{len(rows)} selectable packages. Full winget results appear below.")
         elif not code and self.operation in ("install", "upgrade", "uninstall"):
+            invalidate_registered_apps()
             self.apps_changed()
             self.status.setText(f"winget completed {self.operation} for {self.package}.")
         else:

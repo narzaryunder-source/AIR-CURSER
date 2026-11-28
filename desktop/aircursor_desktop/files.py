@@ -84,6 +84,28 @@ def zip_new(path):
     return target
 
 
+def read_preview(path):
+    from PySide6.QtGui import QImageReader
+
+    reader = QImageReader(str(path))
+    reader.setAutoTransform(True)
+    if reader.canRead():
+        size = reader.size()
+        bounds = QSize(720, 480)
+        if reader.transformation().value & 4:  # Rotate90 and combined 90-degree transforms.
+            bounds.transpose()
+        if size.isValid() and (size.width() > bounds.width() or size.height() > bounds.height()):
+            reader.setScaledSize(size.scaled(bounds, Qt.AspectRatioMode.KeepAspectRatio))
+        image = reader.read()
+        if image.isNull():
+            raise ValueError(reader.errorString())
+        return image
+    if path.suffix.lower() in (".txt", ".md", ".py", ".json", ".csv", ".log"):
+        with path.open("r", encoding="utf-8", errors="replace") as src:
+            return src.read(20000)
+    return None
+
+
 def shell_transfer(paths, destination, move, hwnd):
     """Let the Windows shell handle ACLs and collision naming for the whole operation."""
     from ctypes import wintypes as w
@@ -425,28 +447,26 @@ class Files(QWidget):
             self.task(move)
 
     def preview(self, path):
-        from PySide6.QtWidgets import QDialog, QLabel
-        from PySide6.QtGui import QImageReader
+        from PySide6.QtWidgets import QDialog, QPlainTextEdit
 
         dialog = QDialog(self)
         dialog.setWindowTitle(path.name)
         layout = QVBoxLayout(dialog)
-        reader = QImageReader(str(path))
-        if reader.canRead():
-            reader.setScaledSize(reader.size().scaled(720, 480, Qt.AspectRatioMode.KeepAspectRatio))
-            view = QLabel()
-            view.setPixmap(QPixmap.fromImage(reader.read()))
-            layout.addWidget(view)
-        elif path.suffix.lower() in (".txt", ".md", ".py", ".json", ".csv", ".log"):
-            try:
-                with path.open("r", encoding="utf-8", errors="replace") as src:
-                    from PySide6.QtWidgets import QPlainTextEdit
+        status = label("Loading preview…")
+        layout.addWidget(status)
 
-                    view = QPlainTextEdit(src.read(20000))
-                    view.setReadOnly(True)
-                    layout.addWidget(view)
-            except OSError as exc:
-                layout.addWidget(label(str(exc)))
-        else:
-            layout.addWidget(label("Use Open to view this item in its associated application."))
+        def ready(result):
+            if result is None:
+                status.setText("Use Open to view this item in its associated application.")
+            elif isinstance(result, str):
+                status.hide()
+                view = QPlainTextEdit(result)
+                view.setReadOnly(True)
+                layout.addWidget(view)
+            else:
+                status.setPixmap(QPixmap.fromImage(result))
+
+        work = Workers(dialog)
+        work.run(lambda: read_preview(path), ready, status.setText)
         dialog.exec()
+        dialog.deleteLater()
