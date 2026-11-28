@@ -1,4 +1,4 @@
-name: Record AirCursor 2.2.2 on Windows
+name: Record Air Browser with public sites on Windows
 on: workflow_dispatch
 permissions:
   contents: read
@@ -20,11 +20,11 @@ jobs:
           if (Get-Command Set-DisplayResolution -ErrorAction SilentlyContinue) {
             Set-DisplayResolution -Width 1920 -Height 1080 -Force -ErrorAction Continue
           }
-          python desktop/tools/record_performance.py
+          python desktop/tools/record_live_browser.py
           if ($LASTEXITCODE) { throw 'Recording failed' }
       - uses: actions/upload-artifact@v4
         with:
-          name: aircursor-windows-video-frames
+          name: aircursor-live-browser-frames
           path: performance-frames/
           if-no-files-found: error
           retention-days: 7
