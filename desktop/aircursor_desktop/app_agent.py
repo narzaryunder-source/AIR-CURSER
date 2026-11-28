@@ -1,5 +1,7 @@
 """Local model selection of registered Windows apps. Model output never becomes a command."""
 import json
+import re
+from collections import Counter
 
 from .applications import registered_apps
 from .intelligence import LIGHT_MODEL, ollama_call
@@ -9,7 +11,16 @@ def plan_launch(task):
     apps = registered_apps()
     if not apps:
         raise ValueError("Windows reported no Start menu apps.")
-    from collections import Counter
+    # Resolve explicit app names without model latency or speculative additions.
+    request = re.fullmatch(r"\s*(?:open|launch|start)\s+(.+?)\s*[.!]?\s*", task, re.IGNORECASE)
+    if request:
+        by_name = {}
+        for name, identity in apps:
+            by_name.setdefault(name.casefold(), []).append((name, identity))
+        phrase = request[1].strip().casefold()
+        parts = [phrase] if phrase in by_name else re.split(r"\s*,\s*(?:and\s+)?|\s+and\s+", phrase)
+        if 1 <= len(parts) <= 3 and all(len(by_name.get(part, [])) == 1 for part in parts):
+            return list(dict.fromkeys(by_name[part][0] for part in parts))
 
     counts = Counter(name for name, _ in apps)
     choices = {(name if counts[name] == 1 else f"{name} ({target[9:]})"): (name, target)

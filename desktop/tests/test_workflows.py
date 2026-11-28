@@ -25,3 +25,11 @@ def test_office_and_project_sources(tmp_path):
             archive.writestr(member, '<doc><p><t>Selected text</t></p></doc>')
         assert office_context(tmp_path / filename) == (filename, "Selected text")
     assert "deck.pptx" in project_context(tmp_path)[1]
+
+
+def test_exact_app_names_do_not_start_model(monkeypatch):
+    apps = [("Calculator", "startapp:calc"), ("Photos", "startapp:photos"), ("Editor", "startapp:edit")]
+    monkeypatch.setattr(app_agent, "registered_apps", lambda: apps)
+    monkeypatch.setattr(app_agent, "ollama_call", lambda *_: pytest.fail("Exact names should resolve locally"))
+    assert app_agent.plan_launch("Open Calculator and Photos.") == apps[:2]
+    assert app_agent.plan_launch("launch EDITOR") == [apps[2]]
