@@ -278,11 +278,14 @@ def tabs():
     from PySide6.QtWidgets import QApplication
 
     visits = set()
+    first_request = []
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             if self.path.startswith("/tab/"):
                 visits.add(self.path)
+                if not first_request:
+                    first_request.append(time.perf_counter())
             data = b"<title>AirCursor 15-tab benchmark</title><p>Local page</p>"
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
@@ -324,6 +327,16 @@ def tabs():
         started = time.perf_counter()
         from aircursor_desktop.browser import Browser
 
+        initializer = Browser.add_web_view
+        init_ms = []
+
+        def timed_init(self, *args, **kwargs):
+            entered = time.perf_counter()
+            result = initializer(self, *args, **kwargs)
+            init_ms.append((time.perf_counter() - entered) * 1000)
+            return result
+
+        Browser.add_web_view = timed_init
         window = Browser(settings)
         window.resize(1080, 720)
         window.show()
@@ -381,6 +394,8 @@ def tabs():
                 "saved_tabs": window.tabs.count(),
                 "browser_window_ms": round(constructor_ms, 1),
                 "selected_page_title_ms": round(selected_ms, 1),
+                "first_web_view_init_ms": round(init_ms[0], 1),
+                "first_loopback_request_ms": round((first_request[0] - started) * 1000, 1),
                 "page_requests_after_settle": cold_requests,
                 "tabs_loaded": len(visits),
                 "settings_writes_loading_remaining_tabs": loaded_writes,
@@ -471,14 +486,14 @@ def materials():
     for width, height in sizes:
         samples = []
         for x in range(21):
-            start = time.process_time_ns()
+            start = time.perf_counter_ns()
             frame = provider.requestImage(
                 f"fjord/dark/{x}/40/{width}/{height}/1920/1080/24/100", QSize(), QSize()
             )
             if x:
-                samples.append((time.process_time_ns() - start) / 1e6)
+                samples.append((time.perf_counter_ns() - start) / 1e6)
             assert (frame.width(), frame.height()) == (width, height)
-        result[f"{width}x{height}_median_cpu_ms"] = round(statistics.median(samples), 2)
+        result[f"{width}x{height}_median_wall_ms"] = round(statistics.median(samples), 2)
     return result
 
 
