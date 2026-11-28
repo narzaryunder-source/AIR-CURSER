@@ -78,3 +78,8 @@ See the verification report for measurements, platform coverage and outstanding 
 - Saved tab selection and order persist. Background navigation preserves text entered in the address bar. Localhost addresses and explicit ports work in the address bar.
 - Downloads are a toolbar action with recent completed downloads, progress, cancel and open controls. Installer launches use the Windows application association or signature review, and downloads preserve the Windows internet-zone marker.
 - Air Store offers new game, launcher and creative entries, app artwork and Microsoft Store search through winget.
+
+## Windows 2.3.1
+
+- Added an automatic low-memory mode for Windows PCs with up to 2 GiB of reported RAM and a manual setting for other PCs.
+- AirCursor now registers its full-screen workspace and active app panels with the Windows taskbar. F11 and switching to a Windows app return normal taskbar behavior.

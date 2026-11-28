@@ -57,6 +57,7 @@ Item {
     Image {
         anchors.fill: parent
         source: shell.assets + root.scene + ".jpg"
+        sourceSize.width: shell.wallpaperWidth
         fillMode: Image.PreserveAspectCrop
         asynchronous: false
     }

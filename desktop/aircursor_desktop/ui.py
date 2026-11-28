@@ -10,7 +10,7 @@ import sys
 import time
 
 import psutil
-from PySide6.QtCore import QByteArray, Qt, QPoint, QTimer, QUrl, Signal
+from PySide6.QtCore import QByteArray, QEvent, Qt, QPoint, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QShortcut
 from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtWidgets import (
@@ -26,10 +26,12 @@ from .control import Preferences, PROFILES
 from .design import ICONS, MaterialProvider
 from .hotspot import AutoSwitch, Hotspot
 from .inject import Controller, backend
+from .memory import low_memory
 from .server import RemoteHost
 from .settings import Settings
 from .scheduled import Scheduler
 from .surface import Shell
+from .taskbar import Taskbar
 from . import session
 from .widgets import Workers, asset
 
@@ -43,6 +45,8 @@ class Desktop(QMainWindow):
         super().__init__()
         self.s = settings or Settings()
         self.safe_mode = safe_mode
+        self.low_memory = low_memory(self.s)
+        self.taskbar = Taskbar()
         self.restore_enabled = not safe_mode and self.s.get("restore", True)
         self.hot = Hotspot(self.s)
         self.windows_away = False
@@ -116,6 +120,9 @@ class Desktop(QMainWindow):
         self.session_watching = False
         self.security_timer = QTimer(self, interval=1000)
         if os.name == "nt":
+            self.taskbar_timer = QTimer(self, interval=0, singleShot=True)
+            self.taskbar_timer.timeout.connect(self.sync_taskbar)
+            QApplication.instance().focusWindowChanged.connect(self.schedule_taskbar_sync)
             self.session_watching = session.watch(int(self.winId()), True)
             self.security_timer.timeout.connect(self.check_windows_session)
             self.security_timer.start()
@@ -131,6 +138,34 @@ class Desktop(QMainWindow):
             self.showFullScreen()
         else:
             self.show()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange:
+            self.schedule_taskbar_sync()
+
+    def schedule_taskbar_sync(self, *_):
+        if hasattr(self, "taskbar_timer"):
+            self.taskbar_timer.start()
+
+    def sync_taskbar(self):
+        app = QApplication.instance()
+        active = app.activeWindow()
+        owned = (self, *self.panels.values())
+        # An owned dialog can take focus without leaving the workspace.
+        ancestor = active
+        while ancestor is not None and ancestor not in owned:
+            ancestor = ancestor.parentWidget()
+        windows = set()
+        if (self.isFullScreen() and self.isVisible() and not self.isMinimized()
+                and not self.locked and ancestor is not None and active.screen() == self.screen()
+                and app.applicationState() == Qt.ApplicationState.ApplicationActive):
+            windows = {
+                int(window.winId()) for window in owned
+                if window.isVisible() and not window.isMinimized() and window.screen() == self.screen()
+            }
+            windows.add(int(active.winId()))
+        self.taskbar.update(windows)
 
     def check_windows_session(self):
         if self.startup_pending:
@@ -197,6 +232,7 @@ class Desktop(QMainWindow):
             return
         self.host.paused = True
         self.locked = True
+        self.schedule_taskbar_sync()
         self.cpu_sample = None
         self.ai_tasks.activate(False)
         self.auto.stop()
@@ -227,6 +263,7 @@ class Desktop(QMainWindow):
 
     def workspace(self):
         self.locked = False
+        self.schedule_taskbar_sync()
         self.host.paused = not self.session_watching and os.name == "nt"
         self.shell.lockedChanged.emit()
         self.ai_tasks.activate(not self.safe_mode)
@@ -243,7 +280,7 @@ class Desktop(QMainWindow):
                 self.notify(str(exc))
         self.refresh_hotspot_policy()
         self.profile(self.s.get("profile", "Balanced"), save=False)
-        self.first_sample.start()
+        self.first_sample.start(1200 if self.low_memory else 150)
         if not self.safe_mode and self.s.get("restore", True):
             self.restore_panels()
         elif self.safe_mode:
@@ -267,6 +304,7 @@ class Desktop(QMainWindow):
         self.panel_restore_queue = [
             name for name, space in self.opened.items()
             if space == self.space and name not in ("Overview", "Launcher")
+            and (not self.low_memory or name in self.panels)
         ]
         if self.s.get("stage", False):
             self.panel_restore_queue = self.panel_restore_queue[-1:]
@@ -291,13 +329,22 @@ class Desktop(QMainWindow):
         self.resume_panel_restore()
 
     def effects(self):
-        return not self.safe_mode and PROFILES.get(self.s.get("profile"), PROFILES["Balanced"])[1]
+        return not (self.safe_mode or self.low_memory) and PROFILES.get(self.s.get("profile"), PROFILES["Balanced"])[1]
 
     def preference(self, key, value):
         updates = {key: value}
         if key == "browser_history_enabled" and not value:
             updates["browser_history"] = []
         self.s.set(**updates)
+        if key == "low_memory":
+            self.low_memory = low_memory(self.s)
+            for panel in self.panels.values():
+                panel.update_effects()
+            if self.low_memory:
+                self.panel_restore_timer.stop()
+                self.panel_restore_queue.clear()
+            self.shell.sceneChanged.emit()
+            self.timer.start(self.refresh_interval())
         if key == "clipboard" and not value:
             self.clipboard.clear()
         if key == "browser_history_enabled" and not value:
@@ -418,9 +465,12 @@ class Desktop(QMainWindow):
         seconds = PROFILES.get(self.s.get("profile"), PROFILES["Balanced"])[0]
         if self.background:
             seconds = min(seconds, 8) if self.has_hotspot_policy() else 30
+        if self.low_memory and not self.has_hotspot_policy():
+            seconds = max(seconds, 30)
         return seconds * 1000
 
     def application_state(self, state):
+        self.schedule_taskbar_sync()
         background = state != Qt.ApplicationState.ApplicationActive
         if self.background == background:
             return
@@ -614,6 +664,7 @@ class Desktop(QMainWindow):
                 if other != panel:
                     other.hide()
         panel.present(activate=activate)
+        self.schedule_taskbar_sync()
         if name == "Settings":
             panel.content.controls.refresh()
         if newly_open:
@@ -695,6 +746,10 @@ class Desktop(QMainWindow):
         self.layout_save_timer.stop()
         self.panel_restore_timer.stop()
         self.security_timer.stop()
+        if hasattr(self, "taskbar_timer"):
+            QApplication.instance().focusWindowChanged.disconnect(self.schedule_taskbar_sync)
+            self.taskbar_timer.stop()
+            self.taskbar.update(set())
         if self.session_watching:
             session.watch(int(self.winId()), False)
         self.auto.stop()

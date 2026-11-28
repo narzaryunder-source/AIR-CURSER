@@ -413,3 +413,33 @@ def test_a_failed_save_does_not_interrupt_workspace_shutdown(tmp_path, monkeypat
     assert desk.close() and stopped and desk.locked
     assert not desk.timer.isActive() and not desk.security_timer.isActive()
     app.processEvents()
+
+
+def test_low_memory_preserves_saved_panels_until_opened(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    from aircursor_desktop.ui import Desktop
+    from aircursor_desktop import session
+
+    monkeypatch.setattr(session, "interactive_desktop", lambda: True)
+    if os.name != "nt" and not os.getenv("DISPLAY"):
+        monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    app = QApplication.instance() or QApplication([])
+    settings = Settings(str(tmp_path / "low-memory.json"))
+    saved = {"Files": 1, "Air AI": 1}
+    settings.set(low_memory=True, auto_switch=False, session_panels=saved)
+    desk = Desktop(settings)
+    desk.work.run = lambda *_: None
+    try:
+        desk.start()
+        app.processEvents()
+        assert desk.isFullScreen() and desk.locked is False
+        assert desk.opened == saved and not desk.panels and not desk.panel_restore_queue
+        assert desk.refresh_interval() == 30_000 and not desk.effects()
+        assert desk.open("Files") is not None
+        assert not desk.panels["Files"].composited
+        desk.exit_desktop()
+        assert not desk.isFullScreen()
+    finally:
+        desk.close()
+        app.processEvents()
+    assert settings.get("session_panels") == saved

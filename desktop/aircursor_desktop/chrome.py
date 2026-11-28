@@ -30,7 +30,7 @@ class Panel(QMainWindow):
     def __init__(self, desk, name, content):
         super().__init__(desk, Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
         self.desk, self.name, self.content = desk, name, content
-        self.composited = name != "Air Browser"
+        self.composited = name != "Air Browser" and not desk.low_memory
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, self.composited)
         self.setWindowTitle(name + " · AirCursor")
         self.setWindowIcon(icon(name))

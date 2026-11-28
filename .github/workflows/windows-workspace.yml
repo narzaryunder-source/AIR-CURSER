@@ -46,11 +46,13 @@ jobs:
         shell: pwsh
         run: |
           $previous = Join-Path $env:RUNNER_TEMP 'AirCursor-Windows-previous.exe'
-          curl.exe --fail --location --retry 3 --output $previous https://github.com/narzaryunder-source/AIR-CURSER/releases/download/windows-v2.2.2/AirCursor-Windows.exe
-          if ($LASTEXITCODE -or (Get-FileHash $previous -Algorithm SHA256).Hash -ne '295c676ab9073fa8d48b21f7aa1c8995da1b0a4661858c1dabb51e933f2e7244') { throw 'Previous installer verification failed' }
+          curl.exe --fail --location --retry 3 --output $previous https://github.com/narzaryunder-source/AIR-CURSER/releases/download/windows-v2.3.0-rc.1/AirCursor-Windows.exe
+          if ($LASTEXITCODE -or (Get-FileHash $previous -Algorithm SHA256).Hash -ne '69abe34f0a052e589a209849c2b2bad02dc7f5f007ea4991f7b2dc302095b443') { throw 'Previous installer verification failed' }
           if ((Get-Item desktop/dist/AirCursor-Windows.exe).Length -gt (Get-Item $previous).Length + 2MB) { throw 'The installer exceeds its size budget' }
           ./desktop/tools/verify_install.ps1 -Installer desktop/dist/AirCursor-Windows.exe -PreviousInstaller $previous
           Copy-Item "$env:TEMP/aircursor-selftest.txt" desktop/dist/aircursor-selftest.txt
+      - name: Verify Windows full-screen taskbar behavior
+        run: python desktop/tools/verify_fullscreen.py
       - name: Capture the Windows desktop and application windows
         shell: pwsh
         run: |
@@ -66,6 +68,10 @@ jobs:
       - name: Record Windows responsiveness and receiver measurements
         shell: pwsh
         run: |
+          foreach ($mode in @('off', 'on', 'on', 'off')) {
+            python desktop/tools/compare_low_memory.py $mode | Tee-Object -FilePath desktop/dist/low-memory.jsonl -Append
+            if ($LASTEXITCODE) { throw 'Low-memory benchmark failed' }
+          }
           git fetch --depth=1 origin refs/tags/windows-v2.2.2
           if ($LASTEXITCODE) { throw 'Could not fetch the Windows 2.2.2 baseline' }
           git worktree add --detach "$env:RUNNER_TEMP/aircursor-baseline" FETCH_HEAD
@@ -89,6 +95,7 @@ jobs:
           path: |
             desktop/dist/SHA256SUMS.txt
             desktop/dist/package-size.json
+            desktop/dist/low-memory.jsonl
             desktop/dist/aircursor-selftest.txt
             desktop/dist/benchmarks.jsonl
             desktop/dist/benchmarks-v2.2.2.jsonl

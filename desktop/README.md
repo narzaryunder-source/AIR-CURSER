@@ -2,6 +2,10 @@
 
 AirCursor opens full screen in your signed-in Windows session. Choose **Exit desktop** in the menu bar or press **F11** to switch to a window. **Alt+Tab** switches to Windows apps. To start in a window on future launches, clear **Settings → Workspace → Open AirCursor full screen**. The Dock opens Files, Air Browser, Air Store, Air AI, Spotlight, Terminal, Settings, Overview and Downloads.
 
+On Windows, full screen covers the monitor while the workspace or one of its app windows has focus. Switch to another Windows app or press **F11** to return to the normal Windows taskbar.
+
+**Settings → Performance → Low-memory mode** is automatic on PCs reporting up to 2 GiB. You can turn it on manually on other PCs. It reduces wallpaper resolution, animations and background work. Saved windows remain in the Dock for manual opening. Air Browser defers saved pages and releases eligible idle tabs sooner. Restart the desktop and standalone browser to apply window and browser changes to already open windows.
+
 ## Install AirCursor for Windows
 
 1. Download `AirCursor-Windows.exe` and `SHA256SUMS.txt` from the [latest stable release](https://github.com/narzaryunder-source/AIR-CURSER/releases/latest).

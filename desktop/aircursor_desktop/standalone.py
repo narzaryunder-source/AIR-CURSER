@@ -7,6 +7,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QApplication
 from . import session
 from .browser import Browser
+from .memory import low_memory
 from .settings import Settings, data_dir
 
 
@@ -32,11 +33,19 @@ def main():
     # Keep cookies, recovery data and preferences isolated from a concurrently open desktop.
     root = Path(data_dir()) / "StandaloneBrowser"
     os.environ["AIRCURSOR_HOME"] = str(root)
-    window = BrowserWindow(Settings())
+    settings = Settings()
+    # The standalone profile is separate, but inherits the user's Windows memory preference.
+    try:
+        workspace_settings = Settings(root.parent / "settings.json")
+    except (OSError, ValueError):
+        workspace_settings = settings
+    lightweight = low_memory(workspace_settings)
+    window = BrowserWindow(settings, defer_restore=lightweight, lightweight=lightweight)
     window.setWindowTitle("Air Browser")
     window.resize(1080, 720)
     window.show()
-    QTimer.singleShot(100, window, window.prepare_normal_profile)
+    if not lightweight:
+        QTimer.singleShot(100, window, window.prepare_normal_profile)
     app.aboutToQuit.connect(window.close_private)
     timer = QTimer(window, interval=1000)
     timer.timeout.connect(lambda: None if session.interactive_desktop() else app.quit())

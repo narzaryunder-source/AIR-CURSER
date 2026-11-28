@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from .memory import low_memory
 from .settings import data_dir
 from .browser_home import NewTab
 from .widgets import WINDOWS_INSTALLERS, button, confirm, label, open_path, password, row
@@ -63,11 +64,12 @@ class RestoredTab(QWidget):
 
 
 class Browser(QWidget):
-    def __init__(self, settings, parent=None, *, recovery_mode=False, defer_restore=False):
+    def __init__(self, settings, parent=None, *, recovery_mode=False, defer_restore=False, lightweight=None):
         super().__init__(parent)
         self.s = settings
         self.recovery_mode = recovery_mode
         self.defer_restore = defer_restore
+        self.lightweight = lightweight
         self.window_closed = False
         self.monitored_window = None
         self.normal = None
@@ -232,7 +234,10 @@ class Browser(QWidget):
             view = self.tabs.widget(index)
             if isinstance(view, self._view_type) and not view.renderer_error:
                 live.append((view, view.page()))
-        if discard_delay is None and self.s.get("browser_memory_saver", False):
+        lightweight = low_memory(self.s) if self.lightweight is None else self.lightweight
+        if discard_delay is None and lightweight:
+            discard_delay = 20
+        elif discard_delay is None and self.s.get("browser_memory_saver", False):
             live_count = sum(page.lifecycleState() != page.LifecycleState.Discarded for _, page in live)
             discard_delay = DISCARD_AFTER_MANY_TABS if live_count >= MANY_LIVE_TABS else DISCARD_AFTER_SECONDS
         downloading = {request.page() for request in self.downloads if not request.isFinished()}

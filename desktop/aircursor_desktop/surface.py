@@ -58,6 +58,10 @@ class Shell(QObject):
         scene = self.d.s.get("wallpaper", "Fjord").lower()
         return scene if scene in ("fjord", "violet", "copper") else "fjord"
 
+    @Property(int, notify=sceneChanged)
+    def wallpaperWidth(self):
+        return 960 if self.d.low_memory else -1
+
     @Property(float, notify=changed)
     def dusk(self):
         if not self.d.effects():
@@ -209,7 +213,7 @@ class Shell(QObject):
         for name, space in self.d.opened.items():
             panel = self.d.panels.get(name)
             art = self.art(name)
-            if panel is not None and space == self.d.space and not panel.isMinimized():
+            if not self.d.low_memory and panel is not None and space == self.d.space and not panel.isMinimized():
                 key = ICONS[name]
                 preview[key] = panel.grab().toImage().scaled(
                     530, 340, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
